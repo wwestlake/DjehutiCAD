@@ -37,6 +37,22 @@ FrustPanel::FrustPanel()
     editor->setColour(juce::CodeEditorComponent::lineNumberTextId, juce::Colour(0xff71808c));
     editor->setColour(juce::CodeEditorComponent::highlightColourId, juce::Colour(0xff23394a));
     editor->setColour(juce::CaretComponent::caretColourId, juce::Colour(0xff78dcca));
+    // The JUCE C++ tokeniser defaults to colours intended for a light editor.
+    // Keep DjehutiCAD's dark canvas while replacing every token colour with a
+    // readable dark-background palette.
+    juce::CodeEditorComponent::ColourScheme scheme;
+    scheme.set("Error", juce::Colour(0xffff6b6b));
+    scheme.set("Comment", juce::Colour(0xff79c98b));
+    scheme.set("Keyword", juce::Colour(0xff78dcca));
+    scheme.set("Operator", juce::Colour(0xffdce9ee));
+    scheme.set("Identifier", juce::Colour(0xffdce9ee));
+    scheme.set("Integer", juce::Colour(0xffffc777));
+    scheme.set("Float", juce::Colour(0xffffc777));
+    scheme.set("String", juce::Colour(0xffffa7c4));
+    scheme.set("Bracket", juce::Colour(0xff9cdcfe));
+    scheme.set("Punctuation", juce::Colour(0xffb8c9d1));
+    scheme.set("Preprocessor Text", juce::Colour(0xffc792ea));
+    editor->setColourScheme(scheme);
     addAndMakeVisible(*editor);
 
     const auto saved = sourceFile().loadFileAsString();

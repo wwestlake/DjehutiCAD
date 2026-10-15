@@ -1,15 +1,19 @@
 #pragma once
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <mutex>
 
-struct DjehutiFramePacket { float angle = 0.0f; std::uint64_t serial = 0; };
+struct DjehutiMat4 { float v[16] {}; };
+struct DjehutiFramePacket
+{
+    DjehutiMat4 model, view, projection;
+    std::uint64_t serial = 0;
+    float angle = 0.0f;
+};
 
-// Exactly three bounded application-owned frame packets. The producer owns a
-// writing slot, the GL callback owns a consuming slot, and the mutex protects
-// publication/release. GPU swap buffers remain JUCE's responsibility.
+// Three bounded application-owned frame resources. A slot remains in-flight
+// until its GL fence signals; JUCE/GL presentation buffers are separate.
 class DjehutiFrameResourceRing
 {
 public:
@@ -24,19 +28,35 @@ public:
         return false;
     }
 
-    bool consume(DjehutiFramePacket& packet)
+    bool consumeNewest(DjehutiFramePacket& packet, int& slotIndex)
     {
         std::lock_guard<std::mutex> lock(mutex);
-        for (auto& slot : slots)
-            if (slot.state == State::ready)
-            {
-                slot.state = State::consuming; packet = slot.packet; slot.state = State::free; return true;
-            }
-        return false;
+        int newest = -1;
+        for (int i = 0; i < static_cast<int>(slots.size()); ++i)
+            if (slots[static_cast<size_t>(i)].state == State::ready
+                && (newest < 0 || slots[static_cast<size_t>(i)].packet.serial
+                                  > slots[static_cast<size_t>(newest)].packet.serial))
+                newest = i;
+        if (newest < 0) return false;
+        for (int i = 0; i < static_cast<int>(slots.size()); ++i)
+            if (i != newest && slots[static_cast<size_t>(i)].state == State::ready)
+                slots[static_cast<size_t>(i)].state = State::free;
+        slots[static_cast<size_t>(newest)].state = State::inFlight;
+        packet = slots[static_cast<size_t>(newest)].packet;
+        slotIndex = newest;
+        return true;
+    }
+
+    void complete(int slotIndex)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (slotIndex >= 0 && slotIndex < static_cast<int>(slots.size())
+            && slots[static_cast<size_t>(slotIndex)].state == State::inFlight)
+            slots[static_cast<size_t>(slotIndex)].state = State::free;
     }
 
 private:
-    enum class State { free, ready, consuming };
+    enum class State { free, ready, inFlight };
     struct Slot { DjehutiFramePacket packet; State state = State::free; };
     std::array<Slot, 3> slots {};
     std::mutex mutex;

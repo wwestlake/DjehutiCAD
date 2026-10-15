@@ -56,10 +56,20 @@ DjehutiCAD::DjehutiCAD()
     tabs.addTab("FRust", juce::Colour(0xff11161b), frustPanel.get(), false);
     nodePanel = std::make_unique<NodeDesignerPanel>();
     tabs.addTab("Node Editor", juce::Colour(0xff11161b), nodePanel.get(), false);
-    agentPanel = std::make_unique<DjehutiAgentPanel>(properties);
-    tabs.addTab("Agent", juce::Colour(0xff11161b), agentPanel.get(), false);
     viewsPanel = std::make_unique<ThreeDViewsPanel>();
     tabs.addTab("3D Views", juce::Colour(0xff11161b), viewsPanel.get(), false);
+    const juce::Component::SafePointer<DjehutiCAD> safeThis(this);
+    agentPanel = std::make_unique<DjehutiAgentPanel>(properties, [safeThis](const std::string& name, const std::string&) {
+        juce::MessageManager::callAsync([safeThis, name] {
+            if (safeThis == nullptr) return;
+            if (name == "open_cad_workspace") safeThis->selectWorkspace(0);
+            else if (name == "open_frust_editor") safeThis->selectWorkspace(1);
+            else if (name == "open_node_editor") safeThis->selectWorkspace(2);
+            else if (name == "open_3d_views") { safeThis->selectWorkspace(4); safeThis->viewsPanel->addView(); }
+        });
+        return std::string("Operation scheduled in DjehutiCAD.");
+    });
+    tabs.addTab("Agent", juce::Colour(0xff11161b), agentPanel.get(), false);
     restoreSettings();
 }
 
@@ -68,10 +78,10 @@ DjehutiCAD::~DjehutiCAD()
     saveSettings();
     authSession.cancelLogin();
     tabs.clearTabs();
-    nodePanel.release();
-    frustPanel.release();
-    agentPanel.release();
-    viewsPanel.release();
+    nodePanel.reset();
+    frustPanel.reset();
+    agentPanel.reset();
+    viewsPanel.reset();
 }
 
 void DjehutiCAD::paint(juce::Graphics& g)
@@ -141,9 +151,7 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
 
 void DjehutiCAD::menuItemSelected(int commandId, int)
 {
-    if (commandId >= kCadWorkspace && commandId <= kThreeDViews)
-        selectWorkspace(commandId - kCadWorkspace);
-    else if (commandId == kAgentSettings)
+    if (commandId == kAgentSettings)
     {
         auto content = new DjehutiAgentSettings(properties, [] {});
         juce::DialogWindow::LaunchOptions options;
@@ -151,6 +159,20 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
         options.escapeKeyTriggersCloseButton = true; options.useNativeTitleBar = true; options.resizable = false;
         content->setSize(480, 430); options.launchAsync();
     }
+    else if (commandId == kThreeDViews)
+    {
+        selectWorkspace(3);
+        if (viewsPanel != nullptr && !viewsPanel->addView())
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "3D Views", "The maximum of six views is already open.");
+    }
+    else if (commandId == kCadWorkspace)
+        selectWorkspace(0);
+    else if (commandId == kFrustEditor)
+        selectWorkspace(1);
+    else if (commandId == kNodeEditor)
+        selectWorkspace(2);
+    else if (commandId == kAgent)
+        selectWorkspace(4);
     else if (commandId == 20)
     {
         if (authSession.hasValidSession())

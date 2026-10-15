@@ -1,13 +1,16 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <ai_provider/AiProvider.h>
 #include <memory>
 #include <thread>
+#include <vector>
 
 class DjehutiAgentPanel final : public juce::Component
 {
 public:
-    explicit DjehutiAgentPanel(juce::ApplicationProperties& properties);
+    explicit DjehutiAgentPanel(juce::ApplicationProperties& properties,
+                               std::function<std::string(const std::string&, const std::string&)> dispatchTool);
     ~DjehutiAgentPanel() override;
 
     void paint(juce::Graphics&) override;
@@ -16,12 +19,17 @@ public:
 private:
     void sendMessage();
     void appendTranscript(const juce::String& speaker, const juce::String& text);
+    void setBusy(bool value);
     juce::ApplicationProperties& properties;
     juce::TextEditor transcript;
     juce::TextEditor input;
-    juce::TextButton send { "Send" };
+    juce::TextButton send { "Send" }, cancelButton { "Cancel" };
     std::unique_ptr<std::thread> worker;
-    std::atomic_bool cancel { false };
+    struct RequestState { std::atomic_bool cancelled { false }; std::atomic_bool alive { true }; };
+    std::shared_ptr<RequestState> request;
+    std::vector<ai_provider::ChatMessage> history;
+    std::function<std::string(const std::string&, const std::string&)> dispatchTool;
+    bool busy = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DjehutiAgentPanel)
 };

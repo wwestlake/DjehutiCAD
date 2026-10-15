@@ -16,7 +16,7 @@ public:
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void resetCamera();
-    void setPaused(bool shouldPause);
+    void prepareFrame(float sharedAngle, std::uint64_t serial);
     juce::String diagnostics() const;
 
 private:
@@ -34,26 +34,37 @@ private:
     std::unique_ptr<juce::OpenGLShaderProgram::Attribute> normalAttribute;
     GLuint vao = 0, vbo = 0, ibo = 0;
     DjehutiFrameResourceRing frames;
-    float angle = 0.0f, yaw = 0.55f, pitch = 0.35f, distance = 4.0f;
+    float yaw = 0.55f, pitch = 0.35f, distance = 4.0f, panX = 0.0f, panY = 0.0f;
     juce::Point<int> dragStart;
-    bool paused = false, glReady = false;
+    bool glReady = false;
     juce::String glStatus = "Waiting for OpenGL context";
+    std::array<GLsync, 3> fences {};
+    std::array<GLuint, 3> frameBuffers {};
+    DjehutiFramePacket lastFrame;
+    bool hasFrame = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Viewport3D)
 };
 
-class ThreeDViewsPanel final : public juce::Component
+class ThreeDViewsPanel final : public juce::Component, private juce::Timer
 {
 public:
     ThreeDViewsPanel();
+    ~ThreeDViewsPanel() override;
+    bool addView();
     void resized() override;
     void paint(juce::Graphics&) override;
 
 private:
-    void addView();
+    void timerCallback() override;
+    void closeView(int viewId);
+    void publishFrames();
     juce::TextButton addButton { "New 3D View" }, pauseButton { "Pause" }, resetButton { "Reset Cameras" };
-    juce::OwnedArray<Viewport3D> views;
+    class ViewTile;
+    juce::OwnedArray<ViewTile> tiles;
     bool paused = false;
+    float sharedAngle = 0.0f;
+    std::uint64_t frameSerial = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ThreeDViewsPanel)
 };
