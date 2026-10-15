@@ -2,12 +2,15 @@
 
 #include "FrustPanel.h"
 #include "NodeDesignerPanel.h"
+#include "DjehutiAgent.h"
 
 namespace
 {
 constexpr int kCadWorkspace = 100;
 constexpr int kFrustEditor = 101;
 constexpr int kNodeEditor = 102;
+constexpr int kAgent = 103;
+constexpr int kAgentSettings = 104;
 }
 
 class DjehutiCAD::EmptyCadWorkspace final : public juce::Component
@@ -51,6 +54,8 @@ DjehutiCAD::DjehutiCAD()
     tabs.addTab("FRust", juce::Colour(0xff11161b), frustPanel.get(), false);
     nodePanel = std::make_unique<NodeDesignerPanel>();
     tabs.addTab("Node Editor", juce::Colour(0xff11161b), nodePanel.get(), false);
+    agentPanel = std::make_unique<DjehutiAgentPanel>(properties);
+    tabs.addTab("Agent", juce::Colour(0xff11161b), agentPanel.get(), false);
     restoreSettings();
 }
 
@@ -61,6 +66,7 @@ DjehutiCAD::~DjehutiCAD()
     tabs.clearTabs();
     nodePanel.release();
     frustPanel.release();
+    agentPanel.release();
 }
 
 void DjehutiCAD::paint(juce::Graphics& g)
@@ -91,7 +97,7 @@ void DjehutiCAD::confirmCloseThen(std::function<void()> closeCallback)
 
 juce::StringArray DjehutiCAD::getMenuBarNames()
 {
-    return { "File", "View", "Account", "Help" };
+    return { "File", "View", "Settings", "Account", "Help" };
 }
 
 juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
@@ -108,8 +114,13 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
         menu.addItem(kCadWorkspace, "CAD Workspace");
         menu.addItem(kFrustEditor, "FRust Editor");
         menu.addItem(kNodeEditor, "Node Editor");
+        menu.addItem(kAgent, "BYOK Agent");
     }
     else if (index == 2)
+    {
+        menu.addItem(kAgentSettings, "Agent Settings...");
+    }
+    else if (index == 3)
     {
         menu.addItem(20, authSession.hasValidSession() ? "Account Information" : "Sign In");
         if (authSession.hasValidSession())
@@ -124,8 +135,16 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
 
 void DjehutiCAD::menuItemSelected(int commandId, int)
 {
-    if (commandId >= kCadWorkspace && commandId <= kNodeEditor)
+    if (commandId >= kCadWorkspace && commandId <= kAgent)
         selectWorkspace(commandId - kCadWorkspace);
+    else if (commandId == kAgentSettings)
+    {
+        auto content = new DjehutiAgentSettings(properties, [] {});
+        juce::DialogWindow::LaunchOptions options;
+        options.content.setOwned(content); options.dialogTitle = "Agent Settings"; options.dialogBackgroundColour = juce::Colour(0xff171b20);
+        options.escapeKeyTriggersCloseButton = true; options.useNativeTitleBar = true; options.resizable = false;
+        content->setSize(480, 430); options.launchAsync();
+    }
     else if (commandId == 20)
     {
         if (authSession.hasValidSession())
@@ -143,7 +162,7 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
 void DjehutiCAD::restoreSettings()
 {
     const auto selected = properties.getUserSettings()->getIntValue("selectedTab", 0);
-    selectWorkspace(juce::jlimit(0, 2, selected));
+    selectWorkspace(juce::jlimit(0, 3, selected));
 }
 
 void DjehutiCAD::saveSettings()

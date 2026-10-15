@@ -75,6 +75,10 @@ target_sources(DjehutiCAD PRIVATE
     Source/NodeCompiler.cpp
     Source/NodeDesignerPanel.h
     Source/NodeDesignerPanel.cpp
+    Source/ProtectedCredentialStore.h
+    Source/ProtectedCredentialStore.cpp
+    Source/DjehutiAgent.h
+    Source/DjehutiAgent.cpp
 )
 
 target_compile_definitions(DjehutiCAD PRIVATE
@@ -98,6 +102,10 @@ target_link_libraries(DjehutiCAD PRIVATE
     juce::juce_graphics
     juce::juce_gui_basics
     juce::juce_gui_extra
+    juce::juce_opengl
 )
+if(WIN32)
+    target_link_libraries(DjehutiCAD PRIVATE crypt32)
+endif()
 
 juce_generate_juce_header(DjehutiCAD)
