@@ -1,0 +1,14 @@
+build/
+bin/
+config/*.local.json
+projects/current/
+sim/xyce/runs/
+third_party/adaptagrams-src/
+third_party/libavoid/doc/
+third_party/libavoid/tests/
+third_party/libavoid/Doxyfile
+third_party/libavoid/Makefile.am
+third_party/libavoid/libavoid.pc.in
+third_party/libavoid/*.sln
+third_party/libavoid/*.vcxproj
+third_party/libavoid/mtst.*
