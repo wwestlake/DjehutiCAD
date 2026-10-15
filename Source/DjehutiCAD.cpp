@@ -3,6 +3,7 @@
 #include "FrustPanel.h"
 #include "NodeDesignerPanel.h"
 #include "DjehutiAgent.h"
+#include "Viewport3D.h"
 
 namespace
 {
@@ -11,6 +12,7 @@ constexpr int kFrustEditor = 101;
 constexpr int kNodeEditor = 102;
 constexpr int kAgent = 103;
 constexpr int kAgentSettings = 104;
+constexpr int kThreeDViews = 105;
 }
 
 class DjehutiCAD::EmptyCadWorkspace final : public juce::Component
@@ -56,6 +58,8 @@ DjehutiCAD::DjehutiCAD()
     tabs.addTab("Node Editor", juce::Colour(0xff11161b), nodePanel.get(), false);
     agentPanel = std::make_unique<DjehutiAgentPanel>(properties);
     tabs.addTab("Agent", juce::Colour(0xff11161b), agentPanel.get(), false);
+    viewsPanel = std::make_unique<ThreeDViewsPanel>();
+    tabs.addTab("3D Views", juce::Colour(0xff11161b), viewsPanel.get(), false);
     restoreSettings();
 }
 
@@ -67,6 +71,7 @@ DjehutiCAD::~DjehutiCAD()
     nodePanel.release();
     frustPanel.release();
     agentPanel.release();
+    viewsPanel.release();
 }
 
 void DjehutiCAD::paint(juce::Graphics& g)
@@ -115,6 +120,7 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
         menu.addItem(kFrustEditor, "FRust Editor");
         menu.addItem(kNodeEditor, "Node Editor");
         menu.addItem(kAgent, "BYOK Agent");
+        menu.addItem(kThreeDViews, "New 3D View");
     }
     else if (index == 2)
     {
@@ -135,7 +141,7 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
 
 void DjehutiCAD::menuItemSelected(int commandId, int)
 {
-    if (commandId >= kCadWorkspace && commandId <= kAgent)
+    if (commandId >= kCadWorkspace && commandId <= kThreeDViews)
         selectWorkspace(commandId - kCadWorkspace);
     else if (commandId == kAgentSettings)
     {
@@ -162,7 +168,7 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
 void DjehutiCAD::restoreSettings()
 {
     const auto selected = properties.getUserSettings()->getIntValue("selectedTab", 0);
-    selectWorkspace(juce::jlimit(0, 3, selected));
+    selectWorkspace(juce::jlimit(0, 4, selected));
 }
 
 void DjehutiCAD::saveSettings()

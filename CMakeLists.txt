@@ -79,6 +79,9 @@ target_sources(DjehutiCAD PRIVATE
     Source/ProtectedCredentialStore.cpp
     Source/DjehutiAgent.h
     Source/DjehutiAgent.cpp
+    Source/FrameResourceRing.h
+    Source/Viewport3D.h
+    Source/Viewport3D.cpp
 )
 
 target_compile_definitions(DjehutiCAD PRIVATE

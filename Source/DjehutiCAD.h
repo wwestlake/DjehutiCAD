@@ -9,6 +9,7 @@
 class FrustPanel;
 class NodeDesignerPanel;
 class DjehutiAgentPanel;
+class ThreeDViewsPanel;
 
 class DjehutiCAD final : public juce::Component,
                          private juce::MenuBarModel
@@ -41,6 +42,7 @@ private:
     std::unique_ptr<FrustPanel> frustPanel;
     std::unique_ptr<NodeDesignerPanel> nodePanel;
     std::unique_ptr<DjehutiAgentPanel> agentPanel;
+    std::unique_ptr<ThreeDViewsPanel> viewsPanel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DjehutiCAD)
 };
