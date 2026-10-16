@@ -17,16 +17,24 @@ and saving a `.djc` exports JSON. JSON export/import preserves public IDs,
 relationships, parameters, and stored reference metadata.
 
 The current persistent-reference foundation supports the representative
-`box-bottom-x-edge` semantic role on box features. It resolves by geometry
-role after a box dimension change and explicitly rejects unsupported or
-ambiguous roles. It is not yet a general topology-selection system.
+`box-bottom-x-edge` semantic role on box features. The role is stored as an
+OCCT `TNaming_NamedShape` under the OCAF reference label and is updated with
+Generated/Modified/Deleted naming evolution as the document rebuilds. It
+resolves against the current placed document shape after a box dimension or
+placement change and explicitly rejects unsupported, deleted, or ambiguous
+roles. It is not yet a general topology-selection system and there is no new
+reference-selection UI.
 
-Verification for the OCAF migration is intentionally minimal: use one box,
-one cylinder, and one subtraction to check dimension edit, OCAF undo/redo,
-reference resolution, native save/reopen, and JSON export. Do not describe
-interactive GUI behavior as verified unless that workflow has actually been
-observed. OCAF is complete for this document foundation; sketches, assemblies,
-and new modeling tools are separate authorized work.
+The focused Debug application target was built successfully and produced
+`bin/Debug/djehuti_cad.exe`. A full runtime workflow was not performed: the
+existing command service exposes modeling, undo, and redo, but does not expose
+the representative-reference create/resolve calls, and no separate test
+harness was added. Therefore box/cylinder/subtraction, dimension edit,
+undo/redo, named-reference resolution, native reopen, and JSON export remain
+runtime-unverified in this correction. Do not describe interactive GUI behavior
+as verified unless that workflow has actually been observed. OCAF is complete
+for this document foundation; sketches, assemblies, and new modeling tools are
+separate authorized work.
 
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
