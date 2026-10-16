@@ -32,6 +32,7 @@ std::vector<ai_provider::ToolDefinition> tools()
     const auto sketchRectangle = R"({"type":"object","properties":{"sketch":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number"},"height":{"type":"number"}},"required":["sketch","x","y","width","height"],"additionalProperties":false})";
     const auto sketchCircle = R"({"type":"object","properties":{"sketch":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"radius":{"type":"number"}},"required":["sketch","x","y","radius"],"additionalProperties":false})";
     const auto sketchDimension = R"({"type":"object","properties":{"sketch":{"type":"string"},"entity":{"type":"string"},"value":{"type":"number"}},"required":["sketch","entity","value"],"additionalProperties":false})";
+    const auto sketchPosition = R"({"type":"object","properties":{"sketch":{"type":"string"},"entity":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"}},"required":["sketch","entity","x","y"],"additionalProperties":false})";
     const auto sketchConstraint = R"({"type":"object","properties":{"sketch":{"type":"string"},"type":{"type":"string"},"first":{"type":"string"},"second":{"type":"string"},"value":{"type":"number"}},"required":["sketch","type","first"],"additionalProperties":false})";
     const auto extrude = R"({"type":"object","properties":{"sketch":{"type":"string"},"depth":{"type":"number"},"reverse":{"type":"boolean"}},"required":["sketch","depth"],"additionalProperties":false})";
     const auto cut = R"({"type":"object","properties":{"sketch":{"type":"string"},"target":{"type":"string"},"depth":{"type":"number"},"throughAll":{"type":"boolean"},"reverse":{"type":"boolean"}},"required":["sketch","target"],"additionalProperties":false})";
@@ -47,6 +48,7 @@ std::vector<ai_provider::ToolDefinition> tools()
         { "cad_sketch_rectangle", "Add a connected dimensioned rectangle to a managed sketch.", sketchRectangle },
         { "cad_sketch_circle", "Add a dimensioned circle to a managed sketch.", sketchCircle },
         { "cad_sketch_dimension", "Change a sketch line length or circle radius in millimeters.", sketchDimension },
+        { "cad_sketch_position", "Move a sketch entity start point or circle center in millimeters.", sketchPosition },
         { "cad_sketch_constraint", "Add a supported sketch constraint: coincident, horizontal, vertical, fixed, length, distance, radius, or diameter.", sketchConstraint },
         { "cad_extrude", "Extrude a closed sketch profile into a real solid.", extrude },
         { "cad_cut", "Cut a closed sketch profile from an explicit solid target; support finite depth or through-all.", cut },

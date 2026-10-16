@@ -240,7 +240,7 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
 
     if (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_create_sketch"
         || type == "cad_sketch_line" || type == "cad_sketch_rectangle" || type == "cad_sketch_circle"
-        || type == "cad_sketch_dimension" || type == "cad_sketch_constraint" || type == "cad_extrude"
+        || type == "cad_sketch_dimension" || type == "cad_sketch_position" || type == "cad_sketch_constraint" || type == "cad_extrude"
         || type == "cad_cut" || type == "cad_set_dimensions" || type == "cad_set_placement" || type == "cad_boolean") {
         const auto* obj = n.raw.getDynamicObject();
         const auto function = type == "cad_create_box" ? "djehuti_cad_create_box"
@@ -250,6 +250,7 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
                               : type == "cad_sketch_rectangle" ? "djehuti_cad_sketch_rectangle"
                               : type == "cad_sketch_circle" ? "djehuti_cad_sketch_circle"
                               : type == "cad_sketch_dimension" ? "djehuti_cad_sketch_dimension"
+                              : type == "cad_sketch_position" ? "djehuti_cad_sketch_position"
                               : type == "cad_sketch_constraint" ? "djehuti_cad_sketch_constraint"
                               : type == "cad_extrude" ? "djehuti_cad_extrude"
                               : type == "cad_cut" ? "djehuti_cad_cut"
@@ -264,6 +265,7 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
             : type == "cad_sketch_rectangle" ? std::vector<std::string>{"String", "f64", "f64", "f64", "f64"}
             : type == "cad_sketch_circle" ? std::vector<std::string>{"String", "f64", "f64", "f64"}
             : type == "cad_sketch_dimension" ? std::vector<std::string>{"String", "String", "f64"}
+            : type == "cad_sketch_position" ? std::vector<std::string>{"String", "String", "f64", "f64"}
             : type == "cad_sketch_constraint" ? std::vector<std::string>{"String", "String", "String", "String", "f64"}
             : type == "cad_extrude" ? std::vector<std::string>{"String", "f64", "i64"}
             : type == "cad_cut" ? std::vector<std::string>{"String", "String", "f64", "i64", "i64"}

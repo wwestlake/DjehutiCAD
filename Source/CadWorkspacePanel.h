@@ -30,7 +30,8 @@ private:
     juce::TextEditor name, width, depth, height, radius, x, y, z, firstOperand, secondOperand;
     juce::ComboBox plane;
     juce::Label title, status, units;
-    juce::TextButton boxButton { "Box" }, cylinderButton { "Cylinder" }, sketchButton { "Sketch" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, lineButton { "Line" }, extrudeButton { "Extrude" }, cutButton { "Cut Sketch" }, subtractButton { "Subtract" }, unionButton { "Union" }, intersectButton { "Intersect" }, applyButton { "Apply" }, undoButton { "Undo" }, redoButton { "Redo" }, hideButton { "Hide/Show" }, deleteButton { "Delete" }, useFirstButton { "Use Selected as First" }, useSecondButton { "Use Selected as Second" }, useTargetButton { "Use Selected as Cut Target" };
+    juce::TextButton boxButton { "Box" }, cylinderButton { "Cylinder" }, sketchButton { "Sketch" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, lineButton { "Line" }, extrudeButton { "Extrude" }, cutButton { "Cut Sketch" }, finishSketchButton { "Finish Sketch" }, cancelSketchButton { "Cancel Sketch" }, subtractButton { "Subtract" }, unionButton { "Union" }, intersectButton { "Intersect" }, applyButton { "Apply" }, undoButton { "Undo" }, redoButton { "Redo" }, hideButton { "Hide/Show" }, deleteButton { "Delete" }, useFirstButton { "Use Selected as First" }, useSecondButton { "Use Selected as Second" }, useTargetButton { "Use Selected as Cut Target" };
+    juce::ToggleButton reverseToggle { "Reverse" }, throughAllToggle { "Through all" };
     juce::String selectedId;
     juce::String targetId, sketchEntityId;
     std::unique_ptr<SketchCanvas> sketchCanvas;

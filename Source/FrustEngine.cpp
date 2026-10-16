@@ -152,6 +152,11 @@ extern "C" std::int64_t djehuti_cad_sketch_dimension(const char* sketchId, const
     if (auto service = activeCadService()) { juce::String error; const bool ok=service->setSketchEntityDimension(sketchId != nullptr ? sketchId : "", entityId != nullptr ? entityId : "", value, error); setCadError(error); return ok ? 1 : 0; } setCadError("No CAD document is attached."); return 0;
 }
 
+extern "C" std::int64_t djehuti_cad_sketch_position(const char* sketchId, const char* entityId, double x, double y)
+{
+    if (auto service = activeCadService()) { juce::String error; const bool ok = service->setSketchEntityPosition(sketchId != nullptr ? sketchId : "", entityId != nullptr ? entityId : "", x, y, error); setCadError(error); return ok ? 1 : 0; } setCadError("No CAD document is attached."); return 0;
+}
+
 extern "C" const char* djehuti_cad_sketch_constraint(const char* sketchId, const char* type, const char* first, const char* second, double value)
 {
     if (auto service = activeCadService()) { juce::String id, error; if(service->addSketchConstraint(sketchId != nullptr ? sketchId : "", type != nullptr ? type : "", first != nullptr ? first : "", second != nullptr ? second : "", value, id, error)){setCadError({});return returnCad(id);}setCadError(error); } else setCadError("No CAD document is attached."); return returnCad({});
@@ -242,6 +247,7 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_sketch_rectangle", reinterpret_cast<void*>(&djehuti_cad_sketch_rectangle));
         frust_plugin_register_host_function("djehuti_cad_sketch_circle", reinterpret_cast<void*>(&djehuti_cad_sketch_circle));
         frust_plugin_register_host_function("djehuti_cad_sketch_dimension", reinterpret_cast<void*>(&djehuti_cad_sketch_dimension));
+        frust_plugin_register_host_function("djehuti_cad_sketch_position", reinterpret_cast<void*>(&djehuti_cad_sketch_position));
         frust_plugin_register_host_function("djehuti_cad_sketch_constraint", reinterpret_cast<void*>(&djehuti_cad_sketch_constraint));
         frust_plugin_register_host_function("djehuti_cad_extrude", reinterpret_cast<void*>(&djehuti_cad_extrude));
         frust_plugin_register_host_function("djehuti_cad_cut", reinterpret_cast<void*>(&djehuti_cad_cut));
@@ -498,6 +504,7 @@ std::string cadPrelude()
            "extern fn djehuti_cad_sketch_rectangle(sketch: String, x: f64, y: f64, width: f64, height: f64) -> String;\n"
            "extern fn djehuti_cad_sketch_circle(sketch: String, x: f64, y: f64, radius: f64) -> String;\n"
            "extern fn djehuti_cad_sketch_dimension(sketch: String, entity: String, value: f64) -> i64;\n"
+           "extern fn djehuti_cad_sketch_position(sketch: String, entity: String, x: f64, y: f64) -> i64;\n"
            "extern fn djehuti_cad_sketch_constraint(sketch: String, type: String, first: String, second: String, value: f64) -> String;\n"
            "extern fn djehuti_cad_extrude(sketch: String, depth: f64, reverse: i64) -> String;\n"
            "extern fn djehuti_cad_cut(sketch: String, target: String, depth: f64, through_all: i64, reverse: i64) -> String;\n"
@@ -510,7 +517,7 @@ std::string cadPrelude()
 const std::vector<std::string>& cadHostFunctions()
 {
     static const std::vector<std::string> names {
-        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
+        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error"
     };
     return names;
