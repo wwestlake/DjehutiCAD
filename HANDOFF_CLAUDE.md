@@ -80,6 +80,16 @@ Cancel discards only an unfinished gesture. The properties panel is vertically
 scrollable so sketch and modeling actions remain reachable at the existing
 window sizes.
 
+Property inputs carry persistent captions (with mm units) that follow the
+selection (`CadWorkspacePanel::updateCaptions`): box width/depth/height along
+X/Y/Z, cylinder radius/height, box corner or cylinder base-center world
+position, extrude distance/cut depth, sketch line length or circle radius,
+and sketch entity positions in local plane coordinates. The shared dimension
+field states when Add Constraint reads it differently (for example radius for
+Apply, diameter for Add Constraint). A circle driven only by a diameter
+constraint shows and edits its diameter, matching what Apply already did.
+Verified by Debug build and a brief GUI check of line and circle captions.
+
 This is not a complete arbitrary sketch solver. The current behavior is a
 bounded constraint/validation implementation, not general free-form constraint
 solving. There is no arbitrary face-attached sketch workflow or general
