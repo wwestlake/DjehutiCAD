@@ -2123,6 +2123,16 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
         { "sample_texture", "Sample Texture", "Resources", juce::Colour(0xff9c5a9c), 0, { resourceIn("texture", "Texture"), in("uv", "any") }, { out("color", "any") } }
         ,
         { "reroute", "Reroute", "Graph", juce::Colour(0xff7fffd4), 0, { in("in", "any") }, { out("out", "any") } },
+        { "cad_create_box", "CAD Box", "CAD", juce::Colour(0xff4b8fc8), 0,
+          { in("width", "f64"), in("depth", "f64"), in("height", "f64") }, { out("id", "string") } },
+        { "cad_create_cylinder", "CAD Cylinder", "CAD", juce::Colour(0xff4b8fc8), 0,
+          { in("radius", "f64"), in("height", "f64") }, { out("id", "string") } },
+        { "cad_set_dimensions", "CAD Dimensions", "CAD", juce::Colour(0xff4b8fc8), 0,
+          { in("id", "string"), in("width", "f64"), in("depth", "f64"), in("height", "f64"), in("radius", "f64") }, { out("ok", "i64") } },
+        { "cad_set_placement", "CAD Placement", "CAD", juce::Colour(0xff4b8fc8), 0,
+          { in("id", "string"), in("x", "f64"), in("y", "f64"), in("z", "f64"), in("rx", "f64"), in("ry", "f64"), in("rz", "f64") }, { out("ok", "i64") } },
+        { "cad_boolean", "CAD Boolean", "CAD", juce::Colour(0xff4b8fc8), 0,
+          { in("operation", "string"), in("first", "string"), in("second", "string") }, { out("id", "string") } },
         // A FRust programmable component's electrical interface (Workbench):
         // values are f64 volts, amps, seconds; each names a pin, parameter
         // or state variable of the component.

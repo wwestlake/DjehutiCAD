@@ -9,6 +9,9 @@ set(FRUST_VCPKG_INSTALLED_DIR "D:/000 Creation Suite/apps/CreationEngine/vcpkg_i
 set(FLEX_EXECUTABLE "D:/tools/winflexbison/win_flex.exe" CACHE FILEPATH "Flex for the Frust grammar")
 set(BISON_EXECUTABLE "D:/tools/winflexbison/win_bison.exe" CACHE FILEPATH "Bison for the Frust grammar")
 set(FRUST_WINFLEXBISON_DIR "D:/tools/winflexbison" CACHE PATH "WinFlexBison directory")
+set(OCCT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/occt-build" CACHE PATH "Pinned OCCT build used by DjehutiCAD")
+set(OCCT_INCLUDE_DIR "${OCCT_ROOT}/inc")
+set(OCCT_LIBRARY_DIR "${OCCT_ROOT}/win64/vc14/lib")
 
 if(NOT TARGET juce::juce_core)
     if(DEFINED JUCE_PATH AND EXISTS "${JUCE_PATH}/CMakeLists.txt")
@@ -82,6 +85,10 @@ target_sources(DjehutiCAD PRIVATE
     Source/FrameResourceRing.h
     Source/Viewport3D.h
     Source/Viewport3D.cpp
+    Source/CadDocument.h
+    Source/CadDocument.cpp
+    Source/CadWorkspacePanel.h
+    Source/CadWorkspacePanel.cpp
 )
 
 target_compile_definitions(DjehutiCAD PRIVATE
@@ -92,6 +99,13 @@ target_compile_definitions(DjehutiCAD PRIVATE
     DJEHUTICAD_APP=1
 )
 target_include_directories(DjehutiCAD PRIVATE Source)
+if(EXISTS "${OCCT_INCLUDE_DIR}/TopoDS_Shape.hxx")
+    target_include_directories(DjehutiCAD PRIVATE "${OCCT_INCLUDE_DIR}")
+    target_compile_definitions(DjehutiCAD PRIVATE HAVE_OCCT=1 OCCT_STATIC)
+    target_link_directories(DjehutiCAD PRIVATE
+        "$<$<CONFIG:Debug>:${OCCT_ROOT}/win64/vc14/libd>"
+        "$<$<NOT:$<CONFIG:Debug>>:${OCCT_LIBRARY_DIR}>")
+endif()
 if(MSVC)
     target_compile_options(DjehutiCAD PRIVATE /FS /MP1)
 endif()
@@ -109,6 +123,10 @@ target_link_libraries(DjehutiCAD PRIVATE
 )
 if(WIN32)
     target_link_libraries(DjehutiCAD PRIVATE crypt32)
+endif()
+
+if(EXISTS "${OCCT_INCLUDE_DIR}/TopoDS_Shape.hxx")
+    target_link_libraries(DjehutiCAD PRIVATE TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKMesh TKShHealing TKBO TKBool)
 endif()
 
 juce_generate_juce_header(DjehutiCAD)

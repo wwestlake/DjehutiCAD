@@ -1,4 +1,5 @@
 #include "FrustEngine.h"
+#include "CadDocument.h"
 
 #include <frust_plugin_host/FrustPluginHost.h>
 #include <frust_plugin_host/FrustPluginHostSource.h>
@@ -80,6 +81,94 @@ extern "C" double djehuti_dsp_log(double x) { return std::log(x); }
 // calls g_frust_dbg_callback) both lead to the app's handler, the debugger;
 // with none installed a tick does nothing.
 std::atomic<TickHandler> tickHandler { nullptr };
+std::mutex cadMutex;
+std::weak_ptr<djehuti::cad::CadCommandService> cadService;
+thread_local std::string cadReturn;
+thread_local std::string cadError;
+
+std::shared_ptr<djehuti::cad::CadCommandService> activeCadService()
+{
+    std::lock_guard<std::mutex> lock(cadMutex);
+    return cadService.lock();
+}
+
+const char* returnCad(const juce::String& value)
+{
+    cadReturn = value.toStdString();
+    return cadReturn.c_str();
+}
+
+void setCadError(const juce::String& error)
+{
+    cadError = error.toStdString();
+}
+
+extern "C" const char* djehuti_cad_create_box(double width, double depth, double height)
+{
+    if (auto service = activeCadService())
+    {
+        juce::String id, error;
+        if (service->createBox(width, depth, height, id, error)) { setCadError({}); return returnCad(id); }
+        setCadError(error);
+    }
+    else setCadError("No CAD document is attached.");
+    return returnCad({});
+}
+
+extern "C" const char* djehuti_cad_create_cylinder(double radius, double height)
+{
+    if (auto service = activeCadService())
+    {
+        juce::String id, error;
+        if (service->createCylinder(radius, height, id, error)) { setCadError({}); return returnCad(id); }
+        setCadError(error);
+    }
+    else setCadError("No CAD document is attached.");
+    return returnCad({});
+}
+
+extern "C" std::int64_t djehuti_cad_set_dimensions(const char* id, double width, double depth, double height, double radius)
+{
+    if (auto service = activeCadService())
+    {
+        juce::String error;
+        const bool ok = service->setDimensions(id != nullptr ? id : "", width, depth, height, radius, error);
+        setCadError(error);
+        return ok ? 1 : 0;
+    }
+    setCadError("No CAD document is attached.");
+    return 0;
+}
+
+extern "C" std::int64_t djehuti_cad_set_placement(const char* id, double x, double y, double z, double rx, double ry, double rz)
+{
+    if (auto service = activeCadService())
+    {
+        juce::String error;
+        const bool ok = service->setPlacement(id != nullptr ? id : "", x, y, z, rx, ry, rz, error);
+        setCadError(error);
+        return ok ? 1 : 0;
+    }
+    setCadError("No CAD document is attached.");
+    return 0;
+}
+
+extern "C" const char* djehuti_cad_boolean(const char* operation, const char* first, const char* second)
+{
+    if (auto service = activeCadService())
+    {
+        juce::String id, error;
+        if (service->booleanOp(operation != nullptr ? operation : "", first != nullptr ? first : "", second != nullptr ? second : "", id, error)) { setCadError({}); return returnCad(id); }
+        setCadError(error);
+    }
+    else setCadError("No CAD document is attached.");
+    return returnCad({});
+}
+
+extern "C" const char* djehuti_cad_last_error()
+{
+    return cadError.c_str();
+}
 
 extern "C" void djehuti_frust_dbg_tick(int line, int column)
 {
@@ -106,6 +195,12 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_frust_log", reinterpret_cast<void*>(&djehuti_frust_log));
         frust_plugin_register_host_function("djehuti_dsp_exp", reinterpret_cast<void*>(&djehuti_dsp_exp));
         frust_plugin_register_host_function("djehuti_dsp_log", reinterpret_cast<void*>(&djehuti_dsp_log));
+        frust_plugin_register_host_function("djehuti_cad_create_box", reinterpret_cast<void*>(&djehuti_cad_create_box));
+        frust_plugin_register_host_function("djehuti_cad_create_cylinder", reinterpret_cast<void*>(&djehuti_cad_create_cylinder));
+        frust_plugin_register_host_function("djehuti_cad_set_dimensions", reinterpret_cast<void*>(&djehuti_cad_set_dimensions));
+        frust_plugin_register_host_function("djehuti_cad_set_placement", reinterpret_cast<void*>(&djehuti_cad_set_placement));
+        frust_plugin_register_host_function("djehuti_cad_boolean", reinterpret_cast<void*>(&djehuti_cad_boolean));
+        frust_plugin_register_host_function("djehuti_cad_last_error", reinterpret_cast<void*>(&djehuti_cad_last_error));
     });
 }
 
@@ -266,6 +361,7 @@ Result runScript(const std::string& script, const RunOptions& options)
     ensureHostSetup();
     const std::string unitName = "script.frust";
     std::vector<std::string> hostFunctions { "djehuti_frust_log" };
+    hostFunctions.insert(hostFunctions.end(), cadHostFunctions().begin(), cadHostFunctions().end());
     hostFunctions.insert(hostFunctions.end(), options.hostFunctions.begin(), options.hostFunctions.end());
     const std::string header = manifestLine("electronics_lab_script", "A script run in Djehuti Electronics Lab.", hostFunctions)
                              + "extern fn djehuti_frust_log(text: String) -> i64;\n"
@@ -337,5 +433,30 @@ Result runScript(const std::string& script, const RunOptions& options)
     frust_plugin_unload(handle);
     result.ok = true;
     return result;
+}
+
+void setCadCommandService(std::shared_ptr<djehuti::cad::CadCommandService> service)
+{
+    std::lock_guard<std::mutex> lock(cadMutex);
+    cadService = std::move(service);
+}
+
+std::string cadPrelude()
+{
+    return "extern fn djehuti_cad_create_box(width: f64, depth: f64, height: f64) -> String;\n"
+           "extern fn djehuti_cad_create_cylinder(radius: f64, height: f64) -> String;\n"
+           "extern fn djehuti_cad_set_dimensions(id: String, width: f64, depth: f64, height: f64, radius: f64) -> i64;\n"
+           "extern fn djehuti_cad_set_placement(id: String, x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> i64;\n"
+           "extern fn djehuti_cad_boolean(operation: String, first: String, second: String) -> String;\n"
+           "extern fn djehuti_cad_last_error() -> String;\n";
+}
+
+const std::vector<std::string>& cadHostFunctions()
+{
+    static const std::vector<std::string> names {
+        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_set_dimensions",
+        "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error"
+    };
+    return names;
 }
 }

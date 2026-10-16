@@ -10,26 +10,44 @@ juce::String setting(juce::ApplicationProperties& p, const char* name, const cha
 }
 std::string credentialName(const juce::String& provider, const juce::String& profile)
 {
-    auto safe = (provider + "/" + profile).replaceCharacters("\\/:*?\"<>| ", "______________");
+    const auto raw = provider + "/" + profile;
+    juce::String safe;
+    for (int i = 0; i < raw.length(); ++i)
+    {
+        const auto c = raw[i];
+        safe << (juce::String("\\/:*?\"<>| ").containsChar(c) ? '_' : c);
+    }
     return "agent/" + safe.toStdString();
 }
 std::vector<ai_provider::ToolDefinition> tools()
 {
     const auto emptyObject = R"({"type":"object","properties":{},"additionalProperties":false})";
+    const auto dimensions = R"({"type":"object","properties":{"width":{"type":"number"},"depth":{"type":"number"},"height":{"type":"number"}},"required":["width","depth","height"],"additionalProperties":false})";
+    const auto featureDimensions = R"({"type":"object","properties":{"id":{"type":"string"},"width":{"type":"number"},"depth":{"type":"number"},"height":{"type":"number"},"radius":{"type":"number"}},"required":["id","width","depth","height"],"additionalProperties":false})";
+    const auto cylinder = R"({"type":"object","properties":{"radius":{"type":"number"},"height":{"type":"number"}},"required":["radius","height"],"additionalProperties":false})";
+    const auto placement = R"({"type":"object","properties":{"id":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"rx":{"type":"number"},"ry":{"type":"number"},"rz":{"type":"number"}},"required":["id","x","y","z"],"additionalProperties":false})";
+    const auto booleanArgs = R"({"type":"object","properties":{"operation":{"type":"string","enum":["union","subtract","intersect"]},"first":{"type":"string"},"second":{"type":"string"}},"required":["operation","first","second"],"additionalProperties":false})";
     return {
         { "open_cad_workspace", "Open the CAD workspace.", emptyObject },
         { "open_frust_editor", "Open the FRust editor.", emptyObject },
         { "open_node_editor", "Open the node editor.", emptyObject },
-        { "open_3d_views", "Open the 3D views workspace and add a view.", emptyObject }
+        { "open_3d_views", "Open the 3D views workspace and add a view.", emptyObject },
+        { "cad_create_box", "Create a dimensioned box in millimeters and return its managed feature id.", dimensions },
+        { "cad_create_cylinder", "Create a cylinder in millimeters and return its managed feature id.", cylinder },
+        { "cad_set_dimensions", "Change a managed CAD feature's dimensions in millimeters.", featureDimensions },
+        { "cad_set_placement", "Set a feature's millimeter position and optional Euler rotations in degrees.", placement },
+        { "cad_boolean", "Create a union, subtract, or intersect feature from two managed feature ids.", booleanArgs },
+        { "cad_undo", "Undo the most recent CAD document command.", emptyObject },
+        { "cad_redo", "Redo the most recently undone CAD document command.", emptyObject }
     };
 }
 }
 
 DjehutiAgentPanel::DjehutiAgentPanel(juce::ApplicationProperties& p,
-                                     std::function<std::string(const std::string&, const std::string&)> dispatch)
+                                     std::function<std::string(const std::string&, const std::string&, std::shared_ptr<DjehutiAgentRequestState>)> dispatch)
     : properties(p), dispatchTool(std::move(dispatch))
 {
-    history.push_back({ "system", "You are the DjehutiCAD engineering assistant. Be concise. Only claim operations that are implemented. You can open the CAD workspace, FRust editor, node editor, or 3D views when asked." });
+    history.push_back({ "system", "You are the DjehutiCAD engineering assistant. Be concise and only claim operations that are implemented. The current CAD document uses the existing command service; OCAF, sketches, and assemblies are future work. Use the CAD workspace, FRust editor, node editor, or 3D views when asked. Engineering changes are delivered on a feature branch, minimally checked, committed, merged to the repository's existing main branch, and pushed. Report completed CAD assignments to the architect chat, then stop; do not start another phase automatically." });
     transcript.setMultiLine(true); transcript.setReadOnly(true); transcript.setScrollbarsShown(true); transcript.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff10151a)); transcript.setColour(juce::TextEditor::textColourId, juce::Colour(0xffdce9ee));
     input.setMultiLine(false); send.onClick = [this] { sendMessage(); }; cancelButton.onClick = [this] { if (request != nullptr) request->cancelled = true; if (worker != nullptr && worker->joinable()) worker->detach(); worker.reset(); request.reset(); setBusy(false); appendTranscript("Agent", "Request cancelled."); };
     addAndMakeVisible(transcript); addAndMakeVisible(input); addAndMakeVisible(send); addAndMakeVisible(cancelButton);
@@ -51,7 +69,7 @@ void DjehutiAgentPanel::sendMessage()
     const auto text = input.getText().trim(); if (text.isEmpty() || busy) return;
     const auto providerName = setting(properties, "agentProvider", "openai"); const auto profile = setting(properties, "agentProfile", "DjehutiCAD"); const auto model = setting(properties, "agentModel", "gpt-4o-mini");
     std::string key, error; if (!DjehutiCredentials::read(credentialName(providerName, profile), key, error)) { appendTranscript("Agent", juce::String(error)); return; }
-    input.clear(); appendTranscript("You", text); history.push_back({ "user", text.toStdString() }); const auto messages = history; const auto dispatch = dispatchTool; const auto state = std::make_shared<RequestState>(); request = state; setBusy(true);
+    input.clear(); appendTranscript("You", text); history.push_back({ "user", text.toStdString() }); const auto messages = history; const auto dispatch = dispatchTool; const auto state = std::make_shared<DjehutiAgentRequestState>(); request = state; setBusy(true);
     const juce::Component::SafePointer<DjehutiAgentPanel> safe(this);
     worker = std::make_unique<std::thread>([safe, state, messages, key = std::move(key), model = model.toStdString(), dispatch] {
         ai_provider::ChatResponse response; auto round = messages;
@@ -59,9 +77,17 @@ void DjehutiAgentPanel::sendMessage()
         for (int attempt = 0; attempt < 5; ++attempt)
         {
             if (state->cancelled) return;
-            response = api.sendChat(round, tools()); if (!response.ok || response.toolCalls.empty()) break;
+            response = api.sendChat(round, tools());
+            if (state->cancelled || !state->alive) return;
+            if (!response.ok || response.toolCalls.empty()) break;
             round.push_back({ "assistant", response.content, response.toolCalls });
-            for (const auto& call : response.toolCalls) round.push_back({ "tool", dispatch ? dispatch(call.name, call.argumentsJson) : "No workspace dispatcher is available.", {}, call.id });
+            for (const auto& call : response.toolCalls)
+            {
+                if (state->cancelled || !state->alive) return;
+                const auto result = dispatch ? dispatch(call.name, call.argumentsJson, state) : "No workspace dispatcher is available.";
+                if (state->cancelled || !state->alive) return;
+                round.push_back({ "tool", result, {}, call.id });
+            }
         }
         juce::MessageManager::callAsync([safe, state, response] {
             if (safe == nullptr || !state->alive || state->cancelled) return;

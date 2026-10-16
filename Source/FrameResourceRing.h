@@ -55,6 +55,13 @@ public:
             slots[static_cast<size_t>(slotIndex)].state = State::free;
     }
 
+    void reset()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto& slot : slots)
+            slot.state = State::free;
+    }
+
 private:
     enum class State { free, ready, inFlight };
     struct Slot { DjehutiFramePacket packet; State state = State::free; };

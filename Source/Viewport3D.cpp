@@ -34,10 +34,12 @@ void Viewport3D::mouseDown(const juce::MouseEvent& e) { dragStart = e.position.r
 void Viewport3D::mouseDrag(const juce::MouseEvent& e) { const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } dragStart = now; }
 void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w) { distance = juce::jlimit(1.5f, 12.0f, distance * (1.0f - w.deltaY * 0.25f)); }
 void Viewport3D::resetCamera() { yaw = 0.55f; pitch = 0.35f; distance = 4.0f; panX = panY = 0.0f; }
+void Viewport3D::fitAll() { distance = 8.0f; panX = panY = 0.0f; }
+void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { pendingSnapshot = std::move(next); }
 juce::String Viewport3D::diagnostics() const { return glStatus; }
 void Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 {
-    const auto p = perspective(0.85f, getHeight() > 0 ? (float) getWidth() / (float) getHeight() : 1.0f, 0.1f, 100.0f); const auto v = camera(yaw, pitch, distance, panX, panY); const auto m = rotation(sharedAngle); const auto mvp = mul(p, mul(v, m));
+    const auto p = perspective(0.85f, getHeight() > 0 ? (float) getWidth() / (float) getHeight() : 1.0f, 0.1f, 100.0f); const auto v = camera(yaw, pitch, distance, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
     DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle; frames.publish(packet);
 }
 
@@ -48,9 +50,7 @@ void Viewport3D::newOpenGLContextCreated()
     shader = std::make_unique<juce::OpenGLShaderProgram>(context);
     if (!shader->addVertexShader(vertex) || !shader->addFragmentShader(fragment) || !shader->link()) { glStatus = "Shader error: " + shader->getLastError(); juce::Logger::writeToLog(glStatus); shader.reset(); repaint(); return; }
     positionAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "position"); normalAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "normal");
-    const float vertices[] = { -1,-1,-1,0,0,-1, 1,-1,-1,0,0,-1, 1,1,-1,0,0,-1, -1,1,-1,0,0,-1, -1,-1,1,0,0,1, 1,-1,1,0,0,1, 1,1,1,0,0,1, -1,1,1,0,0,1, -1,-1,-1,-1,0,0, -1,1,-1,-1,0,0, -1,1,1,-1,0,0, -1,-1,1,-1,0,0, 1,-1,-1,1,0,0, 1,1,-1,1,0,0, 1,1,1,1,0,0, 1,-1,1,1,0,0, -1,-1,-1,0,-1,0, -1,-1,1,0,-1,0, 1,-1,1,0,-1,0, 1,-1,-1,0,-1,0, -1,1,-1,0,1,0, -1,1,1,0,1,0, 1,1,1,0,1,0, 1,1,-1,0,1,0 };
-    const unsigned int indices[] = { 0,1,2,2,3,0,4,6,5,6,4,7,8,9,10,10,11,8,12,14,13,14,12,15,16,17,18,18,19,16,20,22,21,22,20,23 };
-    glGenVertexArrays(1, &vao); glBindVertexArray(vao); glGenBuffers(1, &vbo); glBindBuffer(GL_ARRAY_BUFFER, vbo); glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW); glGenBuffers(1, &ibo); glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo); glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW); glGenBuffers(3, frameBuffers.data());
+    glGenVertexArrays(1, &vao); glBindVertexArray(vao); glGenBuffers(1, &vbo); glBindBuffer(GL_ARRAY_BUFFER, vbo); glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW); glGenBuffers(1, &ibo); glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo); glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW); glGenBuffers(3, frameBuffers.data());
     for (auto b : frameBuffers) { glBindBuffer(GL_UNIFORM_BUFFER, b); glBufferData(GL_UNIFORM_BUFFER, sizeof(DjehutiMat4) * 2, nullptr, GL_STREAM_DRAW); }
     const auto block = glGetUniformBlockIndex(shader->getProgramID(), "FrameData"); if (block != GL_INVALID_INDEX) glUniformBlockBinding(shader->getProgramID(), block, 0);
     glEnableVertexAttribArray(positionAttribute->attributeID); glVertexAttribPointer(positionAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr); glEnableVertexAttribArray(normalAttribute->attributeID); glVertexAttribPointer(normalAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float))); glBindVertexArray(0); glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
@@ -60,13 +60,36 @@ void Viewport3D::renderOpenGL()
 {
     if (!glReady || shader == nullptr || getWidth() <= 0 || getHeight() <= 0) return;
     for (int i = 0; i < 3; ++i) if (fences[static_cast<size_t>(i)] != nullptr && glClientWaitSync(fences[static_cast<size_t>(i)], 0, 0) != GL_TIMEOUT_EXPIRED) { glDeleteSync(fences[static_cast<size_t>(i)]); fences[static_cast<size_t>(i)] = nullptr; frames.complete(i); }
-    DjehutiFramePacket packet; int slot = -1; if (frames.consumeNewest(packet, slot)) { lastFrame = packet; hasFrame = true; }
+    if (pendingSnapshot != nullptr && pendingSnapshot->revision != uploadedGeometryRevision)
+    {
+        std::vector<float> vertices;
+        std::vector<std::uint32_t> indices;
+        for (const auto& mesh : pendingSnapshot->meshes)
+        {
+            const auto base = static_cast<std::uint32_t>(vertices.size() / 6);
+            vertices.insert(vertices.end(), mesh.vertices.begin(), mesh.vertices.end());
+            for (const auto index : mesh.indices) indices.push_back(base + index);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)), vertices.data(), GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size() * sizeof(std::uint32_t)), indices.data(), GL_DYNAMIC_DRAW);
+        geometryIndexCount = static_cast<GLsizei>(indices.size());
+        uploadedGeometryRevision = pendingSnapshot->revision;
+    }
+    DjehutiFramePacket packet; int slot = -1; if (frames.consumeNewest(packet, slot)) { lastFrame = packet; hasFrame = true; lastSlot = slot; }
     if (!hasFrame) return;
     const auto scale = static_cast<float>(context.getRenderingScale()); glViewport(0, 0, juce::roundToInt(scale * (float) getWidth()), juce::roundToInt(scale * (float) getHeight())); glClearColor(0.035f, 0.055f, 0.075f, 1.0f); glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    const auto activeSlot = static_cast<size_t>(slot < 0 ? 0 : slot); M4 projection, viewMatrix, model; std::memcpy(projection.v, lastFrame.projection.v, sizeof(projection.v)); std::memcpy(viewMatrix.v, lastFrame.view.v, sizeof(viewMatrix.v)); std::memcpy(model.v, lastFrame.model.v, sizeof(model.v)); const auto finalMvp = mul(projection, mul(viewMatrix, model)); DjehutiMat4 matrices[2]; std::memcpy(matrices[0].v, finalMvp.v, sizeof(finalMvp.v)); matrices[1] = lastFrame.model; glBindBuffer(GL_UNIFORM_BUFFER, frameBuffers[activeSlot]); glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(matrices), matrices); glBindBufferBase(GL_UNIFORM_BUFFER, 0, frameBuffers[activeSlot]); shader->use(); glBindVertexArray(vao); glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, nullptr); glBindVertexArray(0); if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    const auto activeSlot = static_cast<size_t>(lastSlot); M4 projection, viewMatrix, model; std::memcpy(projection.v, lastFrame.projection.v, sizeof(projection.v)); std::memcpy(viewMatrix.v, lastFrame.view.v, sizeof(viewMatrix.v)); std::memcpy(model.v, lastFrame.model.v, sizeof(model.v)); const auto finalMvp = mul(projection, mul(viewMatrix, model));
+    if (slot >= 0)
+    {
+        DjehutiMat4 matrices[2]; std::memcpy(matrices[0].v, finalMvp.v, sizeof(finalMvp.v)); matrices[1] = lastFrame.model;
+        glBindBuffer(GL_UNIFORM_BUFFER, frameBuffers[activeSlot]); glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(matrices), matrices);
+    }
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, frameBuffers[activeSlot]); shader->use(); if (geometryIndexCount > 0) { glBindVertexArray(vao); glDrawElements(GL_TRIANGLES, geometryIndexCount, GL_UNSIGNED_INT, nullptr); glBindVertexArray(0); } if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 void Viewport3D::drawCube(const float*) {}
-void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); frameBuffers.fill(0); vao = vbo = ibo = 0; shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
+void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); frameBuffers.fill(0); vao = vbo = ibo = 0; frames.reset(); lastSlot = -1; hasFrame = false; uploadedGeometryRevision = 0; geometryIndexCount = 0; shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
 void Viewport3D::openGLContextClosing() { releaseGL(); }
 
 class ThreeDViewsPanel::ViewTile final : public juce::Component
@@ -79,14 +102,14 @@ public:
 private: int identifier; Viewport3D view; juce::TextButton closeButton; std::function<void(int)> closeCallback;
 };
 
-ThreeDViewsPanel::ThreeDViewsPanel()
+ThreeDViewsPanel::ThreeDViewsPanel(std::shared_ptr<djehuti::cad::CadCommandService> service) : cadService(std::move(service))
 {
-    addAndMakeVisible(addButton); addAndMakeVisible(pauseButton); addAndMakeVisible(resetButton); addButton.onClick = [this] { addView(); }; pauseButton.onClick = [this] { paused = !paused; pauseButton.setButtonText(paused ? "Resume" : "Pause"); }; resetButton.onClick = [this] { for (auto* tile : tiles) tile->viewport().resetCamera(); }; addView(); addView(); addView(); startTimerHz(60);
+    addAndMakeVisible(addButton); addAndMakeVisible(pauseButton); addAndMakeVisible(resetButton); addAndMakeVisible(fitButton); addButton.onClick = [this] { addView(); }; pauseButton.onClick = [this] { paused = !paused; pauseButton.setButtonText(paused ? "Resume" : "Pause"); }; resetButton.onClick = [this] { for (auto* tile : tiles) tile->viewport().resetCamera(); }; fitButton.onClick = [this] { for (auto* tile : tiles) tile->viewport().fitAll(); }; addView(); addView(); addView(); startTimerHz(60);
 }
 ThreeDViewsPanel::~ThreeDViewsPanel() { stopTimer(); }
-bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); addAndMakeVisible(tiles.getLast()); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
+bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); addAndMakeVisible(tiles.getLast()); if (currentSnapshot != nullptr) tiles.getLast()->viewport().setSnapshot(currentSnapshot); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
 void ThreeDViewsPanel::closeView(int id) { if (tiles.size() <= 1) return; for (int i = tiles.size(); --i >= 0;) if (tiles[i]->id() == id) { tiles.remove(i); break; } addButton.setEnabled(tiles.size() < 6); resized(); }
-void ThreeDViewsPanel::publishFrames() { if (!paused) sharedAngle += 0.012f; ++frameSerial; for (auto* tile : tiles) tile->viewport().prepareFrame(sharedAngle, frameSerial); }
+void ThreeDViewsPanel::publishFrames() { if (cadService != nullptr && cadService->document().revision() != shownRevision) { currentSnapshot = cadService->snapshot(); shownRevision = currentSnapshot != nullptr ? currentSnapshot->revision : 0; for (auto* tile : tiles) tile->viewport().setSnapshot(currentSnapshot); } ++frameSerial; for (auto* tile : tiles) tile->viewport().prepareFrame(sharedAngle, frameSerial); }
 void ThreeDViewsPanel::timerCallback() { publishFrames(); }
 void ThreeDViewsPanel::paint(juce::Graphics& g) { g.fillAll(juce::Colour(0xff171b20)); }
-void ThreeDViewsPanel::resized() { auto area = getLocalBounds().reduced(10); auto bar = area.removeFromTop(32); addButton.setBounds(bar.removeFromLeft(120)); pauseButton.setBounds(bar.removeFromLeft(90).reduced(4, 0)); resetButton.setBounds(bar.removeFromLeft(130).reduced(4, 0)); const int columns = tiles.size() > 2 ? 2 : 1, rows = (tiles.size() + columns - 1) / columns, w = juce::jmax(1, area.getWidth() / columns), h = juce::jmax(1, area.getHeight() / rows); for (int i = 0; i < tiles.size(); ++i) tiles[i]->setBounds(area.getX() + (i % columns) * w + 4, area.getY() + (i / columns) * h + 4, w - 8, h - 8); }
+void ThreeDViewsPanel::resized() { auto area = getLocalBounds().reduced(10); auto bar = area.removeFromTop(32); addButton.setBounds(bar.removeFromLeft(120)); pauseButton.setBounds(bar.removeFromLeft(90).reduced(4, 0)); resetButton.setBounds(bar.removeFromLeft(130).reduced(4, 0)); fitButton.setBounds(bar.removeFromLeft(90).reduced(4, 0)); const int columns = tiles.size() > 2 ? 2 : 1, rows = (tiles.size() + columns - 1) / columns, w = juce::jmax(1, area.getWidth() / columns), h = juce::jmax(1, area.getHeight() / rows); for (int i = 0; i < tiles.size(); ++i) tiles[i]->setBounds(area.getX() + (i % columns) * w + 4, area.getY() + (i / columns) * h + 4, w - 8, h - 8); }

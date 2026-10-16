@@ -5,11 +5,13 @@
 #include "Auth/DesktopAuthSession.h"
 #include "Auth/ProfileAvatarComponent.h"
 #include "DjehutiMenuBarComponent.h"
+#include "CadDocument.h"
 
 class FrustPanel;
 class NodeDesignerPanel;
 class DjehutiAgentPanel;
 class ThreeDViewsPanel;
+class CadWorkspacePanel;
 
 class DjehutiCAD final : public juce::Component,
                          private juce::MenuBarModel
@@ -25,8 +27,6 @@ public:
     void confirmCloseThen(std::function<void()> closeCallback);
 
 private:
-    class EmptyCadWorkspace;
-
     juce::StringArray getMenuBarNames() override;
     juce::PopupMenu getMenuForIndex(int, const juce::String&) override;
     void menuItemSelected(int commandId, int) override;
@@ -43,6 +43,8 @@ private:
     std::unique_ptr<NodeDesignerPanel> nodePanel;
     std::unique_ptr<DjehutiAgentPanel> agentPanel;
     std::unique_ptr<ThreeDViewsPanel> viewsPanel;
+    std::unique_ptr<CadWorkspacePanel> cadWorkspace;
+    std::shared_ptr<djehuti::cad::CadCommandService> cadService;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DjehutiCAD)
 };

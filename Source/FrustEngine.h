@@ -9,6 +9,9 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <memory>
+
+namespace djehuti::cad { class CadCommandService; }
 
 struct FrustPluginHandleImpl;
 
@@ -100,4 +103,10 @@ std::string abandonRunningScript();
 // expression. The app's handler (the debugger), or none.
 using TickHandler = void (*)(int line, int column);
 void setTickHandler(TickHandler handler);
+
+// CAD host functions are shared by hand-written FRust and generated node
+// programs. The application owns the command service and clears it on close.
+void setCadCommandService(std::shared_ptr<djehuti::cad::CadCommandService> service);
+std::string cadPrelude();
+const std::vector<std::string>& cadHostFunctions();
 }

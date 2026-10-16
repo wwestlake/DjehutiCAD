@@ -6,11 +6,17 @@
 #include <thread>
 #include <vector>
 
+struct DjehutiAgentRequestState
+{
+    std::atomic_bool cancelled { false };
+    std::atomic_bool alive { true };
+};
+
 class DjehutiAgentPanel final : public juce::Component
 {
 public:
     explicit DjehutiAgentPanel(juce::ApplicationProperties& properties,
-                               std::function<std::string(const std::string&, const std::string&)> dispatchTool);
+                               std::function<std::string(const std::string&, const std::string&, std::shared_ptr<DjehutiAgentRequestState>)> dispatchTool);
     ~DjehutiAgentPanel() override;
 
     void paint(juce::Graphics&) override;
@@ -25,10 +31,9 @@ private:
     juce::TextEditor input;
     juce::TextButton send { "Send" }, cancelButton { "Cancel" };
     std::unique_ptr<std::thread> worker;
-    struct RequestState { std::atomic_bool cancelled { false }; std::atomic_bool alive { true }; };
-    std::shared_ptr<RequestState> request;
+    std::shared_ptr<DjehutiAgentRequestState> request;
     std::vector<ai_provider::ChatMessage> history;
-    std::function<std::string(const std::string&, const std::string&)> dispatchTool;
+    std::function<std::string(const std::string&, const std::string&, std::shared_ptr<DjehutiAgentRequestState>)> dispatchTool;
     bool busy = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DjehutiAgentPanel)

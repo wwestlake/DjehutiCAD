@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "FrameResourceRing.h"
+#include "CadDocument.h"
 
 class Viewport3D final : public juce::Component,
                          private juce::OpenGLRenderer,
@@ -17,6 +18,8 @@ public:
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void resetCamera();
     void prepareFrame(float sharedAngle, std::uint64_t serial);
+    void setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next);
+    void fitAll();
     juce::String diagnostics() const;
 
 private:
@@ -42,6 +45,10 @@ private:
     std::array<GLuint, 3> frameBuffers {};
     DjehutiFramePacket lastFrame;
     bool hasFrame = false;
+    int lastSlot = -1;
+    std::shared_ptr<const djehuti::cad::CadRenderSnapshot> pendingSnapshot;
+    std::uint64_t uploadedGeometryRevision = 0;
+    GLsizei geometryIndexCount = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Viewport3D)
 };
@@ -49,7 +56,7 @@ private:
 class ThreeDViewsPanel final : public juce::Component, private juce::Timer
 {
 public:
-    ThreeDViewsPanel();
+    explicit ThreeDViewsPanel(std::shared_ptr<djehuti::cad::CadCommandService> service);
     ~ThreeDViewsPanel() override;
     bool addView();
     void resized() override;
@@ -59,12 +66,15 @@ private:
     void timerCallback() override;
     void closeView(int viewId);
     void publishFrames();
-    juce::TextButton addButton { "New 3D View" }, pauseButton { "Pause" }, resetButton { "Reset Cameras" };
+    juce::TextButton addButton { "New 3D View" }, pauseButton { "Pause" }, resetButton { "Reset Cameras" }, fitButton { "Fit All" };
     class ViewTile;
     juce::OwnedArray<ViewTile> tiles;
     bool paused = false;
     float sharedAngle = 0.0f;
     std::uint64_t frameSerial = 0;
+    std::shared_ptr<djehuti::cad::CadCommandService> cadService;
+    std::shared_ptr<const djehuti::cad::CadRenderSnapshot> currentSnapshot;
+    std::uint64_t shownRevision = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ThreeDViewsPanel)
 };

@@ -238,6 +238,39 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
         return true;
     }
 
+    if (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_set_dimensions"
+        || type == "cad_set_placement" || type == "cad_boolean") {
+        const auto* obj = n.raw.getDynamicObject();
+        const auto function = type == "cad_create_box" ? "djehuti_cad_create_box"
+                              : type == "cad_create_cylinder" ? "djehuti_cad_create_cylinder"
+                              : type == "cad_set_dimensions" ? "djehuti_cad_set_dimensions"
+                              : type == "cad_set_placement" ? "djehuti_cad_set_placement"
+                              : "djehuti_cad_boolean";
+        const auto returnType = (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_boolean") ? "String" : "i64";
+        const std::vector<std::string> expected = type == "cad_create_box" ? std::vector<std::string>{"f64", "f64", "f64"}
+            : type == "cad_create_cylinder" ? std::vector<std::string>{"f64", "f64"}
+            : type == "cad_set_dimensions" ? std::vector<std::string>{"String", "f64", "f64", "f64", "f64"}
+            : type == "cad_set_placement" ? std::vector<std::string>{"String", "f64", "f64", "f64", "f64", "f64", "f64"}
+            : std::vector<std::string>{"String", "String", "String"};
+        if (n.inputs.size() != expected.size()) { *st.err = "node '" + n.id + "' needs " + std::to_string(expected.size()) + " inputs"; return false; }
+        DeclareExtern(st, std::string("extern fn ") + function + "(" + [&] {
+            std::string signature;
+            for (size_t i = 0; i < expected.size(); ++i) { if (i) signature += ", "; signature += "a" + std::to_string(i) + ": " + expected[i]; }
+            return signature;
+        }() + ") -> " + returnType + ";", function);
+        st.body << "    let " << n.id << ": " << returnType << " = " << function << "(";
+        for (size_t i = 0; i < expected.size(); ++i) {
+            if (i) st.body << ", ";
+            const auto actual = RefType(st, n.inputs[i]);
+            if (actual != expected[i]) { *st.err = "node '" + n.id + "': input " + std::to_string(i + 1) + " must be " + expected[i]; return false; }
+            st.body << RefName(n.inputs[i]);
+        }
+        st.body << ");\n";
+        st.resultType[n.id] = returnType;
+        (void)obj;
+        return true;
+    }
+
     // ---- programmable component nodes (Workbench) ----
     // Each reads or drives the component's electrical interface through the
     // Workbench's host functions (FrustComponent.cpp), by index: the name a

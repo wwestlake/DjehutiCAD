@@ -124,6 +124,8 @@ bool FrustPanel::start(const juce::String& script, const juce::String& label, st
     program.programId = label.toStdString();
     program.script = script.toStdString();
     program.programLines = juce::StringArray::fromLines(script).size();
+    program.prelude = frust_engine::cadPrelude();
+    program.hostFunctions = frust_engine::cadHostFunctions();
     auto& executor = frust_exec::Executor::instance();
     if (!executor.start(std::move(program), error))
     {
@@ -139,9 +141,12 @@ bool FrustPanel::start(const juce::String& script, const juce::String& label, st
 
 frust_engine::Result FrustPanel::checkNow(const juce::String& script)
 {
-    const auto header = frust_engine::manifestLine("electronics_lab_script", "check", { "djehuti_frust_log" })
+    auto hosts = std::vector<std::string> { "djehuti_frust_log" };
+    hosts.insert(hosts.end(), frust_engine::cadHostFunctions().begin(), frust_engine::cadHostFunctions().end());
+    const auto header = frust_engine::manifestLine("electronics_lab_script", "check", hosts)
                       + "extern fn djehuti_frust_log(text: String) -> i64;\n"
-                        "pub fn print_line(text: String) -> i64 = { djehuti_frust_log(text) }\n";
+                        "pub fn print_line(text: String) -> i64 = { djehuti_frust_log(text) }\n"
+                      + frust_engine::cadPrelude();
     auto result = frust_engine::check("script.frust", header + script.toStdString());
     for (auto& d : result.diagnostics)
         if (d.file == "script.frust" && d.line > 3)

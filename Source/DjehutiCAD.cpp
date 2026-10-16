@@ -4,6 +4,8 @@
 #include "NodeDesignerPanel.h"
 #include "DjehutiAgent.h"
 #include "Viewport3D.h"
+#include "CadWorkspacePanel.h"
+#include "FrustEngine.h"
 
 namespace
 {
@@ -13,25 +15,11 @@ constexpr int kNodeEditor = 102;
 constexpr int kAgent = 103;
 constexpr int kAgentSettings = 104;
 constexpr int kThreeDViews = 105;
+constexpr int kNewCadDocument = 106;
+constexpr int kOpenCadDocument = 107;
+constexpr int kSaveCadDocument = 108;
+constexpr int kSaveCadDocumentAs = 109;
 }
-
-class DjehutiCAD::EmptyCadWorkspace final : public juce::Component
-{
-public:
-    void paint(juce::Graphics& g) override
-    {
-        g.fillAll(juce::Colour(0xff11161b));
-        g.setColour(juce::Colour(0xffdce9ee));
-        g.setFont(juce::Font(24.0f, juce::Font::bold));
-        g.drawText("DjehutiCAD", getLocalBounds().reduced(48).removeFromTop(44),
-                   juce::Justification::centredLeft, false);
-        g.setColour(juce::Colour(0xff8fa4ad));
-        g.setFont(juce::Font("Segoe UI", 15.0f, juce::Font::plain));
-        g.drawFittedText("CAD workspace ready. The modeling viewport and geometry engine will be added in a later assignment.",
-                         getLocalBounds().reduced(48).withTrimmedTop(64),
-                         juce::Justification::topLeft, 3, 1.0f);
-    }
-};
 
 DjehutiCAD::DjehutiCAD()
 {
@@ -51,21 +39,44 @@ DjehutiCAD::DjehutiCAD()
     addAndMakeVisible(tabs);
 
     tabs.setTabBarDepth(36);
-    tabs.addTab("CAD Workspace", juce::Colour(0xff11161b), new EmptyCadWorkspace(), true);
+    cadService = std::make_shared<djehuti::cad::CadCommandService>();
+    frust_engine::setCadCommandService(cadService);
+    cadWorkspace = std::make_unique<CadWorkspacePanel>(cadService);
+    tabs.addTab("CAD Workspace", juce::Colour(0xff11161b), cadWorkspace.get(), true);
     frustPanel = std::make_unique<FrustPanel>();
     tabs.addTab("FRust", juce::Colour(0xff11161b), frustPanel.get(), false);
     nodePanel = std::make_unique<NodeDesignerPanel>();
+    nodePanel->onRunRequested = [this](const juce::String& script, const juce::String& label) {
+        selectWorkspace(1);
+        std::string error;
+        if (!frustPanel->start(script, label, error))
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "FRust", error);
+    };
     tabs.addTab("Node Editor", juce::Colour(0xff11161b), nodePanel.get(), false);
-    viewsPanel = std::make_unique<ThreeDViewsPanel>();
+    viewsPanel = std::make_unique<ThreeDViewsPanel>(cadService);
     tabs.addTab("3D Views", juce::Colour(0xff11161b), viewsPanel.get(), false);
     const juce::Component::SafePointer<DjehutiCAD> safeThis(this);
-    agentPanel = std::make_unique<DjehutiAgentPanel>(properties, [safeThis](const std::string& name, const std::string&) {
-        juce::MessageManager::callAsync([safeThis, name] {
-            if (safeThis == nullptr) return;
+    agentPanel = std::make_unique<DjehutiAgentPanel>(properties, [safeThis](const std::string& name, const std::string& arguments, std::shared_ptr<DjehutiAgentRequestState> state) {
+        juce::MessageManager::callAsync([safeThis, name, arguments, state] {
+            if (safeThis == nullptr || state == nullptr || state->cancelled || !state->alive) return;
             if (name == "open_cad_workspace") safeThis->selectWorkspace(0);
             else if (name == "open_frust_editor") safeThis->selectWorkspace(1);
             else if (name == "open_node_editor") safeThis->selectWorkspace(2);
-            else if (name == "open_3d_views") { safeThis->selectWorkspace(4); safeThis->viewsPanel->addView(); }
+            else if (name == "open_3d_views") { safeThis->selectWorkspace(3); safeThis->viewsPanel->addView(); }
+            else if (name.rfind("cad_", 0) == 0)
+            {
+                const auto parsed = juce::JSON::parse(arguments);
+                auto number = [&](const char* key, double fallback = 0.0) { return parsed.getProperty(key, fallback).toString().getDoubleValue(); };
+                juce::String error, id;
+                if (name == "cad_create_box") safeThis->cadService->createBox(number("width"), number("depth"), number("height"), id, error);
+                else if (name == "cad_create_cylinder") safeThis->cadService->createCylinder(number("radius"), number("height"), id, error);
+                else if (name == "cad_set_dimensions") safeThis->cadService->setDimensions(parsed.getProperty("id", "").toString(), number("width"), number("depth"), number("height"), number("radius"), error);
+                else if (name == "cad_set_placement") safeThis->cadService->setPlacement(parsed.getProperty("id", "").toString(), number("x"), number("y"), number("z"), number("rx"), number("ry"), number("rz"), error);
+                else if (name == "cad_boolean") safeThis->cadService->booleanOp(parsed.getProperty("operation", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), id, error);
+                else if (name == "cad_undo") safeThis->cadService->undo(error);
+                else if (name == "cad_redo") safeThis->cadService->redo(error);
+                if (safeThis->cadWorkspace != nullptr) safeThis->cadWorkspace->repaint();
+            }
         });
         return std::string("Operation scheduled in DjehutiCAD.");
     });
@@ -82,6 +93,9 @@ DjehutiCAD::~DjehutiCAD()
     frustPanel.reset();
     agentPanel.reset();
     viewsPanel.reset();
+    cadWorkspace.reset();
+    frust_engine::setCadCommandService(nullptr);
+    cadService.reset();
 }
 
 void DjehutiCAD::paint(juce::Graphics& g)
@@ -120,7 +134,10 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
     juce::PopupMenu menu;
     if (index == 0)
     {
-        menu.addItem(kCadWorkspace, "New CAD Workspace");
+        menu.addItem(kNewCadDocument, "New CAD Document");
+        menu.addItem(kOpenCadDocument, "Open CAD Document...");
+        menu.addItem(kSaveCadDocument, "Save CAD Document");
+        menu.addItem(kSaveCadDocumentAs, "Save CAD Document As...");
         menu.addSeparator();
         menu.addItem(10, "Close");
     }
@@ -151,7 +168,15 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
 
 void DjehutiCAD::menuItemSelected(int commandId, int)
 {
-    if (commandId == kAgentSettings)
+    if (commandId == kNewCadDocument)
+        cadWorkspace->newDocument();
+    else if (commandId == kOpenCadDocument)
+        cadWorkspace->openDocument();
+    else if (commandId == kSaveCadDocument)
+        cadWorkspace->saveDocument();
+    else if (commandId == kSaveCadDocumentAs)
+        cadWorkspace->saveDocumentAs();
+    else if (commandId == kAgentSettings)
     {
         auto content = new DjehutiAgentSettings(properties, [] {});
         juce::DialogWindow::LaunchOptions options;
