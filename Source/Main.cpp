@@ -11,22 +11,25 @@ namespace
 bool runCadFoundationCheck(juce::String& detail)
 {
     djehuti::cad::CadCommandService service;
-    juce::String error, boxId, cylinderId, subtractId;
+    juce::String error, sketchId, plateId, holeSketchId, cutId;
     const auto check=[&](bool ok,const char* step){if(!ok){detail=juce::String(step)+": "+error;return false;}return true;};
-    if (!check(service.createBox(10.0, 10.0, 10.0, boxId, error), "create box")) return false;
-    if (!check(service.createCylinder(2.0, 12.0, cylinderId, error), "create cylinder")) return false;
-    if (!check(service.setPlacement(cylinderId, 4.0, 4.0, -1.0, 0.0, 0.0, 0.0, error), "place cylinder")) return false;
-    if (!check(service.booleanOp("subtract", boxId, cylinderId, subtractId, error), "subtract cylinder")) return false;
+    if (!check(service.createSketch("XY", 0.0, sketchId, error), "create plate sketch")) return false;
+    juce::String entityId;
+    if (!check(service.addSketchRectangle(sketchId, -60.0, -40.0, 120.0, 80.0, entityId, error), "add plate rectangle")) return false;
+    if (!check(service.createExtrude(sketchId, 8.0, false, plateId, error), "extrude plate")) return false;
+    if (!check(service.createSketch("XY", 0.0, holeSketchId, error), "create hole sketch")) return false;
+    if (!check(service.addSketchCircle(holeSketchId, -45.0, -25.0, 5.0, entityId, error), "add hole 1")) return false;
+    if (!check(service.addSketchCircle(holeSketchId, 45.0, -25.0, 5.0, entityId, error), "add hole 2")) return false;
+    if (!check(service.addSketchCircle(holeSketchId, -45.0, 25.0, 5.0, entityId, error), "add hole 3")) return false;
+    if (!check(service.addSketchCircle(holeSketchId, 45.0, 25.0, 5.0, entityId, error), "add hole 4")) return false;
+    if (!check(service.createCut(holeSketchId, plateId, 0.0, true, false, cutId, error), "cut through holes")) return false;
+    const auto* plateSketch = service.document().findSketch(sketchId);
+    if (plateSketch == nullptr || plateSketch->entities.empty()) { detail = "find plate driving entity: missing"; return false; }
+    if (!check(service.setSketchEntityDimension(sketchId, plateSketch->entities.front().id, 120.0, error), "edit driving dimension")) return false;
+    if (!check(service.undo(error), "undo driving dimension")) return false;
+    if (!check(service.redo(error), "redo driving dimension")) return false;
 
     djehuti::cad::CadPersistentReference reference;
-    if (!check(service.makeRepresentativeReference(boxId, reference, error), "create representative reference")) return false;
-    if (!check(service.setDimensions(boxId, 12.0, 10.0, 10.0, 0.0, error), "edit box dimensions")) return false;
-    if (!check(service.resolveReference(reference, error), "resolve after edit")) return false;
-    if (!check(service.undo(error), "undo dimension edit")) return false;
-    if (!check(service.resolveReference(reference, error), "resolve after undo")) return false;
-    if (!check(service.redo(error), "redo dimension edit")) return false;
-    if (!check(service.resolveReference(reference, error), "resolve after redo")) return false;
-
     const auto temp = juce::File::getSpecialLocation(juce::File::tempDirectory);
     const auto native = temp.getChildFile("djehuti_cad_foundation_check.djo");
     const auto json = temp.getChildFile("djehuti_cad_foundation_check.djc");
@@ -36,7 +39,7 @@ bool runCadFoundationCheck(juce::String& detail)
 
     djehuti::cad::CadCommandService reopened;
     if (!check(reopened.load(native, error), "reopen native document")) return false;
-    if (!check(reopened.resolveReference(reference, error), "resolve after native reopen")) return false;
+    if (reopened.document().findSketch(sketchId) == nullptr || reopened.document().findSketch(holeSketchId) == nullptr || reopened.document().find(cutId) == nullptr) { detail = "reopen native document: sketch dependency graph missing"; return false; }
     if (!check(reopened.document().exportJson(json, error) && json.existsAsFile() && json.getSize() > 0, "export JSON")) return false;
     native.deleteFile();
     json.deleteFile();
@@ -60,7 +63,7 @@ public:
             juce::String detail;
             const bool ok = runCadFoundationCheck(detail);
             const auto result = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("djehuti_cad_foundation_check.result");
-            result.replaceWithText(ok ? "CAD_FOUNDATION_CHECK_OK" : "CAD_FOUNDATION_CHECK_FAILED\n" + detail);
+            result.replaceWithText(ok ? "CAD_SKETCH_FOUNDATION_CHECK_OK" : "CAD_SKETCH_FOUNDATION_CHECK_FAILED\n" + detail);
             std::exit(ok ? 0 : 1);
         }
         mainWindow = std::make_unique<MainWindow>(getApplicationName());

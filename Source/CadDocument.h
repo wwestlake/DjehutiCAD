@@ -2,6 +2,10 @@
 
 #include <JuceHeader.h>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
@@ -30,10 +34,32 @@ struct CadFeature
 {
     juce::String id, name, type;
     juce::String firstOperand, secondOperand;
+    juce::String sketchId, targetFeatureId;
     double width = 10.0, depth = 10.0, height = 10.0, radius = 5.0;
+    bool reverse = false, throughAll = false;
     double x = 0.0, y = 0.0, z = 0.0, rx = 0.0, ry = 0.0, rz = 0.0;
     bool visible = true;
     TopoDS_Shape shape;
+};
+
+struct CadSketchEntity
+{
+    juce::String id, type, groupId;
+    double x1 = 0.0, y1 = 0.0, x2 = 0.0, y2 = 0.0, radius = 1.0;
+};
+
+struct CadSketchConstraint
+{
+    juce::String id, type, firstEntity, secondEntity;
+    double value = 0.0;
+};
+
+struct CadSketch
+{
+    juce::String id, plane = "XY";
+    double offset = 0.0;
+    std::vector<CadSketchEntity> entities;
+    std::vector<CadSketchConstraint> constraints;
 };
 
 struct CadMesh
@@ -63,6 +89,14 @@ public:
     void clear();
     bool createBox(double width, double depth, double height, juce::String& id, juce::String& error);
     bool createCylinder(double radius, double height, juce::String& id, juce::String& error);
+    bool createSketch(const juce::String& plane, double offset, juce::String& id, juce::String& error);
+    bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error);
+    bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error);
+    bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error);
+    bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error);
+    bool addSketchConstraint(const juce::String& sketchId, const juce::String& type, const juce::String& firstEntity, const juce::String& secondEntity, double value, juce::String& constraintId, juce::String& error);
+    bool createExtrude(const juce::String& sketchId, double depth, bool reverse, juce::String& id, juce::String& error);
+    bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
     bool setDimensions(const juce::String& id, double width, double depth, double height, double radius, juce::String& error);
     bool booleanOp(const juce::String& kind, const juce::String& first, const juce::String& second, juce::String& id, juce::String& error);
@@ -80,6 +114,8 @@ public:
     std::shared_ptr<const CadRenderSnapshot> snapshot() const;
     const std::vector<CadFeature>& features() const { return items; }
     const CadFeature* find(const juce::String& id) const;
+    const CadSketch* findSketch(const juce::String& id) const;
+    const std::vector<CadSketch>& sketchData() const { return sketches; }
     std::uint64_t revision() const { return documentRevision; }
     bool modified() const { return dirty; }
     void markSaved() { dirty = false; }
@@ -102,6 +138,13 @@ private:
     TopoDS_Shape place(const TopoDS_Shape& source, const CadFeature& feature) const;
     juce::String serialize() const;
     bool deserialize(const juce::String& json, juce::String& error);
+    juce::String serializeSketches() const;
+    bool deserializeSketches(const juce::String& json, juce::String& error);
+    CadSketch* mutableSketch(const juce::String& id);
+    bool solveSketch(CadSketch& sketch, juce::String& error) const;
+    bool validateSketch(const CadSketch& sketch, juce::String& error) const;
+    bool sketchProfiles(const CadSketch& sketch, std::vector<TopoDS_Face>& faces, juce::String& error) const;
+    TopoDS_Shape extrudeSketch(const CadSketch& sketch, double depth, bool reverse, juce::String& error) const;
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);
     bool syncItemsFromOCAF(juce::String& error);
@@ -111,6 +154,7 @@ private:
     static juce::String newId(const char* prefix, int number);
 
     std::vector<CadFeature> items;
+    std::vector<CadSketch> sketches;
     std::vector<CadPersistentReference> references;
     std::vector<CadTopologyEvolution> operationHistory;
     Handle(TDocStd_Application) ocafApplication;
@@ -131,6 +175,14 @@ public:
     bool newDocument();
     bool createBox(double w, double d, double h, juce::String& id, juce::String& error);
     bool createCylinder(double radius, double height, juce::String& id, juce::String& error);
+    bool createSketch(const juce::String& plane, double offset, juce::String& id, juce::String& error) { return model.createSketch(plane, offset, id, error); }
+    bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error) { return model.addSketchLine(sketchId, x1, y1, x2, y2, entityId, error); }
+    bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error) { return model.addSketchRectangle(sketchId, x, y, width, height, groupId, error); }
+    bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error) { return model.addSketchCircle(sketchId, x, y, radius, entityId, error); }
+    bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error) { return model.setSketchEntityDimension(sketchId, entityId, value, error); }
+    bool addSketchConstraint(const juce::String& sketchId, const juce::String& type, const juce::String& firstEntity, const juce::String& secondEntity, double value, juce::String& constraintId, juce::String& error) { return model.addSketchConstraint(sketchId, type, firstEntity, secondEntity, value, constraintId, error); }
+    bool createExtrude(const juce::String& sketchId, double depth, bool reverse, juce::String& id, juce::String& error) { return model.createExtrude(sketchId, depth, reverse, id, error); }
+    bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
     bool setDimensions(const juce::String& id, double w, double d, double h, double radius, juce::String& error);
     bool booleanOp(const juce::String& kind, const juce::String& a, const juce::String& b, juce::String& id, juce::String& error);

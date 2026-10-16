@@ -238,17 +238,35 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
         return true;
     }
 
-    if (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_set_dimensions"
-        || type == "cad_set_placement" || type == "cad_boolean") {
+    if (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_create_sketch"
+        || type == "cad_sketch_line" || type == "cad_sketch_rectangle" || type == "cad_sketch_circle"
+        || type == "cad_sketch_dimension" || type == "cad_sketch_constraint" || type == "cad_extrude"
+        || type == "cad_cut" || type == "cad_set_dimensions" || type == "cad_set_placement" || type == "cad_boolean") {
         const auto* obj = n.raw.getDynamicObject();
         const auto function = type == "cad_create_box" ? "djehuti_cad_create_box"
                               : type == "cad_create_cylinder" ? "djehuti_cad_create_cylinder"
+                              : type == "cad_create_sketch" ? "djehuti_cad_create_sketch"
+                              : type == "cad_sketch_line" ? "djehuti_cad_sketch_line"
+                              : type == "cad_sketch_rectangle" ? "djehuti_cad_sketch_rectangle"
+                              : type == "cad_sketch_circle" ? "djehuti_cad_sketch_circle"
+                              : type == "cad_sketch_dimension" ? "djehuti_cad_sketch_dimension"
+                              : type == "cad_sketch_constraint" ? "djehuti_cad_sketch_constraint"
+                              : type == "cad_extrude" ? "djehuti_cad_extrude"
+                              : type == "cad_cut" ? "djehuti_cad_cut"
                               : type == "cad_set_dimensions" ? "djehuti_cad_set_dimensions"
                               : type == "cad_set_placement" ? "djehuti_cad_set_placement"
                               : "djehuti_cad_boolean";
-        const auto returnType = (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_boolean") ? "String" : "i64";
+        const auto returnType = (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_create_sketch" || type == "cad_sketch_line" || type == "cad_sketch_rectangle" || type == "cad_sketch_circle" || type == "cad_sketch_constraint" || type == "cad_extrude" || type == "cad_cut" || type == "cad_boolean") ? "String" : "i64";
         const std::vector<std::string> expected = type == "cad_create_box" ? std::vector<std::string>{"f64", "f64", "f64"}
             : type == "cad_create_cylinder" ? std::vector<std::string>{"f64", "f64"}
+            : type == "cad_create_sketch" ? std::vector<std::string>{"String", "f64"}
+            : type == "cad_sketch_line" ? std::vector<std::string>{"String", "f64", "f64", "f64", "f64"}
+            : type == "cad_sketch_rectangle" ? std::vector<std::string>{"String", "f64", "f64", "f64", "f64"}
+            : type == "cad_sketch_circle" ? std::vector<std::string>{"String", "f64", "f64", "f64"}
+            : type == "cad_sketch_dimension" ? std::vector<std::string>{"String", "String", "f64"}
+            : type == "cad_sketch_constraint" ? std::vector<std::string>{"String", "String", "String", "String", "f64"}
+            : type == "cad_extrude" ? std::vector<std::string>{"String", "f64", "i64"}
+            : type == "cad_cut" ? std::vector<std::string>{"String", "String", "f64", "i64", "i64"}
             : type == "cad_set_dimensions" ? std::vector<std::string>{"String", "f64", "f64", "f64", "f64"}
             : type == "cad_set_placement" ? std::vector<std::string>{"String", "f64", "f64", "f64", "f64", "f64", "f64"}
             : std::vector<std::string>{"String", "String", "String"};

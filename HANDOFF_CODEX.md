@@ -35,6 +35,25 @@ does not affect normal application startup. This is service/kernel verification,
 not GUI workflow verification. OCAF is complete for this document foundation;
 sketches, assemblies, and new modeling tools are separate authorized work.
 
+The dimensioned-sketch part-design slice adds bounded XY/XZ/YZ datum-plane
+sketches with line, rectangle, and circle entities. Rectangle creation adds
+horizontal/vertical/coincident and driving distance constraints; supported
+dimension edits update line lengths or circle radii/diameters. Closed planar
+profiles produce real OCCT faces, `extrude` produces a real prism solid, and
+`cut` subtracts a sketch tool from an explicit solid target with finite depth
+or through-all behavior. Public feature IDs and sketch dependencies are
+stored in both `.djo` OCAF labels and `.djc` JSON version 3. The workspace has
+a compact sketch canvas and controls; FRust, node, and BYOK-agent command
+surfaces expose the same command-service operations.
+
+The updated `--cad-foundation-check` diagnostic creates and edits a
+120 x 80 x 8 mm mounting plate, cuts four 10 mm through-holes, exercises undo
+and redo, reopens the native document, and exports JSON. It passed with the
+temporary marker `CAD_SKETCH_FOUNDATION_CHECK_OK`. This is service/kernel
+verification, not GUI verification. Remaining limits are no arbitrary
+face-attached sketch support, no general topology-selection UI, and no
+loft/sweep/revolve or assembly system.
+
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
 repository's existing `main`, push `main`, report to the architect chat, and

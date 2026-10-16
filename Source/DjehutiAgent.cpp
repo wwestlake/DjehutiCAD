@@ -27,6 +27,14 @@ std::vector<ai_provider::ToolDefinition> tools()
     const auto cylinder = R"({"type":"object","properties":{"radius":{"type":"number"},"height":{"type":"number"}},"required":["radius","height"],"additionalProperties":false})";
     const auto placement = R"({"type":"object","properties":{"id":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"rx":{"type":"number"},"ry":{"type":"number"},"rz":{"type":"number"}},"required":["id","x","y","z"],"additionalProperties":false})";
     const auto booleanArgs = R"({"type":"object","properties":{"operation":{"type":"string","enum":["union","subtract","intersect"]},"first":{"type":"string"},"second":{"type":"string"}},"required":["operation","first","second"],"additionalProperties":false})";
+    const auto sketch = R"({"type":"object","properties":{"plane":{"type":"string","enum":["XY","XZ","YZ"]},"offset":{"type":"number"}},"required":["plane"],"additionalProperties":false})";
+    const auto sketchLine = R"({"type":"object","properties":{"sketch":{"type":"string"},"x1":{"type":"number"},"y1":{"type":"number"},"x2":{"type":"number"},"y2":{"type":"number"}},"required":["sketch","x1","y1","x2","y2"],"additionalProperties":false})";
+    const auto sketchRectangle = R"({"type":"object","properties":{"sketch":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"width":{"type":"number"},"height":{"type":"number"}},"required":["sketch","x","y","width","height"],"additionalProperties":false})";
+    const auto sketchCircle = R"({"type":"object","properties":{"sketch":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"radius":{"type":"number"}},"required":["sketch","x","y","radius"],"additionalProperties":false})";
+    const auto sketchDimension = R"({"type":"object","properties":{"sketch":{"type":"string"},"entity":{"type":"string"},"value":{"type":"number"}},"required":["sketch","entity","value"],"additionalProperties":false})";
+    const auto sketchConstraint = R"({"type":"object","properties":{"sketch":{"type":"string"},"type":{"type":"string"},"first":{"type":"string"},"second":{"type":"string"},"value":{"type":"number"}},"required":["sketch","type","first"],"additionalProperties":false})";
+    const auto extrude = R"({"type":"object","properties":{"sketch":{"type":"string"},"depth":{"type":"number"},"reverse":{"type":"boolean"}},"required":["sketch","depth"],"additionalProperties":false})";
+    const auto cut = R"({"type":"object","properties":{"sketch":{"type":"string"},"target":{"type":"string"},"depth":{"type":"number"},"throughAll":{"type":"boolean"},"reverse":{"type":"boolean"}},"required":["sketch","target"],"additionalProperties":false})";
     return {
         { "open_cad_workspace", "Open the CAD workspace.", emptyObject },
         { "open_frust_editor", "Open the FRust editor.", emptyObject },
@@ -34,6 +42,14 @@ std::vector<ai_provider::ToolDefinition> tools()
         { "open_3d_views", "Open the 3D views workspace and add a view.", emptyObject },
         { "cad_create_box", "Create a dimensioned box in millimeters and return its managed feature id.", dimensions },
         { "cad_create_cylinder", "Create a cylinder in millimeters and return its managed feature id.", cylinder },
+        { "cad_create_sketch", "Create an editable XY, XZ, or YZ planar sketch in millimeters.", sketch },
+        { "cad_sketch_line", "Add a line entity to a managed sketch.", sketchLine },
+        { "cad_sketch_rectangle", "Add a connected dimensioned rectangle to a managed sketch.", sketchRectangle },
+        { "cad_sketch_circle", "Add a dimensioned circle to a managed sketch.", sketchCircle },
+        { "cad_sketch_dimension", "Change a sketch line length or circle radius in millimeters.", sketchDimension },
+        { "cad_sketch_constraint", "Add a supported sketch constraint: coincident, horizontal, vertical, fixed, length, distance, radius, or diameter.", sketchConstraint },
+        { "cad_extrude", "Extrude a closed sketch profile into a real solid.", extrude },
+        { "cad_cut", "Cut a closed sketch profile from an explicit solid target; support finite depth or through-all.", cut },
         { "cad_set_dimensions", "Change a managed CAD feature's dimensions in millimeters.", featureDimensions },
         { "cad_set_placement", "Set a feature's millimeter position and optional Euler rotations in degrees.", placement },
         { "cad_boolean", "Create a union, subtract, or intersect feature from two managed feature ids.", booleanArgs },
@@ -47,7 +63,7 @@ DjehutiAgentPanel::DjehutiAgentPanel(juce::ApplicationProperties& p,
                                      std::function<std::string(const std::string&, const std::string&, std::shared_ptr<DjehutiAgentRequestState>)> dispatch)
     : properties(p), dispatchTool(std::move(dispatch))
 {
-    history.push_back({ "system", "You are the DjehutiCAD engineering assistant. Be concise and only claim operations that are implemented. The current CAD document uses the existing command service and an OCAF-backed live document; sketches and assemblies are future work. Use the CAD workspace, FRust editor, node editor, or 3D views when asked. Engineering changes are delivered on a feature branch, minimally checked, committed, merged to the repository's existing main branch, and pushed. Report completed CAD assignments to the architect chat, then stop; do not start another phase automatically." });
+        history.push_back({ "system", "You are the DjehutiCAD engineering assistant. Be concise and only claim operations that are implemented. The current CAD document uses the existing command service and an OCAF-backed live document; bounded XY/XZ/YZ sketches, dimensional constraints, extrude, and cut are supported, while assemblies and advanced feature families remain future work. Use the CAD workspace, FRust editor, node editor, or 3D views when asked. Engineering changes are delivered on a feature branch, minimally checked, committed, merged to the repository's existing main branch, and pushed. Report completed CAD assignments to the architect chat, then stop; do not start another phase automatically." });
     transcript.setMultiLine(true); transcript.setReadOnly(true); transcript.setScrollbarsShown(true); transcript.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff10151a)); transcript.setColour(juce::TextEditor::textColourId, juce::Colour(0xffdce9ee));
     input.setMultiLine(false); send.onClick = [this] { sendMessage(); }; cancelButton.onClick = [this] { if (request != nullptr) request->cancelled = true; if (worker != nullptr && worker->joinable()) worker->detach(); worker.reset(); request.reset(); setBusy(false); appendTranscript("Agent", "Request cancelled."); };
     addAndMakeVisible(transcript); addAndMakeVisible(input); addAndMakeVisible(send); addAndMakeVisible(cancelButton);
