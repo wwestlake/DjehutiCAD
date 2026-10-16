@@ -27,6 +27,8 @@ private:
 
     std::shared_ptr<djehuti::cad::CadCommandService> service;
     juce::TreeView tree { "Model" };
+    juce::Viewport propertiesViewport { "CAD Properties" };
+    juce::Component propertiesContent;
     juce::TextEditor name, width, depth, height, radius, x, y, z, firstOperand, secondOperand;
     juce::ComboBox plane;
     juce::Label title, status, units;

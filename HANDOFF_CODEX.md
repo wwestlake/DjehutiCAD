@@ -72,6 +72,16 @@ and keyboard GUI verification remains unperformed; source-level dispatch and
 build verification cover the new UI paths. The previously passing mounting
 plate service diagnostic was intentionally not rerun for this UI-only slice.
 
+The follow-up workspace correction attaches the constraint-type selector and
+the full property/action control set to a dedicated scrollable JUCE viewport.
+The modeling toolbar is split across two rows so the primary actions remain
+reachable without increasing the existing default or minimum window size.
+Focused source inspection confirmed the selector child relationship, viewport
+content sizing, and responsive bounds. The launched native application was not
+exposed through the available UI automation surface, so visual pointer and
+keyboard verification of the repaired layout remains unperformed. The prior
+service diagnostic was not rerun because this correction is UI-only.
+
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
 repository's existing `main`, push `main`, report to the architect chat, and
