@@ -97,6 +97,20 @@ diagnostic was available for pointer/visual verification, so Fit All, zoom,
 off-origin centering, and per-tile aspect behavior remain source-reviewed and
 build-verified rather than GUI-observed.
 
+The mesh extraction correction now obtains per-node normals from OCCT surface
+properties at triangulation UV coordinates, applies face reversal and surface
+location transforms, and checks each emitted triangle's winding against the
+oriented normal before publishing the existing position/normal/index layout.
+When UV normals are unavailable, nondegenerate triangle normals are used as a
+finite fallback; degenerate triangles are omitted. This preserves separate
+face boundaries while allowing curved surfaces to vary their normals. The
+focused Debug application target built successfully and produced
+`bin/Debug/djehuti_cad.exe`. Native GUI access was unavailable, and there is
+no existing direct mesh-orientation diagnostic path; therefore runtime
+normalization, exterior/hole direction, and visual culling behavior are
+source-reviewed and build-verified rather than directly observed. No prior
+CAD workflow, camera, solver, or renderer regression diagnostic was rerun.
+
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
 repository's existing `main`, push `main`, report to the architect chat, and

@@ -22,6 +22,7 @@
 #include <gp_Circ.hxx>
 #include <gp_Ax2.hxx>
 #include <Poly_Triangulation.hxx>
+#include <GeomLProp_SLProps.hxx>
 #include <TopLoc_Location.hxx>
 #include <Standard_Failure.hxx>
 #include <algorithm>
@@ -177,7 +178,92 @@ TopoDS_Shape CadDocument::place(const TopoDS_Shape& source,const CadFeature& f) 
 TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,juce::StringArray& active) { if(active.contains(id)){error="Circular feature dependency detected at "+id;return{};}active.add(id);const auto* f=find(id);if(!f){error="Missing feature dependency: "+id;return{};}try{TopoDS_Shape result;if(f->type=="sketch")result={};else if(f->type=="box")result=BRepPrimAPI_MakeBox(f->width,f->depth,f->height).Shape();else if(f->type=="cylinder")result=BRepPrimAPI_MakeCylinder(f->radius,f->height).Shape();else if(f->type=="extrude"){const auto* sketch=findSketch(f->sketchId.isEmpty()?f->firstOperand:f->sketchId);if(sketch==nullptr){error="Extrusion references a missing sketch.";return{};}result=extrudeSketch(*sketch,f->depth,f->reverse,error);}else if(f->type=="cut"){const auto* sketch=findSketch(f->sketchId.isEmpty()?f->secondOperand:f->sketchId);if(sketch==nullptr){error="Cut references a missing sketch.";return{};}auto target=evaluate(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,error,active);if(target.IsNull())return{};const bool throughAll=f->throughAll||f->depth<=0;double cutDepth=throughAll?0.0:f->depth;if(throughAll){Bnd_Box bounds;BRepBndLib::Add(target,bounds);Standard_Real xmin,ymin,zmin,xmax,ymax,zmax;bounds.Get(xmin,ymin,zmin,xmax,ymax,zmax);cutDepth=std::sqrt((xmax-xmin)*(xmax-xmin)+(ymax-ymin)*(ymax-ymin)+(zmax-zmin)*(zmax-zmin))+2.0;}auto tool=extrudeSketch(*sketch,cutDepth,f->reverse,error);if(tool.IsNull())return{};BRepAlgoAPI_Cut operation(target,tool);operation.Build();result=operation.Shape();collectBooleanHistory(operation,*f,target,tool,operationHistory);}else{auto a=evaluate(f->firstOperand,error,active);auto b=evaluate(f->secondOperand,error,active);if(a.IsNull()||b.IsNull())return{};if(f->type=="union"){BRepAlgoAPI_Fuse operation(a,b);operation.Build();result=operation.Shape();collectBooleanHistory(operation,*f,a,b,operationHistory);}else if(f->type=="subtract"){BRepAlgoAPI_Cut operation(a,b);operation.Build();result=operation.Shape();collectBooleanHistory(operation,*f,a,b,operationHistory);}else if(f->type=="intersect"){BRepAlgoAPI_Common operation(a,b);operation.Build();result=operation.Shape();collectBooleanHistory(operation,*f,a,b,operationHistory);}else{error="Unsupported feature type: "+f->type;return{};}}active.removeString(id);return f->type=="sketch"?result:place(result,*f);}catch(const Standard_Failure& ex){error="OCCT failed evaluating "+f->name+": "+juce::String(ex.GetMessageString());return{};} }
 bool CadDocument::rebuild(juce::String& error) { operationHistory.clear(); for(auto& f:items){juce::StringArray active;f.shape=evaluate(f.id,error,active);if(f.type!="sketch"&&f.shape.IsNull())return false;}return true; }
 
-std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const { if(cachedSnapshot!=nullptr&&cachedRevision==documentRevision)return cachedSnapshot;auto next=std::make_shared<CadRenderSnapshot>();next->revision=documentRevision;for(const auto& f:items)if(f.visible&&!f.shape.IsNull()){BRepMesh_IncrementalMesh mesh(f.shape,0.1,false,0.5,true);for(TopExp_Explorer ex(f.shape,TopAbs_FACE);ex.More();ex.Next()){const auto face=TopoDS::Face(ex.Current());TopLoc_Location loc;const auto tri=BRep_Tool::Triangulation(face,loc);if(tri.IsNull())continue;CadMesh out;for(int i=1;i<=tri->NbNodes();++i){const auto p=tri->Node(i).Transformed(loc.Transformation());out.vertices.insert(out.vertices.end(),{(float)p.X(),(float)p.Y(),(float)p.Z(),0.0f,0.0f,1.0f});}for(int i=1;i<=tri->NbTriangles();++i){int a,b,c;tri->Triangle(i).Get(a,b,c);out.indices.insert(out.indices.end(),{(std::uint32_t)(a-1),(std::uint32_t)(b-1),(std::uint32_t)(c-1)});}next->meshes.push_back(std::move(out));}}cachedSnapshot=next;cachedRevision=documentRevision;return cachedSnapshot; }
+std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
+{
+    if (cachedSnapshot != nullptr && cachedRevision == documentRevision) return cachedSnapshot;
+    auto next = std::make_shared<CadRenderSnapshot>();
+    next->revision = documentRevision;
+    for (const auto& f : items)
+        if (f.visible && !f.shape.IsNull())
+        {
+            BRepMesh_IncrementalMesh mesh(f.shape, 0.1, false, 0.5, true);
+            for (TopExp_Explorer ex(f.shape, TopAbs_FACE); ex.More(); ex.Next())
+            {
+                const auto face = TopoDS::Face(ex.Current());
+                TopLoc_Location triangulationLocation, surfaceLocation;
+                const auto tri = BRep_Tool::Triangulation(face, triangulationLocation);
+                const auto surface = BRep_Tool::Surface(face, surfaceLocation);
+                if (tri.IsNull()) continue;
+
+                CadMesh out;
+                std::vector<gp_Pnt> points;
+                std::vector<gp_Dir> normals;
+                std::vector<bool> normalValid;
+                points.reserve(static_cast<size_t>(tri->NbNodes()));
+                normals.reserve(static_cast<size_t>(tri->NbNodes()));
+                normalValid.reserve(static_cast<size_t>(tri->NbNodes()));
+                const bool reversed = face.Orientation() == TopAbs_REVERSED;
+                const auto transformNormal = [&](gp_Dir normal)
+                {
+                    if (reversed) normal.Reverse();
+                    return normal.Transformed(surfaceLocation.Transformation());
+                };
+
+                for (int i = 1; i <= tri->NbNodes(); ++i)
+                {
+                    const auto point = tri->Node(i).Transformed(triangulationLocation.Transformation());
+                    points.push_back(point);
+                    bool valid = false;
+                    gp_Dir normal(0.0, 0.0, 1.0);
+                    if (!surface.IsNull() && tri->HasUVNodes())
+                    {
+                        const auto uv = tri->UVNode(i);
+                        GeomLProp_SLProps properties(surface, uv.X(), uv.Y(), 1, 1.0e-7);
+                        if (properties.IsNormalDefined())
+                        {
+                            normal = transformNormal(properties.Normal());
+                            valid = true;
+                        }
+                    }
+                    normals.push_back(normal);
+                    normalValid.push_back(valid);
+                    out.vertices.insert(out.vertices.end(), {(float) point.X(), (float) point.Y(), (float) point.Z(), (float) normal.X(), (float) normal.Y(), (float) normal.Z()});
+                }
+
+                for (int i = 1; i <= tri->NbTriangles(); ++i)
+                {
+                    int a, b, c;
+                    tri->Triangle(i).Get(a, b, c);
+                    --a; --b; --c;
+                    const auto& pa = points[static_cast<size_t>(a)];
+                    const auto& pb = points[static_cast<size_t>(b)];
+                    const auto& pc = points[static_cast<size_t>(c)];
+                    const auto ab = gp_Vec(pa, pb), ac = gp_Vec(pa, pc);
+                    const auto cross = ab.Crossed(ac);
+                    if (cross.SquareMagnitude() <= 1.0e-20) continue;
+                    const auto normalIndex = normalValid[static_cast<size_t>(a)] ? a : (normalValid[static_cast<size_t>(b)] ? b : c);
+                    auto triangleNormal = gp_Dir(cross);
+                    if (reversed) triangleNormal.Reverse();
+                    const auto hasSurfaceNormal = normalValid[static_cast<size_t>(normalIndex)];
+                    const auto& referenceNormal = hasSurfaceNormal ? normals[static_cast<size_t>(normalIndex)] : triangleNormal;
+                    if (cross.Dot(gp_Vec(referenceNormal)) < 0.0) std::swap(b, c);
+                    if (!hasSurfaceNormal)
+                        for (const auto vertex : {a, b, c})
+                        {
+                            normals[static_cast<size_t>(vertex)] = triangleNormal;
+                            normalValid[static_cast<size_t>(vertex)] = true;
+                            const auto offset = static_cast<size_t>(vertex) * 6u + 3u;
+                            out.vertices[offset] = (float) triangleNormal.X(); out.vertices[offset + 1] = (float) triangleNormal.Y(); out.vertices[offset + 2] = (float) triangleNormal.Z();
+                        }
+                    out.indices.insert(out.indices.end(), {(std::uint32_t) a, (std::uint32_t) b, (std::uint32_t) c});
+                }
+                next->meshes.push_back(std::move(out));
+            }
+        }
+    cachedSnapshot = next;
+    cachedRevision = documentRevision;
+    return cachedSnapshot;
+}
 
 juce::String CadDocument::serializeSketches() const {juce::Array<juce::var> list;for(const auto& sketch:sketches){auto object=std::make_unique<juce::DynamicObject>();object->setProperty("id",sketch.id);object->setProperty("plane",sketch.plane);object->setProperty("offset",sketch.offset);juce::Array<juce::var> entities;for(const auto& entity:sketch.entities){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",entity.id);value->setProperty("type",entity.type);value->setProperty("groupId",entity.groupId);value->setProperty("x1",entity.x1);value->setProperty("y1",entity.y1);value->setProperty("x2",entity.x2);value->setProperty("y2",entity.y2);value->setProperty("radius",entity.radius);entities.add(juce::var(value.release()));}object->setProperty("entities",juce::var(entities));juce::Array<juce::var> constraints;for(const auto& constraint:sketch.constraints){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",constraint.id);value->setProperty("type",constraint.type);value->setProperty("firstEntity",constraint.firstEntity);value->setProperty("secondEntity",constraint.secondEntity);value->setProperty("value",constraint.value);constraints.add(juce::var(value.release()));}object->setProperty("constraints",juce::var(constraints));list.add(juce::var(object.release()));}return juce::JSON::toString(juce::var(list));}
 bool CadDocument::deserializeSketches(const juce::String& json,juce::String& error) {const auto parsed=juce::JSON::parse(json);auto* list=parsed.getArray();if(!list){error="Stored sketch data is invalid.";return false;}std::vector<CadSketch> loaded;for(const auto& value:*list){auto* object=value.getDynamicObject();if(!object){error="Stored sketch entry is invalid.";return false;}CadSketch sketch;sketch.id=object->getProperty("id").toString();sketch.plane=object->getProperty("plane").toString();sketch.offset=number(object->getProperty("offset"),0);if(auto* entities=object->getProperty("entities").getArray())for(const auto& entityValue:*entities){auto* entityObject=entityValue.getDynamicObject();if(!entityObject)continue;CadSketchEntity entity;entity.id=entityObject->getProperty("id").toString();entity.type=entityObject->getProperty("type").toString();entity.groupId=entityObject->getProperty("groupId").toString();entity.x1=number(entityObject->getProperty("x1"),0);entity.y1=number(entityObject->getProperty("y1"),0);entity.x2=number(entityObject->getProperty("x2"),0);entity.y2=number(entityObject->getProperty("y2"),0);entity.radius=number(entityObject->getProperty("radius"),1);sketch.entities.push_back(entity);}if(auto* constraints=object->getProperty("constraints").getArray())for(const auto& constraintValue:*constraints){auto* constraintObject=constraintValue.getDynamicObject();if(!constraintObject)continue;CadSketchConstraint constraint;constraint.id=constraintObject->getProperty("id").toString();constraint.type=constraintObject->getProperty("type").toString();constraint.firstEntity=constraintObject->getProperty("firstEntity").toString();constraint.secondEntity=constraintObject->getProperty("secondEntity").toString();constraint.value=number(constraintObject->getProperty("value"),0);sketch.constraints.push_back(constraint);}loaded.push_back(std::move(sketch));}sketches=std::move(loaded);return true;}
