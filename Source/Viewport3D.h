@@ -4,6 +4,8 @@
 #include "FrameResourceRing.h"
 #include "CadDocument.h"
 
+bool runViewportCameraCheck(juce::String& detail);
+
 class Viewport3D final : public juce::Component,
                          private juce::OpenGLRenderer,
                          private juce::Timer

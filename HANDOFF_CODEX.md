@@ -119,6 +119,18 @@ at 16, 32, 48, and 256 pixels. JUCE's installed CMake `ICON_SMALL` and
 `D:\DjehutiCAD\bin\Debug\djehuti_cad.exe`. `Icon.ExtractAssociatedIcon()`
 successfully extracted the icon from the executable, confirming embedding.
 
+The orbit view-matrix correction replaces the previous hand-built basis with
+an explicit model-centered look-at basis. Forward is normalized from eye to
+target, right is derived from a stable reference-up cross product, and up is
+derived from right and forward; translation is computed once from the eye,
+with pan applied in view coordinates. The explicit `--cad-camera-check` path
+passed the default orientation, the former level quarter-turn, and a nonzero
+target case for unit axes, pairwise orthogonality, determinant +1, target
+center/depth mapping, and distance preservation. The focused Debug target
+built successfully and produced `bin/Debug/djehuti_cad.exe`. No native GUI
+surface was available, so the user's visual orbit check remains unperformed.
+The recent scale-aware framing and corrected mesh normals were preserved.
+
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
 repository's existing `main`, push `main`, report to the architect chat, and

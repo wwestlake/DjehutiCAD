@@ -3,6 +3,7 @@
 #include "DjehutiCAD.h"
 #include "FrustExecution.h"
 #include "CadDocument.h"
+#include "Viewport3D.h"
 
 #include <BRepBndLib.hxx>
 #include <BRepGProp.hxx>
@@ -92,6 +93,14 @@ public:
             const bool ok = runCadFoundationCheck(detail);
             const auto result = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("djehuti_cad_foundation_check.result");
             result.replaceWithText(ok ? "CAD_SKETCH_FOUNDATION_CHECK_OK" : "CAD_SKETCH_FOUNDATION_CHECK_FAILED\n" + detail);
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.contains("--cad-camera-check"))
+        {
+            juce::String detail;
+            const bool ok = runViewportCameraCheck(detail);
+            const auto result = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("djehuti_cad_camera_check.result");
+            result.replaceWithText(ok ? "CAD_CAMERA_CHECK_OK\n" + detail : "CAD_CAMERA_CHECK_FAILED\n" + detail);
             std::exit(ok ? 0 : 1);
         }
         mainWindow = std::make_unique<MainWindow>(getApplicationName());

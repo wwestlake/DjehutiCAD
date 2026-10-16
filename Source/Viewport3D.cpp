@@ -7,22 +7,64 @@ using namespace juce::gl;
 namespace
 {
 struct M4 { float v[16] {}; };
+struct V3 { float x = 0.0f, y = 0.0f, z = 0.0f; };
+V3 add(V3 a, V3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+V3 sub(V3 a, V3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+V3 scale(V3 a, float s) { return {a.x * s, a.y * s, a.z * s}; }
+float dot(V3 a, V3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+V3 cross(V3 a, V3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+float length(V3 a) { return std::sqrt(dot(a, a)); }
+V3 normalized(V3 a) { const auto l = juce::jmax(1.0e-6f, length(a)); return scale(a, 1.0f / l); }
 M4 identity() { M4 m; m.v[0] = m.v[5] = m.v[10] = m.v[15] = 1.0f; return m; }
 M4 mul(const M4& a, const M4& b) { M4 r; for (int c = 0; c < 4; ++c) for (int row = 0; row < 4; ++row) for (int k = 0; k < 4; ++k) r.v[c * 4 + row] += a.v[k * 4 + row] * b.v[c * 4 + k]; return r; }
 M4 perspective(float fov, float aspect, float nearZ, float farZ) { M4 m; const auto f = 1.0f / std::tan(fov * 0.5f); m.v[0] = f / aspect; m.v[5] = f; m.v[10] = (farZ + nearZ) / (nearZ - farZ); m.v[11] = -1.0f; m.v[14] = 2.0f * farZ * nearZ / (nearZ - farZ); return m; }
 M4 camera(float yaw, float pitch, float distance, float targetX, float targetY, float targetZ, float panX, float panY)
 {
     const auto cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
-    const auto x = targetX + distance * cp * sy, y = targetY + distance * sp, z = targetZ + distance * cp * cy;
-    const auto fx = -x / distance, fy = -y / distance, fz = -z / distance;
-    const auto sx = fz, sz = -fx, sl = std::sqrt(sx * sx + sz * sz);
-    M4 m = identity(); m.v[0] = sx / sl; m.v[8] = sz / sl; m.v[1] = -fy * sz / sl; m.v[5] = fz * sx / sl; m.v[9] = -fy * sx / sl; m.v[2] = -fx; m.v[6] = -fy; m.v[10] = -fz;
-    m.v[12] = -(m.v[0] * x + m.v[8] * z) + m.v[0] * targetX + m.v[8] * targetZ + panX;
-    m.v[13] = -(m.v[1] * x + m.v[5] * y + m.v[9] * z) + m.v[1] * targetX + m.v[5] * targetY + m.v[9] * targetZ + panY;
-    m.v[14] = -(m.v[2] * x + m.v[6] * y + m.v[10] * z) + m.v[2] * targetX + m.v[6] * targetY + m.v[10] * targetZ;
+    const V3 target {targetX, targetY, targetZ};
+    const V3 eye = add(target, {distance * cp * sy, distance * sp, distance * cp * cy});
+    const auto forward = normalized(sub(target, eye));
+    const auto referenceUp = V3 {0.0f, 1.0f, 0.0f};
+    const auto right = normalized(cross(forward, referenceUp));
+    const auto up = cross(right, forward);
+    M4 m = identity();
+    m.v[0] = right.x; m.v[4] = right.y; m.v[8] = right.z;
+    m.v[1] = up.x; m.v[5] = up.y; m.v[9] = up.z;
+    m.v[2] = -forward.x; m.v[6] = -forward.y; m.v[10] = -forward.z;
+    m.v[12] = -dot(right, eye) + panX;
+    m.v[13] = -dot(up, eye) + panY;
+    m.v[14] = dot(forward, eye);
     return m;
 }
 M4 rotation(float a) { M4 m = identity(); m.v[0] = std::cos(a); m.v[2] = std::sin(a); m.v[8] = -std::sin(a); m.v[10] = std::cos(a); return m; }
+}
+
+bool runViewportCameraCheck(juce::String& detail)
+{
+    const auto close = [](float a, float b, float tolerance) { return std::abs(a - b) <= tolerance; };
+    const auto check = [&](bool ok, const char* message)
+    {
+        if (!ok) detail = message;
+        return ok;
+    };
+    const std::array<std::array<float, 3>, 3> cases {{{0.55f, 0.35f, 4.0f}, {juce::MathConstants<float>::halfPi, 0.0f, 4.0f}, {0.30f, -0.20f, 12.0f}}};
+    const V3 target {13.0f, -7.0f, 29.0f};
+    for (const auto& item : cases)
+    {
+        const auto m = camera(item[0], item[1], item[2], target.x, target.y, target.z, 0.0f, 0.0f);
+        const V3 right {m.v[0], m.v[4], m.v[8]}, up {m.v[1], m.v[5], m.v[9]}, back {m.v[2], m.v[6], m.v[10]};
+        if (!check(close(length(right), 1.0f, 1.0e-4f) && close(length(up), 1.0f, 1.0e-4f) && close(length(back), 1.0f, 1.0e-4f), "Camera basis is not unit length.")) return false;
+        if (!check(close(dot(right, up), 0.0f, 1.0e-4f) && close(dot(right, back), 0.0f, 1.0e-4f) && close(dot(up, back), 0.0f, 1.0e-4f), "Camera basis is not orthogonal.")) return false;
+        const auto determinant = dot(right, cross(up, back));
+        if (!check(close(determinant, 1.0f, 1.0e-4f), "Camera basis is reflected.")) return false;
+        const V3 targetInView {dot(right, target) + m.v[12], dot(up, target) + m.v[13], dot(back, target) + m.v[14]};
+        if (!check(close(targetInView.x, 0.0f, 1.0e-3f) && close(targetInView.y, 0.0f, 1.0e-3f) && close(targetInView.z, -item[2], 1.0e-3f), "Camera target does not map to view center.")) return false;
+        const V3 vector {1.25f, -2.0f, 0.75f};
+        const V3 transformed {dot(right, vector), dot(up, vector), dot(back, vector)};
+        if (!check(close(length(transformed), length(vector), 1.0e-4f), "Camera view changes world-space distance.")) return false;
+    }
+    detail = "Camera basis, determinant, target mapping, and distance preservation passed.";
+    return true;
 }
 
 Viewport3D::Viewport3D(int number) : viewNumber(number)
