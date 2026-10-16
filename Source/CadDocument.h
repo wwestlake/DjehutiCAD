@@ -90,7 +90,7 @@ public:
     bool createBox(double width, double depth, double height, juce::String& id, juce::String& error);
     bool createCylinder(double radius, double height, juce::String& id, juce::String& error);
     bool createSketch(const juce::String& plane, double offset, juce::String& id, juce::String& error);
-    bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error);
+    bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {});
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error);
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error);
     bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error);
@@ -177,7 +177,7 @@ public:
     bool createBox(double w, double d, double h, juce::String& id, juce::String& error);
     bool createCylinder(double radius, double height, juce::String& id, juce::String& error);
     bool createSketch(const juce::String& plane, double offset, juce::String& id, juce::String& error) { return model.createSketch(plane, offset, id, error); }
-    bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error) { return model.addSketchLine(sketchId, x1, y1, x2, y2, entityId, error); }
+    bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {}) { return model.addSketchLine(sketchId, x1, y1, x2, y2, entityId, error, firstConnection, secondConnection); }
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error) { return model.addSketchRectangle(sketchId, x, y, width, height, groupId, error); }
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error) { return model.addSketchCircle(sketchId, x, y, radius, entityId, error); }
     bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error) { return model.setSketchEntityDimension(sketchId, entityId, value, error); }

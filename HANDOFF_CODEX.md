@@ -58,6 +58,20 @@ not GUI verification. Remaining limits are no arbitrary face-attached sketch
 support, no general topology-selection UI, and no loft/sweep/revolve or
 assembly system.
 
+The final sketch UI correction adds endpoint snapping in an 8-pixel screen
+tolerance with visible snap feedback. Snapped line starts and ends create
+coincident constraints in the same command transaction as the line, keeping
+the gesture undoable as one operation. Shift-click selects a second entity;
+the compact constraint menu exposes horizontal, vertical, coincident,
+fixed/origin, length, radius, and diameter commands with validation/status
+feedback. Escape and Cancel discard only an unfinished gesture, while Finish
+returns the canvas to selection mode and requires explicit re-entry.
+
+The affected Debug application target built successfully. Interactive pointer
+and keyboard GUI verification remains unperformed; source-level dispatch and
+build verification cover the new UI paths. The previously passing mounting
+plate service diagnostic was intentionally not rerun for this UI-only slice.
+
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
 repository's existing `main`, push `main`, report to the architect chat, and
