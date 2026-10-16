@@ -111,13 +111,15 @@ normalization, exterior/hole direction, and visual culling behavior are
 source-reviewed and build-verified rather than directly observed. No prior
 CAD workflow, camera, solver, or renderer regression diagnostic was rerun.
 
-The application now has a DjehutiCAD-specific Windows icon. The editable vector
-master is `Resources/djehuti-cad-icon.svg`, with transparent PNG source sizes
-at 16, 32, 48, and 256 pixels. JUCE's installed CMake `ICON_SMALL` and
-`ICON_BIG` path generates the Windows icon resource; the Debug build produced
-`D:\DjehutiCAD\build\DjehutiCAD_artefacts\JuceLibraryCode\icon.ico` and
-`D:\DjehutiCAD\bin\Debug\djehuti_cad.exe`. `Icon.ExtractAssociatedIcon()`
-successfully extracted the icon from the executable, confirming embedding.
+The application now uses the approved pictorial DjehutiCAD icon: a machined
+metal gear housing and wireframe emblem in the suite's cyan-violet family.
+The canonical raster master is `Resources/djehuti-cad-icon-master.png`; the
+transparent derived PNG sizes are 16, 32, 48, and 256 pixels. The earlier D
+monogram SVG is removed from the active resource set. JUCE's installed CMake
+`ICON_SMALL` and `ICON_BIG` path generates the Windows icon resource; the
+Debug build produced `D:\DjehutiCAD\build\DjehutiCAD_artefacts\JuceLibraryCode\icon.ico`
+and `D:\DjehutiCAD\bin\Debug\djehuti_cad.exe`. The approved icon was
+confirmed embedded by extracting the associated icon from the executable.
 
 The orbit view-matrix correction replaces the previous hand-built basis with
 an explicit model-centered look-at basis. Forward is normalized from eye to

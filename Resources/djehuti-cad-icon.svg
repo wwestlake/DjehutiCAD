@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <title>DjehutiCAD application icon</title>
-  <rect width="256" height="256" rx="44" fill="#111c24"/>
-  <path d="M47 63h92c39 0 70 29 70 65s-31 65-70 65H47z" fill="#18bfd1"/>
-  <path d="M78 91h56c22 0 39 15 39 37s-17 37-39 37H78z" fill="#111c24"/>
-  <path d="M47 63v130h31V91h56c22 0 39 15 39 37s-17 37-39 37H78v28h61c39 0 70-29 70-65s-31-65-70-65z" fill="#6fe8ee" opacity=".92"/>
-  <path d="M47 63h31v130H47z" fill="#0b8caa"/>
-  <path d="M78 91h56c22 0 39 15 39 37 0 4-.6 7.8-1.8 11.3-5.4-14.8-19.2-24.3-37.2-24.3H78z" fill="#b7fbf6" opacity=".9"/>
-</svg>
