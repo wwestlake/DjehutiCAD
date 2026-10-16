@@ -10,14 +10,17 @@ struct M4 { float v[16] {}; };
 M4 identity() { M4 m; m.v[0] = m.v[5] = m.v[10] = m.v[15] = 1.0f; return m; }
 M4 mul(const M4& a, const M4& b) { M4 r; for (int c = 0; c < 4; ++c) for (int row = 0; row < 4; ++row) for (int k = 0; k < 4; ++k) r.v[c * 4 + row] += a.v[k * 4 + row] * b.v[c * 4 + k]; return r; }
 M4 perspective(float fov, float aspect, float nearZ, float farZ) { M4 m; const auto f = 1.0f / std::tan(fov * 0.5f); m.v[0] = f / aspect; m.v[5] = f; m.v[10] = (farZ + nearZ) / (nearZ - farZ); m.v[11] = -1.0f; m.v[14] = 2.0f * farZ * nearZ / (nearZ - farZ); return m; }
-M4 camera(float yaw, float pitch, float distance, float panX, float panY)
+M4 camera(float yaw, float pitch, float distance, float targetX, float targetY, float targetZ, float panX, float panY)
 {
     const auto cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
-    const auto x = distance * cp * sy, y = distance * sp, z = distance * cp * cy;
+    const auto x = targetX + distance * cp * sy, y = targetY + distance * sp, z = targetZ + distance * cp * cy;
     const auto fx = -x / distance, fy = -y / distance, fz = -z / distance;
     const auto sx = fz, sz = -fx, sl = std::sqrt(sx * sx + sz * sz);
     M4 m = identity(); m.v[0] = sx / sl; m.v[8] = sz / sl; m.v[1] = -fy * sz / sl; m.v[5] = fz * sx / sl; m.v[9] = -fy * sx / sl; m.v[2] = -fx; m.v[6] = -fy; m.v[10] = -fz;
-    m.v[12] = -(m.v[0] * x + m.v[8] * z) + panX; m.v[13] = -(m.v[1] * x + m.v[5] * y + m.v[9] * z) + panY; m.v[14] = -(m.v[2] * x + m.v[6] * y + m.v[10] * z); return m;
+    m.v[12] = -(m.v[0] * x + m.v[8] * z) + m.v[0] * targetX + m.v[8] * targetZ + panX;
+    m.v[13] = -(m.v[1] * x + m.v[5] * y + m.v[9] * z) + m.v[1] * targetX + m.v[5] * targetY + m.v[9] * targetZ + panY;
+    m.v[14] = -(m.v[2] * x + m.v[6] * y + m.v[10] * z) + m.v[2] * targetX + m.v[6] * targetY + m.v[10] * targetZ;
+    return m;
 }
 M4 rotation(float a) { M4 m = identity(); m.v[0] = std::cos(a); m.v[2] = std::sin(a); m.v[8] = -std::sin(a); m.v[10] = std::cos(a); return m; }
 }
@@ -28,18 +31,62 @@ Viewport3D::Viewport3D(int number) : viewNumber(number)
 }
 Viewport3D::~Viewport3D() { context.detach(); }
 void Viewport3D::paint(juce::Graphics& g) { g.setColour(juce::Colour(0xffa9c8d2)); g.drawText("View " + juce::String(viewNumber), 10, 8, 100, 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
-void Viewport3D::resized() {}
+void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged) frameScene(); }
 void Viewport3D::timerCallback() {}
 void Viewport3D::mouseDown(const juce::MouseEvent& e) { dragStart = e.position.roundToInt(); }
-void Viewport3D::mouseDrag(const juce::MouseEvent& e) { const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } dragStart = now; }
-void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w) { distance = juce::jlimit(1.5f, 12.0f, distance * (1.0f - w.deltaY * 0.25f)); }
-void Viewport3D::resetCamera() { yaw = 0.55f; pitch = 0.35f; distance = 4.0f; panX = panY = 0.0f; }
-void Viewport3D::fitAll() { distance = 8.0f; panX = panY = 0.0f; }
-void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { pendingSnapshot = std::move(next); }
+void Viewport3D::mouseDrag(const juce::MouseEvent& e) { const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } userCameraChanged = true; dragStart = now; }
+void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w)
+{
+    const auto minimumDistance = juce::jmax(0.001f, sceneRadius * 0.02f);
+    const auto maximumDistance = juce::jmax(1000.0f, sceneRadius * 100000.0f);
+    distance = juce::jlimit(minimumDistance, maximumDistance, distance * std::exp(-w.deltaY * 0.5f)); userCameraChanged = true;
+}
+void Viewport3D::resetCamera() { yaw = 0.55f; pitch = 0.35f; panX = panY = 0.0f; userCameraChanged = false; frameScene(); }
+void Viewport3D::fitAll() { userCameraChanged = false; frameScene(); }
+void Viewport3D::updateSceneBounds(const std::shared_ptr<const djehuti::cad::CadRenderSnapshot>& snapshot)
+{
+    if (snapshot == nullptr || snapshot->revision == boundsRevision) return;
+    boundsRevision = snapshot->revision;
+    bool found = false;
+    float minX = 0.0f, minY = 0.0f, minZ = 0.0f, maxX = 0.0f, maxY = 0.0f, maxZ = 0.0f;
+    for (const auto& mesh : snapshot->meshes)
+        for (size_t i = 0; i + 2 < mesh.vertices.size(); i += 6)
+        {
+            const auto x = mesh.vertices[i], y = mesh.vertices[i + 1], z = mesh.vertices[i + 2];
+            if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) continue;
+            if (!found) { minX = maxX = x; minY = maxY = y; minZ = maxZ = z; found = true; }
+            else { minX = juce::jmin(minX, x); minY = juce::jmin(minY, y); minZ = juce::jmin(minZ, z); maxX = juce::jmax(maxX, x); maxY = juce::jmax(maxY, y); maxZ = juce::jmax(maxZ, z); }
+        }
+    hasSceneBounds = found;
+    if (found)
+    {
+        sceneCenterX = (minX + maxX) * 0.5f; sceneCenterY = (minY + maxY) * 0.5f; sceneCenterZ = (minZ + maxZ) * 0.5f;
+        const auto dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+        sceneRadius = juce::jmax(0.001f, 0.5f * std::sqrt(dx * dx + dy * dy + dz * dz));
+        if (!hasFramedInitialScene) { frameScene(); hasFramedInitialScene = true; }
+    }
+    else if (!hasFramedInitialScene) { targetX = targetY = targetZ = 0.0f; sceneRadius = 1.0f; }
+}
+void Viewport3D::frameScene()
+{
+    const auto aspect = getHeight() > 0 ? juce::jmax(0.01f, (float) getWidth() / (float) getHeight()) : 1.0f;
+    const auto verticalHalfFov = 0.85f * 0.5f;
+    const auto horizontalHalfFov = std::atan(std::tan(verticalHalfFov) * aspect);
+    const auto limitingHalfFov = juce::jmin(verticalHalfFov, horizontalHalfFov);
+    const auto margin = juce::jmax(0.001f, sceneRadius) * 1.25f;
+    targetX = sceneCenterX; targetY = sceneCenterY; targetZ = sceneCenterZ;
+    distance = juce::jmax(0.001f, margin / std::tan(limitingHalfFov));
+    panX = panY = 0.0f;
+}
+void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { updateSceneBounds(next); pendingSnapshot = std::move(next); }
 juce::String Viewport3D::diagnostics() const { return glStatus; }
 void Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 {
-    const auto p = perspective(0.85f, getHeight() > 0 ? (float) getWidth() / (float) getHeight() : 1.0f, 0.1f, 100.0f); const auto v = camera(yaw, pitch, distance, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
+    const auto aspect = getHeight() > 0 ? juce::jmax(0.01f, (float) getWidth() / (float) getHeight()) : 1.0f;
+    const auto depthRadius = juce::jmax(0.001f, sceneRadius);
+    const auto nearZ = juce::jmax(0.001f, distance - depthRadius * 1.5f);
+    const auto farZ = juce::jmax(nearZ + 1.0f, distance + depthRadius * 1.5f);
+    const auto p = perspective(0.85f, aspect, nearZ, farZ); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
     DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle; frames.publish(packet);
 }
 

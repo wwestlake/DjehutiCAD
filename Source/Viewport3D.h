@@ -29,6 +29,8 @@ private:
     void openGLContextClosing() override;
     void releaseGL();
     void drawCube(const float* mvp);
+    void updateSceneBounds(const std::shared_ptr<const djehuti::cad::CadRenderSnapshot>& snapshot);
+    void frameScene();
 
     const int viewNumber;
     juce::OpenGLContext context;
@@ -38,6 +40,10 @@ private:
     GLuint vao = 0, vbo = 0, ibo = 0;
     DjehutiFrameResourceRing frames;
     float yaw = 0.55f, pitch = 0.35f, distance = 4.0f, panX = 0.0f, panY = 0.0f;
+    float targetX = 0.0f, targetY = 0.0f, targetZ = 0.0f;
+    float sceneCenterX = 0.0f, sceneCenterY = 0.0f, sceneCenterZ = 0.0f, sceneRadius = 1.0f;
+    bool hasSceneBounds = false, hasFramedInitialScene = false, userCameraChanged = false;
+    std::uint64_t boundsRevision = 0;
     juce::Point<int> dragStart;
     bool glReady = false;
     juce::String glStatus = "Waiting for OpenGL context";

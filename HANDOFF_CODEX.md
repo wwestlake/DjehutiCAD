@@ -82,6 +82,21 @@ exposed through the available UI automation surface, so visual pointer and
 keyboard verification of the repaired layout remains unperformed. The prior
 service diagnostic was not rerun because this correction is UI-only.
 
+The viewport framing correction replaces the cube-sized camera limits with
+per-view bounds derived from immutable render-snapshot mesh vertices. Initial
+nonempty snapshots and explicit Reset/Fit All center the orbit target on the
+visible model and compute distance from the viewport aspect ratio, field of
+view, and a margin. Zoom is proportional and bounded from scene scale rather
+than an arbitrary 12-unit ceiling. Near and far clipping are derived from the
+current camera distance and scene radius. Bounds refresh on snapshot revisions
+without refitting an already-used camera, preserving ordinary user edits;
+resize refits only a view that has not been manually changed. The focused
+Debug application target built successfully and produced
+`bin/Debug/djehuti_cad.exe`. No native GUI surface or existing camera-math
+diagnostic was available for pointer/visual verification, so Fit All, zoom,
+off-origin centering, and per-tile aspect behavior remain source-reviewed and
+build-verified rather than GUI-observed.
+
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
 repository's existing `main`, push `main`, report to the architect chat, and
