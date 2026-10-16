@@ -86,6 +86,15 @@ public:
     void setFile(const juce::File& file) { documentFile = file; }
     juce::File file() const { return documentFile; }
 
+public:
+    struct CadTopologyEvolution
+    {
+        juce::String featureId;
+        std::vector<std::pair<TopoDS_Shape, TopoDS_Shape>> generated;
+        std::vector<std::pair<TopoDS_Shape, TopoDS_Shape>> modified;
+        std::vector<TopoDS_Shape> deleted;
+    };
+
 private:
     bool mutate(std::function<bool(juce::String&)> action, juce::String& error);
     bool rebuild(juce::String& error);
@@ -103,6 +112,7 @@ private:
 
     std::vector<CadFeature> items;
     std::vector<CadPersistentReference> references;
+    std::vector<CadTopologyEvolution> operationHistory;
     Handle(TDocStd_Application) ocafApplication;
     Handle(TDocStd_Document) ocafDocument;
     std::uint64_t documentRevision = 0;

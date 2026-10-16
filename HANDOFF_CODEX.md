@@ -26,15 +26,14 @@ roles. It is not yet a general topology-selection system and there is no new
 reference-selection UI.
 
 The focused Debug application target was built successfully and produced
-`bin/Debug/djehuti_cad.exe`. A full runtime workflow was not performed: the
-existing command service exposes modeling, undo, and redo, but does not expose
-the representative-reference create/resolve calls, and no separate test
-harness was added. Therefore box/cylinder/subtraction, dimension edit,
-undo/redo, named-reference resolution, native reopen, and JSON export remain
-runtime-unverified in this correction. Do not describe interactive GUI behavior
-as verified unless that workflow has actually been observed. OCAF is complete
-for this document foundation; sketches, assemblies, and new modeling tools are
-separate authorized work.
+`bin/Debug/djehuti_cad.exe`. The existing command service was exercised through
+the application's explicit `--cad-foundation-check` diagnostic mode. The check
+passed one box plus one cylinder subtraction, representative-reference
+creation, dimension edit, reference resolution, OCAF undo/redo, native `.djo`
+save/reopen, and JSON export. It writes only a temporary result marker and
+does not affect normal application startup. This is service/kernel verification,
+not GUI workflow verification. OCAF is complete for this document foundation;
+sketches, assemblies, and new modeling tools are separate authorized work.
 
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
