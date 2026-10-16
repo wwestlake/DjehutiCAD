@@ -126,7 +126,7 @@ if(WIN32)
 endif()
 
 if(EXISTS "${OCCT_INCLUDE_DIR}/TopoDS_Shape.hxx")
-    target_link_libraries(DjehutiCAD PRIVATE TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKMesh TKShHealing TKBO TKBool)
+    target_link_libraries(DjehutiCAD PRIVATE TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKMesh TKShHealing TKBO TKBool TKCDF TKStd TKStdL TKLCAF TKCAF TKBin TKBinL)
 endif()
 
 juce_generate_juce_header(DjehutiCAD)

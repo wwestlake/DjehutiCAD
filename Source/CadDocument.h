@@ -11,6 +11,8 @@
 #include <BRep_Tool.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TDocStd_Application.hxx>
+#include <TDocStd_Document.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
@@ -46,6 +48,13 @@ struct CadRenderSnapshot
     std::vector<CadMesh> meshes;
 };
 
+struct CadPersistentReference
+{
+    juce::String ownerFeatureId;
+    juce::String topologyKind;
+    juce::String semanticRole;
+};
+
 class CadDocument
 {
 public:
@@ -62,8 +71,11 @@ public:
     bool remove(const juce::String& id, juce::String& error);
     bool undo(juce::String& error);
     bool redo(juce::String& error);
-    bool save(const juce::File& file, juce::String& error) const;
+    bool save(const juce::File& file, juce::String& error);
     bool load(const juce::File& file, juce::String& error);
+    bool exportJson(const juce::File& file, juce::String& error) const;
+    bool makeRepresentativeReference(const juce::String& featureId, CadPersistentReference& reference, juce::String& error);
+    bool resolveReference(const CadPersistentReference& reference, juce::String& error) const;
 
     std::shared_ptr<const CadRenderSnapshot> snapshot() const;
     const std::vector<CadFeature>& features() const { return items; }
@@ -75,19 +87,24 @@ public:
     juce::File file() const { return documentFile; }
 
 private:
-    struct State { juce::String json; };
     bool mutate(std::function<bool(juce::String&)> action, juce::String& error);
     bool rebuild(juce::String& error);
     TopoDS_Shape evaluate(const juce::String& id, juce::String& error, juce::StringArray& active);
     TopoDS_Shape place(const TopoDS_Shape& source, const CadFeature& feature) const;
     juce::String serialize() const;
     bool deserialize(const juce::String& json, juce::String& error);
-    void rememberUndo();
+    void initializeOCAF();
+    bool syncOCAFFromItems(juce::String& error);
+    bool syncItemsFromOCAF(juce::String& error);
+    bool saveNative(const juce::File& file, juce::String& error);
+    bool loadNative(const juce::File& file, juce::String& error);
     void invalidate();
     static juce::String newId(const char* prefix, int number);
 
     std::vector<CadFeature> items;
-    std::vector<State> undoStack, redoStack;
+    std::vector<CadPersistentReference> references;
+    Handle(TDocStd_Application) ocafApplication;
+    Handle(TDocStd_Document) ocafDocument;
     std::uint64_t documentRevision = 0;
     int nextNumber = 1;
     bool dirty = false;
@@ -112,6 +129,8 @@ public:
     bool remove(const juce::String& id, juce::String& error) { return model.remove(id, error); }
     bool undo(juce::String& error) { return model.undo(error); }
     bool redo(juce::String& error) { return model.redo(error); }
+    bool makeRepresentativeReference(const juce::String& id, CadPersistentReference& reference, juce::String& error) { return model.makeRepresentativeReference(id, reference, error); }
+    bool resolveReference(const CadPersistentReference& reference, juce::String& error) const { return model.resolveReference(reference, error); }
     bool save(const juce::File& file, juce::String& error) { return model.save(file, error); }
     bool load(const juce::File& file, juce::String& error) { return model.load(file, error); }
     std::shared_ptr<const CadRenderSnapshot> snapshot() const { return model.snapshot(); }
