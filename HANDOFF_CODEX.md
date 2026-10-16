@@ -111,6 +111,14 @@ normalization, exterior/hole direction, and visual culling behavior are
 source-reviewed and build-verified rather than directly observed. No prior
 CAD workflow, camera, solver, or renderer regression diagnostic was rerun.
 
+The application now has a DjehutiCAD-specific Windows icon. The editable vector
+master is `Resources/djehuti-cad-icon.svg`, with transparent PNG source sizes
+at 16, 32, 48, and 256 pixels. JUCE's installed CMake `ICON_SMALL` and
+`ICON_BIG` path generates the Windows icon resource; the Debug build produced
+`D:\DjehutiCAD\build\DjehutiCAD_artefacts\JuceLibraryCode\icon.ico` and
+`D:\DjehutiCAD\bin\Debug\djehuti_cad.exe`. `Icon.ExtractAssociatedIcon()`
+successfully extracted the icon from the executable, confirming embedding.
+
 Delivery rule: work on a feature branch, perform the focused Debug build and
 minimal check, commit and push the feature branch, fast-forward merge into the
 repository's existing `main`, push `main`, report to the architect chat, and

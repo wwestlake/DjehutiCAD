@@ -55,6 +55,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/bin/Rele
 juce_add_gui_app(DjehutiCAD
     PRODUCT_NAME "DjehutiCAD"
     VERSION 0.1.0
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/djehuti-cad-icon-256.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/djehuti-cad-icon-48.png"
 )
 set_target_properties(DjehutiCAD PROPERTIES OUTPUT_NAME "djehuti_cad")
 
