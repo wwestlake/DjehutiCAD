@@ -1,0 +1,22 @@
+{
+  "type": "SignalInterface",
+  "simulationId": "dewb-session-3f2a",
+  "simulationName": "Shaft and carriage drive",
+  "signalInterfaceRevision": 1,
+  "signals": [
+    {
+      "id": "carriage.position",
+      "name": "Carriage position",
+      "quantity": "position",
+      "unit": "mm",
+      "kind": "state"
+    },
+    {
+      "id": "spindle.speed",
+      "name": "Spindle speed",
+      "quantity": "angular_velocity",
+      "unit": "rpm",
+      "kind": "rate"
+    }
+  ]
+}

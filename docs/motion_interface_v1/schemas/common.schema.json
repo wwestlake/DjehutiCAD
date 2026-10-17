@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/common.schema.json",
+  "title": "Shared definitions",
+  "$defs": {
+    "decimalString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,18})$",
+      "description": "Unsigned 64-bit value (< 2^63) as a decimal string."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vector3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "quaternion": {
+      "type": "object",
+      "description": "Unit Hamilton quaternion, scalar first, active rotation.",
+      "properties": {
+        "w": {
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "w",
+        "x",
+        "y",
+        "z"
+      ],
+      "additionalProperties": false
+    },
+    "frame": {
+      "type": "object",
+      "description": "p_outer = R(rotation) * p_inner + translation; translation in metres.",
+      "properties": {
+        "translation": {
+          "$ref": "#/$defs/vector3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/quaternion"
+        }
+      },
+      "required": [
+        "translation",
+        "rotation"
+      ],
+      "additionalProperties": false
+    },
+    "quantity": {
+      "enum": [
+        "angle",
+        "angular_velocity",
+        "position",
+        "linear_velocity"
+      ]
+    },
+    "unit": {
+      "enum": [
+        "rad",
+        "deg",
+        "rev",
+        "rad/s",
+        "deg/s",
+        "rpm",
+        "rev/s",
+        "m",
+        "mm",
+        "m/s",
+        "mm/s"
+      ]
+    },
+    "lifecycle": {
+      "enum": [
+        "running",
+        "paused",
+        "stopped",
+        "faulted"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "joint": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  }
+}

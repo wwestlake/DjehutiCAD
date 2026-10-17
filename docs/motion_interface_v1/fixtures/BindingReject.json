@@ -1,0 +1,12 @@
+{
+  "type": "BindingReject",
+  "profileRevision": 8,
+  "errors": [
+    {
+      "code": "unitMismatch",
+      "joint": "joint-10",
+      "signal": "carriage.position",
+      "message": "carriage.position is published in m, the profile states mm."
+    }
+  ]
+}

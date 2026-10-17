@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/MechanicalInterface.schema.json",
+  "title": "MechanicalInterface",
+  "description": "DCAD -> DEWB: available motion connections.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "MechanicalInterface"
+    },
+    "modelId": {
+      "type": "string"
+    },
+    "documentName": {
+      "type": "string"
+    },
+    "interfaceRevision": {
+      "type": "integer"
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "lengthUnit": {
+      "const": "m"
+    },
+    "angleUnit": {
+      "const": "rad"
+    },
+    "rotationConvention": {
+      "const": "hamilton-wxyz-active"
+    },
+    "motionAxis": {
+      "const": "+Z"
+    },
+    "instances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "type": "string"
+          },
+          "featureId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    "joints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "fixed",
+              "revolute",
+              "prismatic"
+            ]
+          },
+          "parent": {
+            "type": "string",
+            "description": "Instance id or \"world\"."
+          },
+          "child": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "parentToJoint": {
+            "$ref": "common.schema.json#/$defs/frame"
+          },
+          "jointToChildAtReference": {
+            "$ref": "common.schema.json#/$defs/frame"
+          },
+          "coordinate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "quantity": {
+                    "enum": [
+                      "angle",
+                      "position"
+                    ]
+                  },
+                  "unit": {
+                    "enum": [
+                      "rad",
+                      "m"
+                    ]
+                  },
+                  "reference": {
+                    "type": "number"
+                  },
+                  "limits": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "lower": {
+                            "type": "number"
+                          },
+                          "upper": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "lower",
+                          "upper"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "quantity",
+                  "unit",
+                  "reference",
+                  "limits"
+                ]
+              }
+            ]
+          },
+          "acceptedSourceQuantities": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/quantity"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type",
+          "parent",
+          "child",
+          "parentToJoint",
+          "jointToChildAtReference",
+          "coordinate",
+          "acceptedSourceQuantities"
+        ]
+      }
+    }
+  },
+  "required": [
+    "type",
+    "modelId",
+    "interfaceRevision",
+    "profileRevision",
+    "lengthUnit",
+    "angleUnit",
+    "rotationConvention",
+    "motionAxis",
+    "instances",
+    "joints"
+  ]
+}

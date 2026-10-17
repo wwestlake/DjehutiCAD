@@ -1,0 +1,21 @@
+{
+  "type": "SynchronizeState",
+  "simulationId": "dewb-session-3f2a",
+  "timelineGeneration": 1,
+  "profileRevision": 8,
+  "sequence": "1",
+  "simTimePs": "0",
+  "microstep": 0,
+  "lifecycle": "paused",
+  "joints": [
+    {
+      "joint": "joint-10",
+      "coordinate": 0.0
+    },
+    {
+      "joint": "joint-12",
+      "coordinate": 0.0,
+      "velocity": 3.141592653589793
+    }
+  ]
+}

@@ -41,9 +41,19 @@ DjehutiCAD::DjehutiCAD()
     tabs.setTabBarDepth(36);
     cadService = std::make_shared<djehuti::cad::CadCommandService>();
     frust_engine::setCadCommandService(cadService);
+    // One runtime pose shared by every view, and the DEWB motion endpoint that can drive it.
+    motionRuntime = std::make_shared<djehuti::cad::CadMotionRuntime>(cadService);
+    motionLink = std::make_unique<djehuti::motion::MotionLink>(cadService, motionRuntime);
+    {
+        const auto board = motionLink->statusBoard();
+        const juce::Component::SafePointer<DjehutiCAD> safe(this);
+        frust_engine::setCadMotionHooks([board] { return board->get().toStdString(); },
+                                        [safe](const std::string& joint, double value) { juce::MessageManager::callAsync([safe, joint, value] { if (safe != nullptr && safe->motionRuntime != nullptr) { juce::String e; safe->motionRuntime->setPreviewCoordinate(joint, value, e); } }); });
+    }
     cadWorkspace = std::make_unique<CadWorkspacePanel>(cadService);
     tabs.addTab("CAD Workspace", juce::Colour(0xff11161b), cadWorkspace.get(), true);
     cadWorkspace->onOpenViews = [this] { selectWorkspace(3); };
+    cadWorkspace->setMotion(motionRuntime, motionLink.get());
     frustPanel = std::make_unique<FrustPanel>();
     tabs.addTab("FRust", juce::Colour(0xff11161b), frustPanel.get(), false);
     nodePanel = std::make_unique<NodeDesignerPanel>();
@@ -55,9 +65,13 @@ DjehutiCAD::DjehutiCAD()
     };
     tabs.addTab("Node Editor", juce::Colour(0xff11161b), nodePanel.get(), false);
     viewsPanel = std::make_unique<ThreeDViewsPanel>(cadService);
+    { auto runtime = motionRuntime; viewsPanel->setPoseSource([runtime] { return runtime->pose(); }); }
     tabs.addTab("3D Views", juce::Colour(0xff11161b), viewsPanel.get(), false);
     const juce::Component::SafePointer<DjehutiCAD> safeThis(this);
-    agentPanel = std::make_unique<DjehutiAgentPanel>(properties, [safeThis](const std::string& name, const std::string& arguments, std::shared_ptr<DjehutiAgentRequestState> state) {
+    const auto motionBoard = motionLink->statusBoard();
+    agentPanel = std::make_unique<DjehutiAgentPanel>(properties, [safeThis, motionBoard](const std::string& name, const std::string& arguments, std::shared_ptr<DjehutiAgentRequestState> state) {
+        // Link status is read from the thread-safe status board so the agent sees it immediately.
+        if (name == "cad_motion_status") return motionBoard->get().toStdString();
         juce::MessageManager::callAsync([safeThis, name, arguments, state] {
             if (safeThis == nullptr || state == nullptr || state->cancelled || !state->alive) return;
             if (name == "open_cad_workspace") safeThis->selectWorkspace(0);
@@ -85,6 +99,38 @@ DjehutiCAD::DjehutiCAD()
                 else if (name == "cad_boolean") safeThis->cadService->booleanOp(parsed.getProperty("operation", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), id, error);
                 else if (name == "cad_undo") safeThis->cadService->undo(error);
                 else if (name == "cad_redo") safeThis->cadService->redo(error);
+                else if (name == "cad_create_instance") safeThis->cadService->createInstance(parsed.getProperty("feature", "").toString(), parsed.getProperty("name", "").toString(), id, error);
+                else if (name == "cad_create_joint" || name == "cad_update_joint")
+                {
+                    djehuti::cad::CadJointRequest request;
+                    auto vector = [&](const char* key, int index, double fallback) { const auto* list = parsed.getProperty(key, {}).getArray(); return list != nullptr && list->size() == 3 ? (double) (*list)[index] : fallback; };
+                    request.name = parsed.getProperty("name", "").toString(); request.type = parsed.getProperty("type", "").toString();
+                    request.parentInstance = parsed.getProperty("parent", "").toString(); if (request.parentInstance == "world") request.parentInstance.clear();
+                    request.childInstance = parsed.getProperty("child", "").toString();
+                    request.originX = vector("origin", 0, 0.0); request.originY = vector("origin", 1, 0.0); request.originZ = vector("origin", 2, 0.0);
+                    request.axisX = vector("axis", 0, 0.0); request.axisY = vector("axis", 1, 0.0); request.axisZ = vector("axis", 2, 1.0);
+                    request.reference = number("reference"); request.hasLimits = parsed.hasProperty("lower") && parsed.hasProperty("upper"); request.lower = number("lower"); request.upper = number("upper");
+                    if (name == "cad_create_joint") safeThis->cadService->createJoint(request, id, error);
+                    else safeThis->cadService->updateJoint(parsed.getProperty("joint", "").toString(), request, error);
+                }
+                else if (name == "cad_set_joint_mapping")
+                {
+                    djehuti::cad::CadSignalMapping mapping;
+                    mapping.jointId = parsed.getProperty("joint", "").toString(); mapping.signalId = parsed.getProperty("signal", "").toString();
+                    mapping.sourceQuantity = parsed.getProperty("quantity", "").toString(); mapping.sourceUnit = parsed.getProperty("unit", "").toString();
+                    mapping.scale = number("scale", 1.0); mapping.offset = number("offset"); mapping.initialCoordinate = number("initialCoordinate");
+                    safeThis->cadService->setJointMapping(mapping, error);
+                }
+                else if (name == "cad_motion_preview")
+                {
+                    if (static_cast<bool>(parsed.getProperty("reset", false))) safeThis->motionRuntime->resetToReference();
+                    else safeThis->motionRuntime->setPreviewCoordinate(parsed.getProperty("joint", "").toString(), number("value"), error);
+                }
+                else if (name == "cad_motion_listen")
+                {
+                    if (static_cast<bool>(parsed.getProperty("listen", true))) safeThis->motionLink->startListening(error);
+                    else safeThis->motionLink->stopListening();
+                }
                 if (safeThis->cadWorkspace != nullptr) safeThis->cadWorkspace->repaint();
             }
         });
@@ -103,6 +149,9 @@ DjehutiCAD::~DjehutiCAD()
     frustPanel.reset();
     agentPanel.reset();
     viewsPanel.reset();
+    frust_engine::setCadMotionHooks(nullptr, nullptr);
+    motionLink.reset();
+    motionRuntime.reset();
     cadWorkspace.reset();
     frust_engine::setCadCommandService(nullptr);
     cadService.reset();
@@ -227,7 +276,12 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "Subtract:\n"
                                                "Choose Subtract, pick the Target (body to keep) and the Tool (cutting body) in the tree or model view, then press Subtract. "
                                                "Both sources stay in the history, hidden; Undo restores them.\n\n"
-                                               "Model view: drag to orbit, Shift or right-drag to pan, wheel to zoom, click to select a body.");
+                                               "Model view: drag to orbit, Shift or right-drag to pan, wheel to zoom, click to select a body.\n\n"
+                                               "Motion:\n"
+                                               "1. Instance: pick a solid body to create a movable assembly instance.\n"
+                                               "2. Joint: choose the parent (or World) and child instances, the type (fixed, revolute about +Z, prismatic along +Z) and the joint frame.\n"
+                                               "3. Select the joint to preview a coordinate (runtime only, never saved) or map a DEWB signal to it.\n"
+                                               "4. Motion Link: Start Listening and give DEWB the pipe path; DEWB validates the profile, synchronizes, then streams motion.");
     else if (commandId == 30)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About DjehutiCAD",
                                                "DjehutiCAD 0.1.0\nA FRust-programmable CAD foundation.");

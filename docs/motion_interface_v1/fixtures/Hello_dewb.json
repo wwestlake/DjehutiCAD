@@ -1,0 +1,14 @@
+{
+  "type": "Hello",
+  "protocol": "djehuti.motion",
+  "protocolVersion": 1,
+  "role": "dewb",
+  "application": "DEWB",
+  "applicationVersion": "0.1.0",
+  "capabilities": [
+    "signalInterface.v1",
+    "synchronizeState.v1",
+    "stateFrame.v1",
+    "heartbeat.v1"
+  ]
+}

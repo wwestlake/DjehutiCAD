@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/SignalInterface.schema.json",
+  "title": "SignalInterface",
+  "description": "DEWB -> DCAD: available simulation signals.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "SignalInterface"
+    },
+    "simulationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "simulationName": {
+      "type": "string"
+    },
+    "signalInterfaceRevision": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "$ref": "common.schema.json#/$defs/quantity"
+          },
+          "unit": {
+            "$ref": "common.schema.json#/$defs/unit"
+          },
+          "kind": {
+            "enum": [
+              "state",
+              "rate"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "quantity",
+          "unit",
+          "kind"
+        ]
+      }
+    }
+  },
+  "required": [
+    "type",
+    "simulationId",
+    "signals"
+  ]
+}

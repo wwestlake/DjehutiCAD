@@ -1,0 +1,9 @@
+{
+  "type": "LinkStatus",
+  "state": "Streaming",
+  "severity": "error",
+  "code": "missingJoint",
+  "message": "StateFrame rejected: driven joint 'joint-12' has no coordinate.",
+  "profileRevision": 8,
+  "lastSequence": "76"
+}

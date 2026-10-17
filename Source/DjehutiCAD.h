@@ -6,6 +6,8 @@
 #include "Auth/ProfileAvatarComponent.h"
 #include "DjehutiMenuBarComponent.h"
 #include "CadDocument.h"
+#include "CadMotionRuntime.h"
+#include "MotionLink.h"
 
 class FrustPanel;
 class NodeDesignerPanel;
@@ -45,6 +47,8 @@ private:
     std::unique_ptr<ThreeDViewsPanel> viewsPanel;
     std::unique_ptr<CadWorkspacePanel> cadWorkspace;
     std::shared_ptr<djehuti::cad::CadCommandService> cadService;
+    std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
+    std::unique_ptr<djehuti::motion::MotionLink> motionLink;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DjehutiCAD)
 };

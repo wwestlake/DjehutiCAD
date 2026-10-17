@@ -1,0 +1,7 @@
+{
+  "type": "LinkStatus",
+  "state": "running",
+  "severity": "info",
+  "code": "heartbeat",
+  "message": ""
+}

@@ -128,6 +128,85 @@ bounded constraint/validation implementation, not general free-form constraint
 solving. There is no arbitrary face-attached sketch workflow or general
 topology-selection UI.
 
+## Mechanical motion and the DEWB motion link
+
+Authored mechanics live in `CadMechanics.h/.cpp` and are stored in OCAF as the
+`kMechanicsContainerTag` JSON string. They go through the same transaction,
+undo, redo, native save/load and engineering JSON path as sketches; `.djc` is
+now `formatVersion` 4 with `mechanics`, and version 3 still loads. The model:
+
+- Assembly instances: stable `inst-N` ids with their own identity, each
+  showing a solid feature.
+- Joints: `joint-N` ids, fixed/revolute/prismatic, parent instance or world,
+  child instance, `parentToJoint` and `jointToChild` frames (mm plus a
+  Hamilton wxyz quaternion), reference coordinate and limits (rad or m).
+- The connection profile: signal mappings.
+
+`world(child) = world(parent) × parentToJoint × motion(q − reference) ×
+jointToChild`, with motion about or along the joint +Z axis, is evaluated from
+reference placements every time and never accumulated. Graph validation
+rejects missing references, a child with two parents, and cycles.
+`interfaceRevision` and `profileRevision` advance on interface and profile
+changes, but not on renames.
+
+The runtime pose is in `CadMotionRuntime`: one shared snapshot of per-instance
+rigid matrices, consumed by the workspace view and every 3D View. The matrix is
+the instance world frame times the inverse of the body's authored placement
+point, so tessellated meshes are never placed twice. A body that has instances
+is drawn only through them. Rendering, picking (which returns instance ids),
+highlighting and posed bounds/clipping all use the same matrices, and motion
+never refits the camera. Preview coordinates and simulation coordinates are
+runtime state only; they never touch OCAF, undo or the dirty flag.
+
+The DEWB endpoint is `MotionLink`: a JUCE named pipe (server), JSON messages,
+connection-thread parsing, a bounded writer thread, a single latest-state
+handoff to the message thread, heartbeat and timeout liveness, revalidation
+on profile changes, and a discovery file in
+`%LOCALAPPDATA%\DjehutiCAD\MotionEndpoints`. The specification is
+`docs/DEWB_DCAD_MOTION_INTERFACE_V1.md`, with schemas and fixtures in
+`docs/motion_interface_v1/`, the DEWB brief in `docs/DEWB_MOTION_HANDOFF.md`,
+and the protocol peer in `tools/motion_peer/dewb_motion_peer.py`.
+
+The workspace has Instance, Joint and Motion Link commands, an Assembly tree
+group, instance and joint panels (frames, reference, limits, preview, signal
+mapping editor) and a link panel; the status bar shows link status. Shared
+commands go through `CadCommandService` (create/update/remove
+instance/joint/mapping). The agent has `cad_create_instance`,
+`cad_create_joint`, `cad_update_joint`, `cad_set_joint_mapping`,
+`cad_motion_preview`, `cad_motion_listen` and `cad_motion_status`; status is
+read synchronously from a thread-safe board. FRust has `djehuti_cad_create_instance`, `djehuti_cad_create_joint`,
+`djehuti_cad_set_joint_mapping`, `djehuti_cad_motion_preview` and
+`djehuti_cad_motion_status`. The node editor has CAD Instance, CAD Joint and
+CAD Joint Signal nodes, and Help has a Motion section.
+
+Verified in the running Debug app on 2026-10-17 with the protocol peer:
+
+- Four bodies were loaded from v3 JSON. Instances and a revolute (crank),
+  fixed (housing) and prismatic (carriage, ±30 mm limits) joint were authored
+  in the UI.
+- Previewing the slide carried the housing and crank, and the crank preview
+  rotated about the housing axis. Undo removed only the last authored joint,
+  so previews add no undo entries.
+- A unit mismatch was refused with a clear `unitMismatch` message.
+- Over the real pipe: binding, `SynchronizeState`/`StateApplied`, streaming
+  (visible motion), limit warnings, the Paused display, single step, 4× speed,
+  a missing-joint frame rejected, reset to a new timeline, a stale-timeline
+  frame rejected, an abrupt drop shown as Disconnected with the pose held, and
+  reconnect with full revalidation.
+- Clicking a moving instance selected it. The 3D Views showed the same pose.
+  After streaming on a reopened document, Undo reported "Nothing to undo".
+- Save and reopen of `.djo` kept instances, joints and mappings, and the link
+  reopened as Stopped.
+
+A bug found during the check, where frames were treated as synchronizations
+and produced repeated `StateApplied`, was fixed and re-verified (exactly three
+`StateApplied` in the full scenario).
+
+The FRust, node and agent motion entry points compile but were not run
+interactively, and there is no end-to-end DEWB run yet: the DEWB side is a
+separate assignment. The next boundary is DEWB implementing
+`docs/DEWB_MOTION_HANDOFF.md`, then a joint DEWB-to-DCAD run.
+
 ## Rendering and views
 
 The application provides three independent 3D view cameras by default, with
@@ -229,6 +308,16 @@ Useful entry points:
 - New primitives are created at the origin, and their placement is edited
   afterwards in the body panel. The sketch Esc behavior, constraint group, and
   splitter persistence were checked only by source review and build.
+- Motion is driven only: there is no assembly constraint solving and no
+  force/feedback co-simulation, and v1 has no interpolation between states.
+- Instance placement is edited as a translation in the UI (orientation is
+  stored but not editable there). There is no slider or animated sweep for
+  preview.
+- The motion pipe uses JUCE named pipes with default security. JUCE exposes no
+  `PIPE_REJECT_REMOTE_CLIENTS`, and it allocates a payload before the 1 MiB
+  check. A JUCE server pipe silently accepts the next client after a
+  disconnect, which is why liveness relies on heartbeats and the 3 s timeout.
+  A force-killed DCAD leaves a stale discovery file.
 
 ## Working rules for future orders
 

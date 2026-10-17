@@ -210,6 +210,64 @@ extern "C" const char* djehuti_cad_boolean(const char* operation, const char* fi
     return returnCad({});
 }
 
+std::function<std::string()> motionStatusHook;
+std::function<void(const std::string&, double)> motionPreviewHook;
+
+extern "C" const char* djehuti_cad_create_instance(const char* feature, const char* name)
+{
+    if (auto service = activeCadService()) { juce::String id, error; if (service->createInstance(feature != nullptr ? feature : "", name != nullptr ? name : "", id, error)) { setCadError({}); return returnCad(id); } setCadError(error); }
+    else setCadError("No CAD document is attached.");
+    return returnCad({});
+}
+
+// Limits apply when lower < upper. parent "" or "world" attaches the child to the world frame.
+extern "C" const char* djehuti_cad_create_joint(const char* type, const char* parent, const char* child, double ox, double oy, double oz, double ax, double ay, double az, double reference, double lower, double upper)
+{
+    if (auto service = activeCadService())
+    {
+        djehuti::cad::CadJointRequest request;
+        request.type = type != nullptr ? type : ""; request.parentInstance = parent != nullptr ? parent : ""; if (request.parentInstance == "world") request.parentInstance.clear();
+        request.childInstance = child != nullptr ? child : "";
+        request.originX = ox; request.originY = oy; request.originZ = oz; request.axisX = ax; request.axisY = ay; request.axisZ = az;
+        request.reference = reference; request.hasLimits = lower < upper; request.lower = lower; request.upper = upper;
+        juce::String id, error;
+        if (service->createJoint(request, id, error)) { setCadError({}); return returnCad(id); }
+        setCadError(error);
+    }
+    else setCadError("No CAD document is attached.");
+    return returnCad({});
+}
+
+extern "C" std::int64_t djehuti_cad_set_joint_mapping(const char* joint, const char* signal, const char* quantity, const char* unit, double scale, double offset, double initial)
+{
+    if (auto service = activeCadService())
+    {
+        djehuti::cad::CadSignalMapping mapping;
+        mapping.jointId = joint != nullptr ? joint : ""; mapping.signalId = signal != nullptr ? signal : ""; mapping.sourceQuantity = quantity != nullptr ? quantity : ""; mapping.sourceUnit = unit != nullptr ? unit : "";
+        mapping.scale = scale; mapping.offset = offset; mapping.initialCoordinate = initial;
+        juce::String error; const bool ok = service->setJointMapping(mapping, error); setCadError(error); return ok ? 1 : 0;
+    }
+    setCadError("No CAD document is attached.");
+    return 0;
+}
+
+extern "C" std::int64_t djehuti_cad_motion_preview(const char* joint, double value)
+{
+    std::function<void(const std::string&, double)> hook;
+    { std::lock_guard<std::mutex> lock(cadMutex); hook = motionPreviewHook; }
+    if (!hook) { setCadError("Motion preview is not available."); return 0; }
+    hook(joint != nullptr ? joint : "", value);
+    setCadError({});
+    return 1;
+}
+
+extern "C" const char* djehuti_cad_motion_status()
+{
+    std::function<std::string()> hook;
+    { std::lock_guard<std::mutex> lock(cadMutex); hook = motionStatusHook; }
+    return returnCad(hook ? juce::String(hook()) : juce::String("{}"));
+}
+
 extern "C" const char* djehuti_cad_last_error()
 {
     return cadError.c_str();
@@ -255,6 +313,11 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_set_placement", reinterpret_cast<void*>(&djehuti_cad_set_placement));
         frust_plugin_register_host_function("djehuti_cad_boolean", reinterpret_cast<void*>(&djehuti_cad_boolean));
         frust_plugin_register_host_function("djehuti_cad_last_error", reinterpret_cast<void*>(&djehuti_cad_last_error));
+        frust_plugin_register_host_function("djehuti_cad_create_instance", reinterpret_cast<void*>(&djehuti_cad_create_instance));
+        frust_plugin_register_host_function("djehuti_cad_create_joint", reinterpret_cast<void*>(&djehuti_cad_create_joint));
+        frust_plugin_register_host_function("djehuti_cad_set_joint_mapping", reinterpret_cast<void*>(&djehuti_cad_set_joint_mapping));
+        frust_plugin_register_host_function("djehuti_cad_motion_preview", reinterpret_cast<void*>(&djehuti_cad_motion_preview));
+        frust_plugin_register_host_function("djehuti_cad_motion_status", reinterpret_cast<void*>(&djehuti_cad_motion_status));
     });
 }
 
@@ -489,6 +552,13 @@ Result runScript(const std::string& script, const RunOptions& options)
     return result;
 }
 
+void setCadMotionHooks(std::function<std::string()> status, std::function<void(const std::string&, double)> preview)
+{
+    std::lock_guard<std::mutex> lock(cadMutex);
+    motionStatusHook = std::move(status);
+    motionPreviewHook = std::move(preview);
+}
+
 void setCadCommandService(std::shared_ptr<djehuti::cad::CadCommandService> service)
 {
     std::lock_guard<std::mutex> lock(cadMutex);
@@ -511,6 +581,11 @@ std::string cadPrelude()
            "extern fn djehuti_cad_set_dimensions(id: String, width: f64, depth: f64, height: f64, radius: f64) -> i64;\n"
            "extern fn djehuti_cad_set_placement(id: String, x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> i64;\n"
            "extern fn djehuti_cad_boolean(operation: String, first: String, second: String) -> String;\n"
+           "extern fn djehuti_cad_create_instance(feature: String, name: String) -> String;\n"
+           "extern fn djehuti_cad_create_joint(type: String, parent: String, child: String, ox: f64, oy: f64, oz: f64, ax: f64, ay: f64, az: f64, reference: f64, lower: f64, upper: f64) -> String;\n"
+           "extern fn djehuti_cad_set_joint_mapping(joint: String, signal: String, quantity: String, unit: String, scale: f64, offset: f64, initial: f64) -> i64;\n"
+           "extern fn djehuti_cad_motion_preview(joint: String, value: f64) -> i64;\n"
+           "extern fn djehuti_cad_motion_status() -> String;\n"
            "extern fn djehuti_cad_last_error() -> String;\n";
 }
 
@@ -518,7 +593,8 @@ const std::vector<std::string>& cadHostFunctions()
 {
     static const std::vector<std::string> names {
         "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
-        "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error"
+        "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
+        "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status"
     };
     return names;
 }

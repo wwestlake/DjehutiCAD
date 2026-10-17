@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/BindingProposal.schema.json",
+  "title": "BindingProposal",
+  "description": "DCAD -> DEWB: the connection profile to validate.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "BindingProposal"
+    },
+    "modelId": {
+      "type": "string"
+    },
+    "interfaceRevision": {
+      "type": "integer"
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "simulationId": {
+      "type": "string"
+    },
+    "signalInterfaceRevision": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "joint": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "signal": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "sourceQuantity": {
+            "$ref": "common.schema.json#/$defs/quantity"
+          },
+          "sourceUnit": {
+            "$ref": "common.schema.json#/$defs/unit"
+          },
+          "jointQuantity": {
+            "enum": [
+              "angle",
+              "position"
+            ]
+          },
+          "jointUnit": {
+            "enum": [
+              "rad",
+              "m"
+            ]
+          },
+          "unitToSI": {
+            "type": "number"
+          },
+          "scale": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "initialCoordinate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "joint",
+          "signal",
+          "sourceQuantity",
+          "sourceUnit",
+          "jointQuantity",
+          "jointUnit",
+          "unitToSI",
+          "scale",
+          "offset",
+          "initialCoordinate"
+        ]
+      }
+    }
+  },
+  "required": [
+    "type",
+    "modelId",
+    "interfaceRevision",
+    "profileRevision",
+    "simulationId",
+    "mappings"
+  ]
+}

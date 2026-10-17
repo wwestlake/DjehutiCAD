@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/LinkStatus.schema.json",
+  "title": "LinkStatus",
+  "description": "Both directions: readiness, lifecycle, heartbeats, errors and revalidation.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "LinkStatus"
+    },
+    "state": {
+      "type": "string"
+    },
+    "severity": {
+      "enum": [
+        "info",
+        "warning",
+        "error"
+      ]
+    },
+    "code": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "lastSequence": {
+      "type": "string"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/error"
+      }
+    }
+  },
+  "required": [
+    "type",
+    "state",
+    "severity",
+    "code"
+  ]
+}

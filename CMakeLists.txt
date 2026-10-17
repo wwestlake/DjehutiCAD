@@ -89,6 +89,12 @@ target_sources(DjehutiCAD PRIVATE
     Source/Viewport3D.cpp
     Source/CadDocument.h
     Source/CadDocument.cpp
+    Source/CadMechanics.h
+    Source/CadMechanics.cpp
+    Source/CadMotionRuntime.h
+    Source/CadMotionRuntime.cpp
+    Source/MotionLink.h
+    Source/MotionLink.cpp
     Source/CadWorkspacePanel.h
     Source/CadWorkspacePanel.cpp
 )

@@ -35,6 +35,11 @@ std::vector<ai_provider::ToolDefinition> tools()
     const auto sketchPosition = R"({"type":"object","properties":{"sketch":{"type":"string"},"entity":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"}},"required":["sketch","entity","x","y"],"additionalProperties":false})";
     const auto sketchConstraint = R"({"type":"object","properties":{"sketch":{"type":"string"},"type":{"type":"string"},"first":{"type":"string"},"second":{"type":"string"},"value":{"type":"number"}},"required":["sketch","type","first"],"additionalProperties":false})";
     const auto extrude = R"({"type":"object","properties":{"sketch":{"type":"string"},"depth":{"type":"number"},"reverse":{"type":"boolean"}},"required":["sketch","depth"],"additionalProperties":false})";
+    const auto instance = R"({"type":"object","properties":{"feature":{"type":"string"},"name":{"type":"string"}},"required":["feature"],"additionalProperties":false})";
+    const auto joint = R"({"type":"object","properties":{"joint":{"type":"string"},"name":{"type":"string"},"type":{"type":"string","enum":["fixed","revolute","prismatic"]},"parent":{"type":"string"},"child":{"type":"string"},"origin":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"axis":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"reference":{"type":"number"},"lower":{"type":"number"},"upper":{"type":"number"}},"required":["type","child","origin","axis"],"additionalProperties":false})";
+    const auto mapping = R"({"type":"object","properties":{"joint":{"type":"string"},"signal":{"type":"string"},"quantity":{"type":"string","enum":["angle","angular_velocity","position","linear_velocity"]},"unit":{"type":"string"},"scale":{"type":"number"},"offset":{"type":"number"},"initialCoordinate":{"type":"number"}},"required":["joint","signal","quantity","unit"],"additionalProperties":false})";
+    const auto preview = R"({"type":"object","properties":{"joint":{"type":"string"},"value":{"type":"number"},"reset":{"type":"boolean"}},"additionalProperties":false})";
+    const auto listen = R"({"type":"object","properties":{"listen":{"type":"boolean"}},"required":["listen"],"additionalProperties":false})";
     const auto cut = R"({"type":"object","properties":{"sketch":{"type":"string"},"target":{"type":"string"},"depth":{"type":"number"},"throughAll":{"type":"boolean"},"reverse":{"type":"boolean"}},"required":["sketch","target"],"additionalProperties":false})";
     return {
         { "open_cad_workspace", "Open the CAD workspace.", emptyObject },
@@ -56,6 +61,13 @@ std::vector<ai_provider::ToolDefinition> tools()
         { "cad_set_placement", "Set a feature's millimeter position and optional Euler rotations in degrees.", placement },
         { "cad_boolean", "Create a union, subtract, or intersect feature from two distinct solid body ids. For subtract, first is the target body to keep and second is the cutting tool. Both sources are hidden and stay in the feature history; undo restores them.", booleanArgs },
         { "cad_undo", "Undo the most recent CAD document command.", emptyObject },
+        { "cad_create_instance", "Create a movable assembly instance of a solid body feature id. Instances keep their own stable id; the first instance appears where the body is modelled.", instance },
+        { "cad_create_joint", "Create a joint between assembly instances. parent is an instance id or 'world'; origin is the joint origin in world millimetres and axis the world direction of the joint +Z motion axis at the reference pose. Revolute coordinates are radians, prismatic metres; lower/upper set engineering limits.", joint },
+        { "cad_update_joint", "Update an existing joint (field 'joint') with the same fields as cad_create_joint; the child keeps its current reference position.", joint },
+        { "cad_set_joint_mapping", "Map a DEWB signal to a joint in the connection profile: quantity angle/angular_velocity (revolute) or position/linear_velocity (prismatic), unit e.g. rad, deg, rev, rad/s, rpm, m, mm, m/s; scale is the gear ratio, offset applies to state signals, initialCoordinate to velocity signals.", mapping },
+        { "cad_motion_preview", "Preview a joint coordinate (radians or metres) without changing the document, or reset all joints with reset=true. Not allowed while DEWB drives the joints.", preview },
+        { "cad_motion_listen", "Start (listen=true) or stop the DCAD motion endpoint that DEWB connects to.", listen },
+        { "cad_motion_status", "Return the motion link status JSON: state, pipe path, DEWB simulation, accepted profile revision, timeline, sequence, signals, problems and the current mechanical interface with instance and joint ids.", emptyObject },
         { "cad_redo", "Redo the most recently undone CAD document command.", emptyObject }
     };
 }

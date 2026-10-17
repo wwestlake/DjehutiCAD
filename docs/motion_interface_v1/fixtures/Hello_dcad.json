@@ -1,0 +1,14 @@
+{
+  "type": "Hello",
+  "protocol": "djehuti.motion",
+  "protocolVersion": 1,
+  "role": "dcad",
+  "application": "DjehutiCAD",
+  "applicationVersion": "0.1.0",
+  "capabilities": [
+    "mechanicalInterface.v1",
+    "bindingProposal.v1",
+    "stateFrame.v1",
+    "heartbeat.v1"
+  ]
+}

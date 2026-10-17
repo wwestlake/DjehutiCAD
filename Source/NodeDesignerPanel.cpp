@@ -2133,6 +2133,13 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
           { in("id", "string"), in("x", "f64"), in("y", "f64"), in("z", "f64"), in("rx", "f64"), in("ry", "f64"), in("rz", "f64") }, { out("ok", "i64") } },
         { "cad_boolean", "CAD Boolean", "CAD", juce::Colour(0xff4b8fc8), 0,
           { in("operation", "string"), in("first", "string"), in("second", "string") }, { out("id", "string") } },
+        { "cad_create_instance", "CAD Instance", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("feature", "string"), in("name", "string") }, { out("instance", "string") } },
+        { "cad_create_joint", "CAD Joint", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("type", "string"), in("parent", "string"), in("child", "string"), in("origin x", "f64"), in("origin y", "f64"), in("origin z", "f64"),
+            in("axis x", "f64"), in("axis y", "f64"), in("axis z", "f64"), in("reference", "f64"), in("lower", "f64"), in("upper", "f64") }, { out("joint", "string") } },
+        { "cad_set_joint_mapping", "CAD Joint Signal", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("joint", "string"), in("signal", "string"), in("quantity", "string"), in("unit", "string"), in("scale", "f64"), in("offset", "f64"), in("initial", "f64") }, { out("ok", "i64") } },
         // A FRust programmable component's electrical interface (Workbench):
         // values are f64 volts, amps, seconds; each names a pin, parameter
         // or state variable of the component.

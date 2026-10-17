@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "FrameResourceRing.h"
 #include "CadDocument.h"
+#include "CadMotionRuntime.h"
 
 bool runViewportCameraCheck(juce::String& detail);
 
@@ -27,6 +28,7 @@ public:
     void setTitle(const juce::String& text) { title = text; repaint(); }
     void setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next);
     juce::String pickBody(juce::Point<float> position) const;
+    void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); }
     std::function<void(const juce::String& featureId)> onBodyPicked;
 
 private:
@@ -38,6 +40,7 @@ private:
     void drawCube(const float* mvp);
     void updateSceneBounds(const std::shared_ptr<const djehuti::cad::CadRenderSnapshot>& snapshot);
     void frameScene();
+    void updatePosedBounds();
 
     const int viewNumber;
     juce::OpenGLContext context;
@@ -54,6 +57,11 @@ private:
     juce::Point<int> dragStart, pressPosition;
     juce::String title;
     std::shared_ptr<const djehuti::cad::CadRenderSnapshot> pickSnapshot;
+    std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> poseSource;
+    std::shared_ptr<const djehuti::cad::CadPoseSnapshot> pose, glPose;
+    struct Bounds { float min[3] {}, max[3] {}; };
+    std::map<juce::String, Bounds> featureBounds;
+    float clipRadius = 1.0f;
     juce::SpinLock highlightLock;
     std::vector<std::pair<juce::String, juce::Colour>> highlights;
     struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; };
@@ -78,6 +86,7 @@ public:
     explicit ThreeDViewsPanel(std::shared_ptr<djehuti::cad::CadCommandService> service);
     ~ThreeDViewsPanel() override;
     bool addView();
+    void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source);
     void resized() override;
     void paint(juce::Graphics&) override;
 
@@ -94,6 +103,7 @@ private:
     std::shared_ptr<djehuti::cad::CadCommandService> cadService;
     std::shared_ptr<const djehuti::cad::CadRenderSnapshot> currentSnapshot;
     std::uint64_t shownRevision = 0;
+    std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> poseSource;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ThreeDViewsPanel)
 };

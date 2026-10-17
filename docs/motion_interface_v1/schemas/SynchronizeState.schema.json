@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/SynchronizeState.schema.json",
+  "title": "SynchronizeState",
+  "description": "DEWB -> DCAD: complete state that starts a timeline; DCAD answers StateApplied.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "SynchronizeState"
+    },
+    "simulationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timelineGeneration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "sequence": {
+      "$ref": "common.schema.json#/$defs/decimalString"
+    },
+    "simTimePs": {
+      "$ref": "common.schema.json#/$defs/decimalString"
+    },
+    "microstep": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lifecycle": {
+      "$ref": "common.schema.json#/$defs/lifecycle"
+    },
+    "joints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "joint": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "coordinate": {
+            "type": "number"
+          },
+          "velocity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "joint",
+          "coordinate"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "type",
+    "simulationId",
+    "timelineGeneration",
+    "profileRevision",
+    "sequence",
+    "simTimePs",
+    "lifecycle",
+    "joints"
+  ]
+}

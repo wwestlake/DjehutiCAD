@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/StateApplied.schema.json",
+  "title": "StateApplied",
+  "description": "DCAD -> DEWB: the synchronized pose is published.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "StateApplied"
+    },
+    "simulationId": {
+      "type": "string"
+    },
+    "timelineGeneration": {
+      "type": "integer"
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "sequence": {
+      "$ref": "common.schema.json#/$defs/decimalString"
+    }
+  },
+  "required": [
+    "type",
+    "simulationId",
+    "timelineGeneration",
+    "profileRevision",
+    "sequence"
+  ]
+}

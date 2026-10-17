@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/BindingAccept.schema.json",
+  "title": "BindingAccept",
+  "description": "DEWB -> DCAD: accepts exactly the proposed revisions.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "BindingAccept"
+    },
+    "modelId": {
+      "type": "string"
+    },
+    "interfaceRevision": {
+      "type": "integer"
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "simulationId": {
+      "type": "string"
+    },
+    "signalInterfaceRevision": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    }
+  },
+  "required": [
+    "type",
+    "modelId",
+    "interfaceRevision",
+    "profileRevision",
+    "simulationId"
+  ]
+}

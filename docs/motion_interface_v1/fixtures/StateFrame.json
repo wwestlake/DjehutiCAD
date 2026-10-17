@@ -1,0 +1,21 @@
+{
+  "type": "StateFrame",
+  "simulationId": "dewb-session-3f2a",
+  "timelineGeneration": 1,
+  "profileRevision": 8,
+  "sequence": "76",
+  "simTimePs": "2500000000000",
+  "microstep": 0,
+  "lifecycle": "running",
+  "joints": [
+    {
+      "joint": "joint-10",
+      "coordinate": 0.0384
+    },
+    {
+      "joint": "joint-12",
+      "coordinate": 7.853981633974483,
+      "velocity": 3.141592653589793
+    }
+  ]
+}

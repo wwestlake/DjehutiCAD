@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/Hello.schema.json",
+  "title": "Hello",
+  "description": "First message of every session, both directions.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "Hello"
+    },
+    "protocol": {
+      "const": "djehuti.motion"
+    },
+    "protocolVersion": {
+      "const": 1
+    },
+    "role": {
+      "enum": [
+        "dewb",
+        "dcad"
+      ]
+    },
+    "application": {
+      "type": "string"
+    },
+    "applicationVersion": {
+      "type": "string"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "type",
+    "protocol",
+    "protocolVersion",
+    "role"
+  ]
+}

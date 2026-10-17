@@ -1,0 +1,194 @@
+{
+  "type": "MechanicalInterface",
+  "modelId": "8c1f6d0e-5d0b-4c39-9a52-0f1c0d7a2b11",
+  "documentName": "shaft_carriage.djo",
+  "interfaceRevision": 6,
+  "profileRevision": 8,
+  "lengthUnit": "m",
+  "angleUnit": "rad",
+  "rotationConvention": "hamilton-wxyz-active",
+  "motionAxis": "+Z",
+  "instances": [
+    {
+      "id": "inst-5",
+      "name": "Base",
+      "featureId": "box-1"
+    },
+    {
+      "id": "inst-6",
+      "name": "Carriage",
+      "featureId": "box-2"
+    },
+    {
+      "id": "inst-7",
+      "name": "Motor housing",
+      "featureId": "cylinder-3"
+    },
+    {
+      "id": "inst-8",
+      "name": "Shaft",
+      "featureId": "cylinder-4"
+    }
+  ],
+  "joints": [
+    {
+      "id": "joint-9",
+      "name": "Base mount",
+      "type": "fixed",
+      "parent": "world",
+      "child": "inst-5",
+      "parentToJoint": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "jointToChildAtReference": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "coordinate": null,
+      "acceptedSourceQuantities": []
+    },
+    {
+      "id": "joint-10",
+      "name": "Carriage slide",
+      "type": "prismatic",
+      "parent": "inst-5",
+      "child": "inst-6",
+      "parentToJoint": {
+        "translation": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "rotation": {
+          "w": 0.7071067811865476,
+          "x": 0.0,
+          "y": 0.7071067811865476,
+          "z": 0.0
+        }
+      },
+      "jointToChildAtReference": {
+        "translation": [
+          -0.01,
+          0.0,
+          0.0
+        ],
+        "rotation": {
+          "w": 0.7071067811865476,
+          "x": 0.0,
+          "y": -0.7071067811865476,
+          "z": 0.0
+        }
+      },
+      "coordinate": {
+        "quantity": "position",
+        "unit": "m",
+        "reference": 0.0,
+        "limits": {
+          "lower": -0.05,
+          "upper": 0.05
+        }
+      },
+      "acceptedSourceQuantities": [
+        "position",
+        "linear_velocity"
+      ]
+    },
+    {
+      "id": "joint-11",
+      "name": "Housing mount",
+      "type": "fixed",
+      "parent": "inst-6",
+      "child": "inst-7",
+      "parentToJoint": {
+        "translation": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "rotation": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "jointToChildAtReference": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "coordinate": null,
+      "acceptedSourceQuantities": []
+    },
+    {
+      "id": "joint-12",
+      "name": "Shaft spin",
+      "type": "revolute",
+      "parent": "inst-7",
+      "child": "inst-8",
+      "parentToJoint": {
+        "translation": [
+          0.0,
+          0.0,
+          0.02
+        ],
+        "rotation": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "jointToChildAtReference": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": {
+          "w": 1.0,
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        }
+      },
+      "coordinate": {
+        "quantity": "angle",
+        "unit": "rad",
+        "reference": 0.0,
+        "limits": null
+      },
+      "acceptedSourceQuantities": [
+        "angle",
+        "angular_velocity"
+      ]
+    }
+  ]
+}

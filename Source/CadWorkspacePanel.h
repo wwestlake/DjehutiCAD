@@ -3,6 +3,8 @@
 #include <JuceHeader.h>
 #include "CadDocument.h"
 #include "Viewport3D.h"
+#include "CadMotionRuntime.h"
+#include "MotionLink.h"
 
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
@@ -22,10 +24,11 @@ public:
     void saveDocumentAs();
     juce::String layoutState() const;
     void restoreLayoutState(const juce::String& state);
+    void setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link);
     std::function<void()> onOpenViews;
 
 private:
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -64,6 +67,16 @@ private:
     juce::String featureName(const juce::String& id) const;
     juce::Colour colourFor(const juce::String& id) const;
     juce::String applicableConstraintTypes() const;
+    bool isInstance(const juce::String& id) const;
+    bool isJoint(const juce::String& id) const;
+    bool isCommandTask() const;
+    bool jointReferenceFrame(const juce::String& jointId, gp_Trsf& world) const;
+    void addMotionPanels(juce::String& title, juce::String& instruction, juce::String& accept, bool& showAccept, bool& showCancel);
+    bool acceptMotionTask();
+    void validateMotionTask(juce::String& problem, int& severity);
+    void saveMapping();
+    void previewJoint(bool reset);
+    void linkChanged();
 
     std::shared_ptr<djehuti::cad::CadCommandService> service;
     juce::TooltipWindow tooltipWindow { this, 600 };
@@ -72,7 +85,8 @@ private:
         subtractButton { "Subtract" }, unionButton { "Union" }, intersectButton { "Intersect" }, undoButton { "Undo" }, redoButton { "Redo" },
         fitButton { "Fit All" }, resetViewButton { "Reset View" }, viewsButton { "3D Views" },
         selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, constrainButton { "Constrain" },
-        fitSketchButton { "Fit Sketch" }, finishSketchButton { "Finish Sketch" };
+        fitSketchButton { "Fit Sketch" }, finishSketchButton { "Finish Sketch" },
+        instanceButton { "Instance" }, jointButton { "Joint" }, linkButton { "Motion Link" };
     juce::TreeView tree { "Model" };
     std::unique_ptr<juce::TreeViewItem> rootItem;
     juce::Component centre, side;
@@ -89,6 +103,10 @@ private:
     juce::String booleanKind, sketchPlane, formContext;
     juce::String selectedId, editingSketchId, sketchEntityId, sketchSecondEntityId;
     juce::String profileId, targetId, toolId;
+    juce::String instanceBodyId, jointParentId, jointChildId;
+    std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
+    djehuti::motion::MotionLink* motionLink = nullptr;
+    std::uint64_t shownLinkSerial = 0;
     int activeRole = 0;
     juce::String commandMessage, validationMessage;
     int commandSeverity = 0, validationSeverity = 0;

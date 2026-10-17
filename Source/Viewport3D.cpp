@@ -93,11 +93,22 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
 juce::String Viewport3D::pickBody(juce::Point<float> position) const
 {
     if (pickSnapshot == nullptr || getWidth() <= 0 || getHeight() <= 0) return {};
-    const auto mvp = mul(projectionFor(getWidth(), getHeight(), distance, sceneRadius), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
+    const auto viewProjection = mul(projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
     const auto w = (float) getWidth(), h = (float) getHeight();
     juce::String best; float bestDepth = 2.0f;
+    struct Draw { const djehuti::cad::CadMesh* mesh; M4 model; juce::String id; };
+    std::vector<Draw> draws;
     for (const auto& mesh : pickSnapshot->meshes)
     {
+        if (pose == nullptr || pose->instancedFeatures.count(mesh.featureId) == 0) draws.push_back({ &mesh, identity(), mesh.featureId });
+        if (pose != nullptr)
+            for (const auto& instance : pose->instances)
+                if (instance.featureId == mesh.featureId) { M4 m; std::memcpy(m.v, instance.matrix.data(), sizeof(m.v)); draws.push_back({ &mesh, m, instance.instanceId }); }
+    }
+    for (const auto& draw : draws)
+    {
+        const auto& mesh = *draw.mesh;
+        const auto mvp = mul(viewProjection, draw.model);
         const auto project = [&](std::uint32_t index, juce::Point<float>& screen, float& depth)
         {
             const auto* v = mesh.vertices.data() + index * 6u;
@@ -118,7 +129,7 @@ juce::String Viewport3D::pickBody(juce::Point<float> position) const
             const auto t = 1.0f - u - v;
             if (u < 0.0f || v < 0.0f || t < 0.0f) continue;
             const auto depth = u * da + v * db + t * dc;
-            if (depth >= -1.0f && depth < bestDepth) { bestDepth = depth; best = mesh.featureId; }
+            if (depth >= -1.0f && depth < bestDepth) { bestDepth = depth; best = draw.id; }
         }
     }
     return best;
@@ -137,16 +148,37 @@ void Viewport3D::updateSceneBounds(const std::shared_ptr<const djehuti::cad::Cad
 {
     if (snapshot == nullptr || snapshot->revision == boundsRevision) return;
     boundsRevision = snapshot->revision;
-    bool found = false;
-    float minX = 0.0f, minY = 0.0f, minZ = 0.0f, maxX = 0.0f, maxY = 0.0f, maxZ = 0.0f;
+    featureBounds.clear();
     for (const auto& mesh : snapshot->meshes)
         for (size_t i = 0; i + 2 < mesh.vertices.size(); i += 6)
         {
-            const auto x = mesh.vertices[i], y = mesh.vertices[i + 1], z = mesh.vertices[i + 2];
-            if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) continue;
-            if (!found) { minX = maxX = x; minY = maxY = y; minZ = maxZ = z; found = true; }
-            else { minX = juce::jmin(minX, x); minY = juce::jmin(minY, y); minZ = juce::jmin(minZ, z); maxX = juce::jmax(maxX, x); maxY = juce::jmax(maxY, y); maxZ = juce::jmax(maxZ, z); }
+            const float p[3] { mesh.vertices[i], mesh.vertices[i + 1], mesh.vertices[i + 2] };
+            if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) continue;
+            const bool fresh = featureBounds.find(mesh.featureId) == featureBounds.end();
+            auto& b = featureBounds[mesh.featureId];
+            for (int k = 0; k < 3; ++k) { b.min[k] = fresh ? p[k] : juce::jmin(b.min[k], p[k]); b.max[k] = fresh ? p[k] : juce::jmax(b.max[k], p[k]); }
         }
+    updatePosedBounds();
+}
+// Posed scene bounds drive the initial framing and the clipping range; motion never refits the user's camera.
+void Viewport3D::updatePosedBounds()
+{
+    bool found = false;
+    float minX = 0.0f, minY = 0.0f, minZ = 0.0f, maxX = 0.0f, maxY = 0.0f, maxZ = 0.0f;
+    std::vector<V3> corners;
+    auto addBox = [&](const Bounds& b, const float* matrix)
+    {
+        for (int c = 0; c < 8; ++c)
+        {
+            const V3 local { (c & 1) ? b.max[0] : b.min[0], (c & 2) ? b.max[1] : b.min[1], (c & 4) ? b.max[2] : b.min[2] };
+            const V3 p = matrix == nullptr ? local : V3 { matrix[0] * local.x + matrix[4] * local.y + matrix[8] * local.z + matrix[12], matrix[1] * local.x + matrix[5] * local.y + matrix[9] * local.z + matrix[13], matrix[2] * local.x + matrix[6] * local.y + matrix[10] * local.z + matrix[14] };
+            corners.push_back(p);
+            if (!found) { minX = maxX = p.x; minY = maxY = p.y; minZ = maxZ = p.z; found = true; }
+            else { minX = juce::jmin(minX, p.x); minY = juce::jmin(minY, p.y); minZ = juce::jmin(minZ, p.z); maxX = juce::jmax(maxX, p.x); maxY = juce::jmax(maxY, p.y); maxZ = juce::jmax(maxZ, p.z); }
+        }
+    };
+    for (const auto& [id, b] : featureBounds) if (pose == nullptr || pose->instancedFeatures.count(id) == 0) addBox(b, nullptr);
+    if (pose != nullptr) for (const auto& instance : pose->instances) if (const auto b = featureBounds.find(instance.featureId); b != featureBounds.end()) addBox(b->second, instance.matrix.data());
     hasSceneBounds = found;
     if (found)
     {
@@ -156,6 +188,8 @@ void Viewport3D::updateSceneBounds(const std::shared_ptr<const djehuti::cad::Cad
         if (!hasFramedInitialScene) { frameScene(); hasFramedInitialScene = true; }
     }
     else if (!hasFramedInitialScene) { targetX = targetY = targetZ = 0.0f; sceneRadius = 1.0f; }
+    clipRadius = sceneRadius;
+    for (const auto& c : corners) clipRadius = juce::jmax(clipRadius, length(sub(c, { targetX, targetY, targetZ })));
 }
 void Viewport3D::frameScene()
 {
@@ -168,17 +202,25 @@ void Viewport3D::frameScene()
     distance = juce::jmax(0.001f, margin / std::tan(limitingHalfFov));
     panX = panY = 0.0f;
 }
-void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { updateSceneBounds(next); pickSnapshot = next; pendingSnapshot = std::move(next); }
+void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { pickSnapshot = next; updateSceneBounds(next); pendingSnapshot = std::move(next); }
 juce::String Viewport3D::diagnostics() const { return glStatus; }
 void Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 {
-    const auto p = projectionFor(getWidth(), getHeight(), distance, sceneRadius); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
+    if (poseSource != nullptr)
+        if (auto latest = poseSource(); latest != pose)
+        {
+            pose = std::move(latest);
+            updatePosedBounds();
+            const juce::SpinLock::ScopedLockType lock(highlightLock);
+            glPose = pose;
+        }
+    const auto p = projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
     DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle; frames.publish(packet);
 }
 
 void Viewport3D::newOpenGLContextCreated()
 {
-    const char* vertex = "#version 410 core\nlayout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(std140) uniform FrameData { mat4 uMVP; mat4 uModel; }; out vec3 n; void main(){ n=mat3(uModel)*normal; gl_Position=uMVP*vec4(position,1.0); }";
+    const char* vertex = "#version 410 core\nlayout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(std140) uniform FrameData { mat4 uMVP; mat4 uModel; }; uniform mat4 uInstance; out vec3 n; void main(){ n=mat3(uModel)*mat3(uInstance)*normal; gl_Position=uMVP*uInstance*vec4(position,1.0); }";
     const char* fragment = "#version 410 core\nin vec3 n; uniform vec3 uColour; out vec4 colour; void main(){ vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(n),l),0.0); colour=vec4(uColour*(0.25+0.75*d),1.0); }";
     shader = std::make_unique<juce::OpenGLShaderProgram>(context);
     if (!shader->addVertexShader(vertex) || !shader->addFragmentShader(fragment) || !shader->link()) { glStatus = "Shader error: " + shader->getLastError(); juce::Logger::writeToLog(glStatus); shader.reset(); repaint(); return; }
@@ -228,14 +270,23 @@ void Viewport3D::renderOpenGL()
     if (geometryIndexCount > 0)
     {
         std::vector<std::pair<juce::String, juce::Colour>> colours;
-        { const juce::SpinLock::ScopedLockType lock(highlightLock); colours = highlights; }
+        std::shared_ptr<const djehuti::cad::CadPoseSnapshot> posed;
+        { const juce::SpinLock::ScopedLockType lock(highlightLock); colours = highlights; posed = glPose; }
+        const auto colourOf = [&](const juce::String& id) { juce::Colour colour(0xff2e9ec7); for (const auto& item : colours) if (item.first == id) colour = item.second; return colour; };
+        const auto draw = [&](const MeshRange& range, const float* matrix, const juce::String& id)
+        {
+            const auto colour = colourOf(id);
+            shader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
+            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+            glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));
+        };
+        const auto unit = identity();
         glBindVertexArray(vao);
         for (const auto& range : meshRanges)
         {
-            juce::Colour colour(0xff2e9ec7);
-            for (const auto& item : colours) if (item.first == range.featureId) colour = item.second;
-            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
-            glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));
+            // A body used by assembly instances is drawn only at its instance poses, never also at its authored position.
+            if (posed == nullptr || posed->instancedFeatures.count(range.featureId) == 0) draw(range, unit.v, range.featureId);
+            if (posed != nullptr) for (const auto& instance : posed->instances) if (instance.featureId == range.featureId) draw(range, instance.matrix.data(), instance.instanceId);
         }
         glBindVertexArray(0);
     } if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -259,7 +310,8 @@ ThreeDViewsPanel::ThreeDViewsPanel(std::shared_ptr<djehuti::cad::CadCommandServi
     addAndMakeVisible(addButton); addAndMakeVisible(pauseButton); addAndMakeVisible(resetButton); addAndMakeVisible(fitButton); addButton.onClick = [this] { addView(); }; pauseButton.onClick = [this] { paused = !paused; pauseButton.setButtonText(paused ? "Resume" : "Pause"); }; resetButton.onClick = [this] { for (auto* tile : tiles) tile->viewport().resetCamera(); }; fitButton.onClick = [this] { for (auto* tile : tiles) tile->viewport().fitAll(); }; addView(); addView(); addView(); startTimerHz(60);
 }
 ThreeDViewsPanel::~ThreeDViewsPanel() { stopTimer(); }
-bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); addAndMakeVisible(tiles.getLast()); if (currentSnapshot != nullptr) tiles.getLast()->viewport().setSnapshot(currentSnapshot); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
+void ThreeDViewsPanel::setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); for (auto* tile : tiles) tile->viewport().setPoseSource(poseSource); }
+bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); tiles.getLast()->viewport().setPoseSource(poseSource); addAndMakeVisible(tiles.getLast()); if (currentSnapshot != nullptr) tiles.getLast()->viewport().setSnapshot(currentSnapshot); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
 void ThreeDViewsPanel::closeView(int id) { if (tiles.size() <= 1) return; for (int i = tiles.size(); --i >= 0;) if (tiles[i]->id() == id) { tiles.remove(i); break; } addButton.setEnabled(tiles.size() < 6); resized(); }
 void ThreeDViewsPanel::publishFrames() { if (cadService != nullptr && cadService->document().revision() != shownRevision) { currentSnapshot = cadService->snapshot(); shownRevision = currentSnapshot != nullptr ? currentSnapshot->revision : 0; for (auto* tile : tiles) tile->viewport().setSnapshot(currentSnapshot); } ++frameSerial; for (auto* tile : tiles) tile->viewport().prepareFrame(sharedAngle, frameSerial); }
 void ThreeDViewsPanel::timerCallback() { publishFrames(); }

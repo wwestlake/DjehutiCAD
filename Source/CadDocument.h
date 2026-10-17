@@ -22,6 +22,8 @@
 #include <gp_Pnt.hxx>
 #include <gp_Trsf.hxx>
 
+#include "CadMechanics.h"
+
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -82,6 +84,17 @@ struct CadPersistentReference
     juce::String semanticRole;
 };
 
+// Joint authoring input in document units: world millimetres for the joint origin, a world direction for the
+// joint +Z axis, both at the reference configuration; coordinates and limits in radians or metres.
+struct CadJointRequest
+{
+    juce::String name, type, parentInstance, childInstance;
+    double originX = 0.0, originY = 0.0, originZ = 0.0, axisX = 0.0, axisY = 0.0, axisZ = 1.0;
+    double reference = 0.0;
+    bool hasLimits = false;
+    double lower = 0.0, upper = 0.0;
+};
+
 class CadDocument
 {
 public:
@@ -105,6 +118,15 @@ public:
     bool rename(const juce::String& id, const juce::String& name, juce::String& error);
     bool setVisible(const juce::String& id, bool visible, juce::String& error);
     bool remove(const juce::String& id, juce::String& error);
+    bool createInstance(const juce::String& featureId, const juce::String& name, juce::String& id, juce::String& error);
+    bool setInstancePlacement(const juce::String& id, const CadFrame& placement, juce::String& error);
+    bool removeInstance(const juce::String& id, juce::String& error);
+    bool renameMechanical(const juce::String& id, const juce::String& name, juce::String& error);
+    bool createJoint(const CadJointRequest& request, juce::String& id, juce::String& error);
+    bool updateJoint(const juce::String& id, const CadJointRequest& request, juce::String& error);
+    bool removeJoint(const juce::String& id, juce::String& error);
+    bool setJointMapping(const CadSignalMapping& mapping, juce::String& error);
+    bool removeJointMapping(const juce::String& jointId, juce::String& error);
     bool undo(juce::String& error);
     bool redo(juce::String& error);
     bool save(const juce::File& file, juce::String& error);
@@ -118,6 +140,7 @@ public:
     const CadFeature* find(const juce::String& id) const;
     const CadSketch* findSketch(const juce::String& id) const;
     const std::vector<CadSketch>& sketchData() const { return sketches; }
+    const CadMechanics& mechanicsData() const { return mechanics; }
     std::uint64_t revision() const { return documentRevision; }
     bool modified() const { return dirty; }
     void markSaved() { dirty = false; }
@@ -142,6 +165,9 @@ private:
     bool deserialize(const juce::String& json, juce::String& error);
     juce::String serializeSketches() const;
     bool deserializeSketches(const juce::String& json, juce::String& error);
+    bool restoreMechanicsFromOCAF(juce::String& error);
+    bool referenceWorld(const juce::String& instanceId, gp_Trsf& world, juce::String& error) const;
+    bool jointFramesFromRequest(const CadJointRequest& request, CadJoint& joint, juce::String& error) const;
     CadSketch* mutableSketch(const juce::String& id);
     bool solveSketch(CadSketch& sketch, juce::String& error) const;
     bool validateSketch(const CadSketch& sketch, juce::String& error) const;
@@ -157,6 +183,7 @@ private:
 
     std::vector<CadFeature> items;
     std::vector<CadSketch> sketches;
+    CadMechanics mechanics;
     std::vector<CadPersistentReference> references;
     std::vector<CadTopologyEvolution> operationHistory;
     Handle(TDocStd_Application) ocafApplication;
@@ -192,6 +219,15 @@ public:
     bool rename(const juce::String& id, const juce::String& name, juce::String& error) { return model.rename(id, name, error); }
     bool setVisible(const juce::String& id, bool value, juce::String& error) { return model.setVisible(id, value, error); }
     bool remove(const juce::String& id, juce::String& error) { return model.remove(id, error); }
+    bool createInstance(const juce::String& featureId, const juce::String& name, juce::String& id, juce::String& error) { return model.createInstance(featureId, name, id, error); }
+    bool setInstancePlacement(const juce::String& id, const CadFrame& placement, juce::String& error) { return model.setInstancePlacement(id, placement, error); }
+    bool removeInstance(const juce::String& id, juce::String& error) { return model.removeInstance(id, error); }
+    bool renameMechanical(const juce::String& id, const juce::String& name, juce::String& error) { return model.renameMechanical(id, name, error); }
+    bool createJoint(const CadJointRequest& request, juce::String& id, juce::String& error) { return model.createJoint(request, id, error); }
+    bool updateJoint(const juce::String& id, const CadJointRequest& request, juce::String& error) { return model.updateJoint(id, request, error); }
+    bool removeJoint(const juce::String& id, juce::String& error) { return model.removeJoint(id, error); }
+    bool setJointMapping(const CadSignalMapping& mapping, juce::String& error) { return model.setJointMapping(mapping, error); }
+    bool removeJointMapping(const juce::String& jointId, juce::String& error) { return model.removeJointMapping(jointId, error); }
     bool undo(juce::String& error) { return model.undo(error); }
     bool redo(juce::String& error) { return model.redo(error); }
     bool makeRepresentativeReference(const juce::String& id, CadPersistentReference& reference, juce::String& error) { return model.makeRepresentativeReference(id, reference, error); }
