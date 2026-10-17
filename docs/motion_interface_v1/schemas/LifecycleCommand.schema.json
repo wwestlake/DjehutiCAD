@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/LifecycleCommand.schema.json",
+  "title": "LifecycleCommand",
+  "description": "DCAD -> DEWB: simulation run-state request (capability lifecycleControl.v1).",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "LifecycleCommand"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique per operation; a retry reuses it."
+    },
+    "modelId": {
+      "type": "string"
+    },
+    "simulationId": {
+      "type": "string"
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "timelineGeneration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "command": {
+      "enum": [
+        "start",
+        "pause",
+        "resume",
+        "stop",
+        "reset",
+        "step"
+      ]
+    },
+    "stepDurationPs": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,18}$"
+        }
+      ],
+      "description": "Positive picoseconds for step; null otherwise."
+    }
+  },
+  "required": [
+    "type",
+    "requestId",
+    "modelId",
+    "simulationId",
+    "profileRevision",
+    "timelineGeneration",
+    "command",
+    "stepDurationPs"
+  ]
+}

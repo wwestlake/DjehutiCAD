@@ -1,0 +1,13 @@
+{
+  "type": "LifecycleResult",
+  "requestId": "a4e1c9b0-2d3f-4e5a-9b8c-7d6e5f4a3b2c",
+  "simulationId": "dewb-session-3f2a",
+  "profileRevision": 8,
+  "command": "pause",
+  "outcome": "rejected",
+  "lifecycle": "stopped",
+  "timelineGeneration": 1,
+  "simTimePs": "0",
+  "code": "invalidTransition",
+  "message": "Pause needs a running simulation; it is stopped."
+}

@@ -1,0 +1,10 @@
+{
+  "type": "LifecycleCommand",
+  "requestId": "5b0c3d2e-9f4a-4c1e-8a77-1d2b3c4d5e6f",
+  "modelId": "8c1f6d0e-5d0b-4c39-9a52-0f1c0d7a2b11",
+  "simulationId": "dewb-session-3f2a",
+  "profileRevision": 8,
+  "timelineGeneration": 1,
+  "command": "step",
+  "stepDurationPs": "10000000000"
+}

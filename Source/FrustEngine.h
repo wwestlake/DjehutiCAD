@@ -107,7 +107,7 @@ void setTickHandler(TickHandler handler);
 // CAD host functions are shared by hand-written FRust and generated node
 // programs. The application owns the command service and clears it on close.
 void setCadCommandService(std::shared_ptr<djehuti::cad::CadCommandService> service);
-void setCadMotionHooks(std::function<std::string()> status, std::function<void(const std::string&, double)> preview);
+void setCadMotionHooks(std::function<std::string()> status, std::function<void(const std::string&, double)> preview, std::function<void(const std::string&, double)> lifecycle);
 std::string cadPrelude();
 const std::vector<std::string>& cadHostFunctions();
 }

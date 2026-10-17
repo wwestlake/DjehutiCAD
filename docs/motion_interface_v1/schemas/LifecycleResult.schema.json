@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://djehuti.local/motion/v1/LifecycleResult.schema.json",
+  "title": "LifecycleResult",
+  "description": "DEWB -> DCAD: outcome of a LifecycleCommand; 'rejected' requires code and message.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "const": "LifecycleResult"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "simulationId": {
+      "type": "string"
+    },
+    "profileRevision": {
+      "type": "integer"
+    },
+    "command": {
+      "enum": [
+        "start",
+        "pause",
+        "resume",
+        "stop",
+        "reset",
+        "step"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "accepted",
+        "applied",
+        "rejected"
+      ]
+    },
+    "lifecycle": {
+      "$ref": "common.schema.json#/$defs/lifecycle"
+    },
+    "timelineGeneration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "simTimePs": {
+      "$ref": "common.schema.json#/$defs/decimalString"
+    },
+    "stateSequence": {
+      "$ref": "common.schema.json#/$defs/decimalString"
+    },
+    "code": {
+      "enum": [
+        "invalidTransition",
+        "invalidStep",
+        "staleBinding",
+        "staleTimeline",
+        "busy",
+        "unknownCommand",
+        "faulted"
+      ]
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "requestId",
+    "simulationId",
+    "outcome",
+    "lifecycle",
+    "timelineGeneration",
+    "simTimePs"
+  ]
+}

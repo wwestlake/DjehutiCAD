@@ -76,6 +76,7 @@ private:
     void validateMotionTask(juce::String& problem, int& severity);
     void saveMapping();
     void previewJoint(bool reset);
+    void sendLifecycle(const juce::String& command);
     void linkChanged();
 
     std::shared_ptr<djehuti::cad::CadCommandService> service;

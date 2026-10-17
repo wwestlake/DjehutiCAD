@@ -212,6 +212,7 @@ extern "C" const char* djehuti_cad_boolean(const char* operation, const char* fi
 
 std::function<std::string()> motionStatusHook;
 std::function<void(const std::string&, double)> motionPreviewHook;
+std::function<void(const std::string&, double)> motionLifecycleHook;
 
 extern "C" const char* djehuti_cad_create_instance(const char* feature, const char* name)
 {
@@ -257,6 +258,17 @@ extern "C" std::int64_t djehuti_cad_motion_preview(const char* joint, double val
     { std::lock_guard<std::mutex> lock(cadMutex); hook = motionPreviewHook; }
     if (!hook) { setCadError("Motion preview is not available."); return 0; }
     hook(joint != nullptr ? joint : "", value);
+    setCadError({});
+    return 1;
+}
+
+// Schedules a simulation lifecycle request (play, start, pause, resume, stop, reset, step) on the motion link.
+extern "C" std::int64_t djehuti_cad_motion_lifecycle(const char* command, double stepMs)
+{
+    std::function<void(const std::string&, double)> hook;
+    { std::lock_guard<std::mutex> lock(cadMutex); hook = motionLifecycleHook; }
+    if (!hook) { setCadError("The motion link is not available."); return 0; }
+    hook(command != nullptr ? command : "", stepMs);
     setCadError({});
     return 1;
 }
@@ -318,6 +330,7 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_set_joint_mapping", reinterpret_cast<void*>(&djehuti_cad_set_joint_mapping));
         frust_plugin_register_host_function("djehuti_cad_motion_preview", reinterpret_cast<void*>(&djehuti_cad_motion_preview));
         frust_plugin_register_host_function("djehuti_cad_motion_status", reinterpret_cast<void*>(&djehuti_cad_motion_status));
+        frust_plugin_register_host_function("djehuti_cad_motion_lifecycle", reinterpret_cast<void*>(&djehuti_cad_motion_lifecycle));
     });
 }
 
@@ -552,11 +565,12 @@ Result runScript(const std::string& script, const RunOptions& options)
     return result;
 }
 
-void setCadMotionHooks(std::function<std::string()> status, std::function<void(const std::string&, double)> preview)
+void setCadMotionHooks(std::function<std::string()> status, std::function<void(const std::string&, double)> preview, std::function<void(const std::string&, double)> lifecycle)
 {
     std::lock_guard<std::mutex> lock(cadMutex);
     motionStatusHook = std::move(status);
     motionPreviewHook = std::move(preview);
+    motionLifecycleHook = std::move(lifecycle);
 }
 
 void setCadCommandService(std::shared_ptr<djehuti::cad::CadCommandService> service)
@@ -586,6 +600,7 @@ std::string cadPrelude()
            "extern fn djehuti_cad_set_joint_mapping(joint: String, signal: String, quantity: String, unit: String, scale: f64, offset: f64, initial: f64) -> i64;\n"
            "extern fn djehuti_cad_motion_preview(joint: String, value: f64) -> i64;\n"
            "extern fn djehuti_cad_motion_status() -> String;\n"
+           "extern fn djehuti_cad_motion_lifecycle(command: String, step_ms: f64) -> i64;\n"
            "extern fn djehuti_cad_last_error() -> String;\n";
 }
 
@@ -594,7 +609,7 @@ const std::vector<std::string>& cadHostFunctions()
     static const std::vector<std::string> names {
         "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
-        "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status"
+        "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle"
     };
     return names;
 }

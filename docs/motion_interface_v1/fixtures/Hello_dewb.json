@@ -9,6 +9,7 @@
     "signalInterface.v1",
     "synchronizeState.v1",
     "stateFrame.v1",
-    "heartbeat.v1"
+    "heartbeat.v1",
+    "lifecycleControl.v1"
   ]
 }

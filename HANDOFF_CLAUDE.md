@@ -202,6 +202,58 @@ A bug found during the check, where frames were treated as synchronizations
 and produced repeated `StateApplied`, was fixed and re-verified (exactly three
 `StateApplied` in the full scenario).
 
+### Motion link corrections and lifecycle control (2026-10-17)
+
+- Ordering: `MotionLink` keeps per-simulation-session watermarks (timeline,
+  sequence, `(simTimePs, microstep)`, and the last sync sequence). They
+  survive same-session revalidation and are cleared only by a new `Hello` or
+  a new `simulationId`. Both `SynchronizeState` and `StateFrame` are checked:
+  - Older timelines are always rejected.
+  - A newer timeline must begin with a sync.
+  - Within a timeline, the sequence must increase and time must not regress.
+  - A duplicate sync is never reapplied; DCAD re-acknowledges it with
+    `duplicate: true` if it was already published.
+- Invalidation: queued states and commands carry a binding epoch. The epoch
+  advances on Hello, disconnect, binding accept/reject/invalidation,
+  SignalInterface, contract change, and document replacement (the new
+  `CadDocument::documentInstance()`). Undo/redo can restore old revision
+  numbers but never revives old work. `publishPending()` rechecks validity
+  and applies the pose under the link lock. `StateApplied` is sent only for
+  the published sync.
+- Transport: the writer is event-driven and reports send failures. DCAD
+  closes the connection when a write takes more than 3 s or 64 messages back
+  up; the failed session is invalidated and a fresh pipe instance is served.
+  Reads have no deadline, so idle listeners stay healthy. Shutdown joins
+  threads with bounded waits (4 s), and the pose is held on loss.
+- Lifecycle: `LifecycleCommand`/`LifecycleResult` with `requestId`,
+  negotiated by `lifecycleControl.v1`, one outstanding request at a time. The
+  request times out after 5 s (30 s once accepted), and Retry resends the same
+  request id. Results never change the pose or lifecycle; states do.
+  - UI: a Simulation group in the Motion Link panel (Start/Resume, Pause,
+    Stop Simulation, Reset, Single Step with an interval in ms).
+  - Automation: agent `cad_motion_lifecycle`, FRust
+    `djehuti_cad_motion_lifecycle`, the CAD Simulation Command node, and Help.
+- Test hook: `DJEHUTI_MOTION_TEST_PUBLISH_DELAY_MS` delays publication so the
+  pending-state boundary can be exercised (used by the peer `invalidate`
+  scenario).
+- Checked with the protocol peer and observed in the running Debug app:
+  - Duplicate sync re-acked, not reapplied. `staleSequence`,
+    `timeRegression` and `staleTimeline` refused (including while awaiting
+    sync after revalidation).
+  - A queued sync was discarded when the session was replaced (no
+    `StateApplied`).
+  - Stalled writer: connection closed within ~2 s, then a clean reconnect.
+  - Start, Pause (lost result → timeout → Retry with the same id → the peer
+    deduplicated), Single Step 10 ms executed once despite duplicate
+    delivery, Reset → timeline 2, Stop → final state held, Start after Stop
+    → timeline 3. Undo of a mapping revalidated profile revision 9.
+  - "Nothing to undo" afterwards. The no-lifecycle peer streams, and the
+    panel shows why controls are off.
+  - Graceful exit while listening completes in seconds.
+- The peer's lifecycle answers are a protocol stand-in, not DEWB simulator
+  controls. FRust, node and agent lifecycle entry points were built but not
+  run interactively.
+
 The FRust, node and agent motion entry points compile but were not run
 interactively, and there is no end-to-end DEWB run yet: the DEWB side is a
 separate assignment. The next boundary is DEWB implementing

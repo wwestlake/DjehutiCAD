@@ -2140,6 +2140,8 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
             in("axis x", "f64"), in("axis y", "f64"), in("axis z", "f64"), in("reference", "f64"), in("lower", "f64"), in("upper", "f64") }, { out("joint", "string") } },
         { "cad_set_joint_mapping", "CAD Joint Signal", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
           { in("joint", "string"), in("signal", "string"), in("quantity", "string"), in("unit", "string"), in("scale", "f64"), in("offset", "f64"), in("initial", "f64") }, { out("ok", "i64") } },
+        { "cad_motion_lifecycle", "CAD Simulation Command", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("command", "string"), in("step ms", "f64") }, { out("scheduled", "i64") } },
         // A FRust programmable component's electrical interface (Workbench):
         // values are f64 volts, amps, seconds; each names a pin, parameter
         // or state variable of the component.

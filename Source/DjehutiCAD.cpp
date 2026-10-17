@@ -48,7 +48,8 @@ DjehutiCAD::DjehutiCAD()
         const auto board = motionLink->statusBoard();
         const juce::Component::SafePointer<DjehutiCAD> safe(this);
         frust_engine::setCadMotionHooks([board] { return board->get().toStdString(); },
-                                        [safe](const std::string& joint, double value) { juce::MessageManager::callAsync([safe, joint, value] { if (safe != nullptr && safe->motionRuntime != nullptr) { juce::String e; safe->motionRuntime->setPreviewCoordinate(joint, value, e); } }); });
+                                        [safe](const std::string& joint, double value) { juce::MessageManager::callAsync([safe, joint, value] { if (safe != nullptr && safe->motionRuntime != nullptr) { juce::String e; safe->motionRuntime->setPreviewCoordinate(joint, value, e); } }); },
+                                        [safe](const std::string& command, double stepMs) { juce::MessageManager::callAsync([safe, command, stepMs] { if (safe != nullptr && safe->motionLink != nullptr) { juce::String e; safe->motionLink->requestLifecycle(command, (std::int64_t) std::llround(stepMs * 1.0e9), e); } }); });
     }
     cadWorkspace = std::make_unique<CadWorkspacePanel>(cadService);
     tabs.addTab("CAD Workspace", juce::Colour(0xff11161b), cadWorkspace.get(), true);
@@ -126,6 +127,12 @@ DjehutiCAD::DjehutiCAD()
                     if (static_cast<bool>(parsed.getProperty("reset", false))) safeThis->motionRuntime->resetToReference();
                     else safeThis->motionRuntime->setPreviewCoordinate(parsed.getProperty("joint", "").toString(), number("value"), error);
                 }
+                else if (name == "cad_motion_lifecycle")
+                {
+                    const auto command = parsed.getProperty("command", "").toString();
+                    if (command == "retry") safeThis->motionLink->retryLifecycle(error);
+                    else safeThis->motionLink->requestLifecycle(command, (std::int64_t) std::llround(number("stepMs", 10.0) * 1.0e9), error);
+                }
                 else if (name == "cad_motion_listen")
                 {
                     if (static_cast<bool>(parsed.getProperty("listen", true))) safeThis->motionLink->startListening(error);
@@ -149,7 +156,7 @@ DjehutiCAD::~DjehutiCAD()
     frustPanel.reset();
     agentPanel.reset();
     viewsPanel.reset();
-    frust_engine::setCadMotionHooks(nullptr, nullptr);
+    frust_engine::setCadMotionHooks(nullptr, nullptr, nullptr);
     motionLink.reset();
     motionRuntime.reset();
     cadWorkspace.reset();
@@ -281,7 +288,8 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "1. Instance: pick a solid body to create a movable assembly instance.\n"
                                                "2. Joint: choose the parent (or World) and child instances, the type (fixed, revolute about +Z, prismatic along +Z) and the joint frame.\n"
                                                "3. Select the joint to preview a coordinate (runtime only, never saved) or map a DEWB signal to it.\n"
-                                               "4. Motion Link: Start Listening and give DEWB the pipe path; DEWB validates the profile, synchronizes, then streams motion.");
+                                               "4. Motion Link: Start Listening and give DEWB the pipe path; DEWB validates the profile, synchronizes, then streams motion.\n"
+                                               "5. Simulation controls in the Motion Link panel (Start/Resume, Pause, Stop Simulation, Reset, Single Step) ask DEWB to change its run state; they need a DEWB that advertises lifecycle control, and the model moves only when DEWB reports the new state.");
     else if (commandId == 30)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About DjehutiCAD",
                                                "DjehutiCAD 0.1.0\nA FRust-programmable CAD foundation.");

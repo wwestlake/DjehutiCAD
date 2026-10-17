@@ -19,6 +19,10 @@
     },
     "sequence": {
       "$ref": "common.schema.json#/$defs/decimalString"
+    },
+    "duplicate": {
+      "type": "boolean",
+      "description": "true when re-acknowledging a duplicate SynchronizeState that was already published."
     }
   },
   "required": [

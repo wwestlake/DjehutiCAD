@@ -731,7 +731,8 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     cancelPendingUpdate(); pendingKeepValues = true;
     const auto context = juce::String((int) task) + "|" + booleanKind + "|" + selectedId + "|" + editingSketchId + "|" + sketchEntityId;
     juce::NamedValueSet previous;
-    if (keepValues && form != nullptr && context == formContext) previous = form->values();
+    int previousScroll = 0;
+    if (keepValues && form != nullptr && context == formContext) { previous = form->values(); previousScroll = taskViewport.getViewPositionY(); }
     formContext = context;
     taskViewport.setViewedComponent(nullptr, false);
     form = std::make_unique<TaskForm>();
@@ -934,6 +935,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     taskViewport.setViewedComponent(form.get(), false);
     validateTask();
     resized();
+    if (previousScroll > 0) taskViewport.setViewPosition(0, previousScroll);   // refreshes keep the reader's place
     repaint();
 }
 
@@ -1495,6 +1497,26 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
         form->addNote({}, "Timeline " + juce::String(status.timelineGeneration) + "  |  sequence " + status.lastSequence + "\nSimulation time " + juce::String(status.simTimePs.getLargeIntValue() / 1.0e12, 6) + " s  |  " + status.lifecycle, 2);
     if (!status.problems.isEmpty()) form->addNote({}, status.problems.joinIntoString("\n"), juce::jmin(8, status.problems.size() + 1));
     if (!status.limitWarnings.isEmpty()) form->addNote({}, status.limitWarnings.joinIntoString("\n"), juce::jmin(4, status.limitWarnings.size() + 1));
+    // Simulation lifecycle requests: DEWB decides; the panel shows its confirmed state and the request outcome.
+    form->addHeader("Simulation");
+    const auto confirmed = status.lifecycle.isEmpty() ? juce::String("unknown") : status.lifecycle;
+    form->addNote({}, "Confirmed by DEWB: " + confirmed + (status.simTimePs.isNotEmpty() ? "  |  t = " + juce::String(status.simTimePs.getLargeIntValue() / 1.0e12, 6) + " s  |  timeline " + juce::String(status.timelineGeneration) : juce::String()), 2);
+    if (!status.lifecycleAvailable) form->addNote({}, status.lifecycleUnavailableReason, 3);
+    const bool ready = status.lifecycleAvailable && !status.commandPending;
+    const bool running = status.lifecycle == "running", pausedNow = status.lifecycle == "paused", stoppedNow = status.lifecycle == "stopped";
+    auto command = [&](const char* key, const juce::String& text, const juce::String& name, const juce::String& tip, bool enabled)
+    {
+        auto& button = form->addButton(key, text, async([name](CadWorkspacePanel& p) { p.sendLifecycle(name); }), tip);
+        button.setEnabled(enabled);
+    };
+    command("play", pausedNow ? "Resume" : "Start", "play", "Start from a stopped or initial state, or resume a paused simulation.", ready && (pausedNow || stoppedNow));
+    command("pause", "Pause", "pause", "Suspend the simulation, keeping its state and time.", ready && running);
+    command("stopSim", "Stop Simulation", "stop", "End the simulation run and keep its final state (the link stays connected).", ready && (running || pausedNow));
+    command("reset", "Reset", "reset", "Restore the initial simulation state on a new timeline; the pose changes when DEWB synchronizes it.", ready);
+    form->addNumber("stepMs", "Step interval", 10.0, "ms", "Simulation time advanced by Single Step (sent as integer picoseconds).");
+    command("step", "Single Step", "step", "Advance the simulation by the step interval and remain paused.", ready && (pausedNow || stoppedNow));
+    if (status.commandText.isNotEmpty()) form->addNote({}, (status.commandPending ? "Pending: " : juce::String()) + status.commandText, 3);
+    if (status.canRetry) form->addButton("retry", "Retry same request", async([](CadWorkspacePanel& p) { juce::String e; if (p.motionLink != nullptr && !p.motionLink->retryLifecycle(e)) p.showError(e); p.rebuildTaskPanel(true); }), "Resend the unconfirmed request with the same request id so DEWB can deduplicate it.");
     form->addHeader("Endpoint");
     const bool listening = motionLink != nullptr && motionLink->isListening();
     form->addButton("listen", listening ? "Stop Listening" : "Start Listening", async([listening](CadWorkspacePanel& p) { if (p.motionLink == nullptr) return; juce::String e; if (listening) p.motionLink->stopListening(); else if (!p.motionLink->startListening(e)) p.showError(e); p.rebuildTaskPanel(false); }), "Open or close the DCAD motion endpoint.");
@@ -1605,6 +1627,16 @@ void CadWorkspacePanel::saveMapping()
     if (!service->setJointMapping(mapping, e)) { showError(e); return; }
     refreshFromDocument(true); rebuildTaskPanel(false);
     setMessage("Mapping saved (profile revision " + juce::String(service->document().mechanicsData().profileRevision) + "). A connected DEWB revalidates it.", 0);
+}
+
+void CadWorkspacePanel::sendLifecycle(const juce::String& command)
+{
+    if (motionLink == nullptr || form == nullptr) return;
+    if (command == "step" && (!form->numberValid("stepMs") || form->number("stepMs") <= 0.0)) { showError("The step interval must be a number of milliseconds greater than zero."); return; }
+    const auto stepPs = command == "step" ? (std::int64_t) std::llround(form->number("stepMs") * 1.0e9) : (std::int64_t) 0;
+    juce::String e;
+    if (!motionLink->requestLifecycle(command, stepPs, e)) showError(e);
+    rebuildTaskPanel(true);
 }
 
 void CadWorkspacePanel::previewJoint(bool reset)

@@ -1,0 +1,12 @@
+{
+  "type": "LifecycleResult",
+  "requestId": "5b0c3d2e-9f4a-4c1e-8a77-1d2b3c4d5e6f",
+  "simulationId": "dewb-session-3f2a",
+  "profileRevision": 8,
+  "command": "step",
+  "outcome": "applied",
+  "lifecycle": "paused",
+  "timelineGeneration": 1,
+  "simTimePs": "2510000000000",
+  "stateSequence": "77"
+}

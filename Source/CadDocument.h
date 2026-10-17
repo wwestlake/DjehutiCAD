@@ -142,6 +142,8 @@ public:
     const std::vector<CadSketch>& sketchData() const { return sketches; }
     const CadMechanics& mechanicsData() const { return mechanics; }
     std::uint64_t revision() const { return documentRevision; }
+    // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
+    std::uint64_t documentInstance() const { return instanceId; }
     bool modified() const { return dirty; }
     void markSaved() { dirty = false; }
     void setFile(const juce::File& file) { documentFile = file; }
@@ -166,6 +168,7 @@ private:
     juce::String serializeSketches() const;
     bool deserializeSketches(const juce::String& json, juce::String& error);
     bool restoreMechanicsFromOCAF(juce::String& error);
+    bool loadFile(const juce::File& file, juce::String& error);
     bool referenceWorld(const juce::String& instanceId, gp_Trsf& world, juce::String& error) const;
     bool jointFramesFromRequest(const CadJointRequest& request, CadJoint& joint, juce::String& error) const;
     CadSketch* mutableSketch(const juce::String& id);
@@ -189,6 +192,7 @@ private:
     Handle(TDocStd_Application) ocafApplication;
     Handle(TDocStd_Document) ocafDocument;
     std::uint64_t documentRevision = 0;
+    std::uint64_t instanceId = 0;
     int nextNumber = 1;
     bool dirty = false;
     juce::File documentFile;
