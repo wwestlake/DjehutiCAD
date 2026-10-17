@@ -229,6 +229,9 @@ void Viewport3D::newOpenGLContextCreated()
     for (auto b : frameBuffers) { glBindBuffer(GL_UNIFORM_BUFFER, b); glBufferData(GL_UNIFORM_BUFFER, sizeof(DjehutiMat4) * 2, nullptr, GL_STREAM_DRAW); }
     const auto block = glGetUniformBlockIndex(shader->getProgramID(), "FrameData"); if (block != GL_INVALID_INDEX) glUniformBlockBinding(shader->getProgramID(), block, 0);
     glEnableVertexAttribArray(positionAttribute->attributeID); glVertexAttribPointer(positionAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr); glEnableVertexAttribArray(normalAttribute->attributeID); glVertexAttribPointer(normalAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float))); glBindVertexArray(0); glEnable(GL_DEPTH_TEST); glEnable(GL_CULL_FACE);
+    // Joint axis indications share the shader: same vertex layout, drawn as lines.
+    glGenVertexArrays(1, &axisVao); glBindVertexArray(axisVao); glGenBuffers(1, &axisVbo); glBindBuffer(GL_ARRAY_BUFFER, axisVbo); glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(positionAttribute->attributeID); glVertexAttribPointer(positionAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr); glEnableVertexAttribArray(normalAttribute->attributeID); glVertexAttribPointer(normalAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float))); glBindVertexArray(0);
     const auto* version = reinterpret_cast<const char*>(glGetString(GL_VERSION)); const auto* shading = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)); glStatus = juce::String("OpenGL ") + (version != nullptr ? version : "version unavailable") + " / GLSL " + (shading != nullptr ? shading : "unavailable") + " / 3 UBO frames"; glReady = true;
 }
 void Viewport3D::renderOpenGL()
@@ -289,10 +292,37 @@ void Viewport3D::renderOpenGL()
             if (posed != nullptr) for (const auto& instance : posed->instances) if (instance.featureId == range.featureId) draw(range, instance.matrix.data(), instance.instanceId);
         }
         glBindVertexArray(0);
+        if (posed != nullptr && !posed->axes.empty() && axisVao != 0)
+        {
+            // Each joint axis: a line through the joint origin along +Z (revolute amber, prismatic cyan), always visible.
+            std::vector<float> lines;
+            const float light[3] { 0.4f / 1.0770f, 0.8f / 1.0770f, 0.6f / 1.0770f };
+            const auto length = posed->axisLength;
+            for (const auto& axis : posed->axes)
+                for (const float t : { -0.3f * length, length })
+                {
+                    for (int k = 0; k < 3; ++k) lines.push_back(axis.origin[(size_t) k] + t * axis.direction[(size_t) k]);
+                    lines.insert(lines.end(), { light[0], light[1], light[2] });
+                }
+            glBindBuffer(GL_ARRAY_BUFFER, axisVbo);
+            glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(float)), lines.data(), GL_DYNAMIC_DRAW);
+            glDisable(GL_DEPTH_TEST);
+            glBindVertexArray(axisVao);
+            shader->setUniformMat4("uInstance", unit.v, 1, GL_FALSE);
+            for (size_t i = 0; i < posed->axes.size(); ++i)
+            {
+                juce::Colour colour = posed->axes[i].linear ? juce::Colour(0xff7fdcff) : juce::Colour(0xffffcf70);
+                for (const auto& item : colours) if (item.first == posed->axes[i].jointId) colour = item.second.brighter(0.3f);
+                shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+                glDrawArrays(GL_LINES, static_cast<GLint>(i * 2), 2);
+            }
+            glBindVertexArray(0);
+            glEnable(GL_DEPTH_TEST);
+        }
     } if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 void Viewport3D::drawCube(const float*) {}
-void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); frameBuffers.fill(0); vao = vbo = ibo = 0; frames.reset(); lastSlot = -1; hasFrame = false; uploadedGeometryRevision = 0; geometryIndexCount = 0; meshRanges.clear(); shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
+void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); if (axisVao != 0) glDeleteVertexArrays(1, &axisVao); if (axisVbo != 0) glDeleteBuffers(1, &axisVbo); frameBuffers.fill(0); vao = vbo = ibo = axisVao = axisVbo = 0; frames.reset(); lastSlot = -1; hasFrame = false; uploadedGeometryRevision = 0; geometryIndexCount = 0; meshRanges.clear(); shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
 void Viewport3D::openGLContextClosing() { releaseGL(); }
 
 class ThreeDViewsPanel::ViewTile final : public juce::Component

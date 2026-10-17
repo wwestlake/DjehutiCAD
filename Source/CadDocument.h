@@ -127,6 +127,11 @@ public:
     bool removeJoint(const juce::String& id, juce::String& error);
     bool setJointMapping(const CadSignalMapping& mapping, juce::String& error);
     bool removeJointMapping(const juce::String& jointId, juce::String& error);
+    bool setInstanceGrounded(const juce::String& id, bool grounded, juce::String& error);
+    bool setJointRole(const juce::String& jointId, const juce::String& role, double lockValue, bool enforceLimits, juce::String& error);
+    bool createCoupling(const CadCoupling& coupling, juce::String& id, juce::String& error);
+    bool updateCoupling(const juce::String& id, const CadCoupling& coupling, juce::String& error);
+    bool removeCoupling(const juce::String& id, juce::String& error);
     bool undo(juce::String& error);
     bool redo(juce::String& error);
     bool save(const juce::File& file, juce::String& error);
@@ -232,6 +237,11 @@ public:
     bool removeJoint(const juce::String& id, juce::String& error) { return model.removeJoint(id, error); }
     bool setJointMapping(const CadSignalMapping& mapping, juce::String& error) { return model.setJointMapping(mapping, error); }
     bool removeJointMapping(const juce::String& jointId, juce::String& error) { return model.removeJointMapping(jointId, error); }
+    bool setInstanceGrounded(const juce::String& id, bool grounded, juce::String& error) { return model.setInstanceGrounded(id, grounded, error); }
+    bool setJointRole(const juce::String& jointId, const juce::String& role, double lockValue, bool enforceLimits, juce::String& error) { return model.setJointRole(jointId, role, lockValue, enforceLimits, error); }
+    bool createCoupling(const CadCoupling& coupling, juce::String& id, juce::String& error) { return model.createCoupling(coupling, id, error); }
+    bool updateCoupling(const juce::String& id, const CadCoupling& coupling, juce::String& error) { return model.updateCoupling(id, coupling, error); }
+    bool removeCoupling(const juce::String& id, juce::String& error) { return model.removeCoupling(id, error); }
     bool undo(juce::String& error) { return model.undo(error); }
     bool redo(juce::String& error) { return model.redo(error); }
     bool makeRepresentativeReference(const juce::String& id, CadPersistentReference& reference, juce::String& error) { return model.makeRepresentativeReference(id, reference, error); }

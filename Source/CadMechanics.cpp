@@ -1,6 +1,7 @@
 #include "CadMechanics.h"
 
 #include <gp_Ax1.hxx>
+#include <gp_EulerSequence.hxx>
 #include <gp_Quaternion.hxx>
 #include <gp_Vec.hxx>
 
@@ -32,8 +33,9 @@ CadFrame CadFrame::fromTrsf(const gp_Trsf& transform)
 
 const CadMechanicalInstance* CadMechanics::findInstance(const juce::String& id) const { for (const auto& i : instances) if (i.id == id) return &i; return nullptr; }
 const CadJoint* CadMechanics::findJoint(const juce::String& id) const { for (const auto& j : joints) if (j.id == id) return &j; return nullptr; }
-const CadJoint* CadMechanics::jointForChild(const juce::String& instanceId) const { for (const auto& j : joints) if (j.childInstance == instanceId) return &j; return nullptr; }
+const CadCoupling* CadMechanics::findCoupling(const juce::String& id) const { for (const auto& c : couplings) if (c.id == id) return &c; return nullptr; }
 const CadSignalMapping* CadMechanics::mappingForJoint(const juce::String& jointId) const { for (const auto& m : mappings) if (m.jointId == jointId) return &m; return nullptr; }
+bool CadMechanics::instanceHasJoints(const juce::String& id) const { for (const auto& j : joints) if (j.parentInstance == id || j.childInstance == id) return true; return false; }
 
 namespace mech
 {
@@ -89,52 +91,76 @@ gp_Trsf frameFromOriginAxis(double ox, double oy, double oz, double ax, double a
     return frame;
 }
 
-bool validateJointGraph(const CadMechanics& model, juce::String& error)
+// Orientation entry for the UI: extrinsic rotations about world X, then Y, then Z, in degrees.
+CadFrame frameFromEulerDegrees(double x, double y, double z, double rx, double ry, double rz)
 {
-    std::set<juce::String> children;
+    const auto toRad = juce::MathConstants<double>::pi / 180.0;
+    gp_Quaternion q;
+    q.SetEulerAngles(gp_Extrinsic_XYZ, rx * toRad, ry * toRad, rz * toRad);
+    gp_Trsf t; t.SetRotation(q); t.SetTranslationPart(gp_Vec(x, y, z));
+    return CadFrame::fromTrsf(t);
+}
+
+void eulerDegreesFromFrame(const CadFrame& frame, double& rx, double& ry, double& rz)
+{
+    const auto toDeg = 180.0 / juce::MathConstants<double>::pi;
+    gp_Quaternion(frame.qx, frame.qy, frame.qz, frame.qw).GetEulerAngles(gp_Extrinsic_XYZ, rx, ry, rz);
+    rx *= toDeg; ry *= toDeg; rz *= toDeg;
+    for (auto* v : { &rx, &ry, &rz }) if (std::abs(*v) < 1.0e-9) *v = 0.0;
+}
+
+double couplingFactor(const CadCoupling& c)
+{
+    if (c.type == "rackPinion") return c.pitchRadius;
+    if (c.type == "screw") return c.lead / (2.0 * juce::MathConstants<double>::pi);
+    return c.ratio;
+}
+
+bool validateCoupling(const CadMechanics& model, const CadCoupling& c, juce::String& error)
+{
+    const auto label = c.name.isNotEmpty() ? c.name : juce::String("Coupling");
+    const auto* a = model.findJoint(c.jointA);
+    const auto* b = model.findJoint(c.jointB);
+    if (a == nullptr || b == nullptr) { error = label + ": choose two existing joints."; return false; }
+    if (c.jointA == c.jointB) { error = label + ": a coupling needs two different joints."; return false; }
+    const bool ok = (c.type == "gear" && a->type == "revolute" && b->type == "revolute")
+                 || (c.type == "linear" && a->type == "prismatic" && b->type == "prismatic")
+                 || ((c.type == "rackPinion" || c.type == "screw") && a->type == "revolute" && b->type == "prismatic");
+    if (!ok)
+    {
+        error = label + ": " + (c.type == "gear" ? "a gear coupling joins two revolute joints."
+                              : c.type == "linear" ? "a linear coupling joins two prismatic joints."
+                              : c.type == "rackPinion" || c.type == "screw" ? "the first joint must be revolute (pinion/screw) and the second prismatic."
+                              : "unknown coupling type '" + c.type + "'.");
+        return false;
+    }
+    const auto k = couplingFactor(c);
+    if (!std::isfinite(k) || k == 0.0 || !std::isfinite(c.offset)) { error = label + ": the ratio, pitch radius or lead must be finite and non-zero, and the offset finite."; return false; }
+    return true;
+}
+
+// Checks references and numbers. Closed loops and several joints on one instance are valid mechanisms.
+bool validateModel(const CadMechanics& model, juce::String& error)
+{
+    std::set<juce::String> ids;
+    for (const auto& instance : model.instances) if (!ids.insert(instance.id).second) { error = "Duplicate instance id " + instance.id + "."; return false; }
     for (const auto& joint : model.joints)
     {
+        if (!ids.insert(joint.id).second) { error = "Duplicate id " + joint.id + "."; return false; }
         if (joint.type != "fixed" && joint.type != "revolute" && joint.type != "prismatic") { error = joint.name + ": unsupported joint type '" + joint.type + "'."; return false; }
         if (model.findInstance(joint.childInstance) == nullptr) { error = joint.name + ": child instance '" + joint.childInstance + "' does not exist."; return false; }
         if (joint.parentInstance.isNotEmpty() && model.findInstance(joint.parentInstance) == nullptr) { error = joint.name + ": parent instance '" + joint.parentInstance + "' does not exist."; return false; }
         if (joint.parentInstance == joint.childInstance) { error = joint.name + ": parent and child must be different instances."; return false; }
-        if (!children.insert(joint.childInstance).second) { error = joint.name + ": instance '" + joint.childInstance + "' already has a parent joint."; return false; }
         if (joint.hasLimits && !(joint.lower <= joint.upper)) { error = joint.name + ": lower limit must not exceed upper limit."; return false; }
-        if (!std::isfinite(joint.reference)) { error = joint.name + ": reference coordinate must be finite."; return false; }
+        if (!std::isfinite(joint.reference) || !std::isfinite(joint.lockValue) || !std::isfinite(joint.lower) || !std::isfinite(joint.upper)) { error = joint.name + ": coordinates and limits must be finite."; return false; }
+        if (joint.role != "driver" && joint.role != "dependent" && joint.role != "locked") { error = joint.name + ": role must be driver, dependent or locked."; return false; }
+        if (joint.enforceLimits && !joint.hasLimits) { error = joint.name + ": hard bounds need limits."; return false; }
     }
-    for (const auto& joint : model.joints)
+    for (const auto& c : model.couplings)
     {
-        std::set<juce::String> visited { joint.childInstance };
-        for (auto parent = joint.parentInstance; parent.isNotEmpty();)
-        {
-            if (!visited.insert(parent).second) { error = joint.name + ": joint hierarchy contains a cycle."; return false; }
-            const auto* up = model.jointForChild(parent);
-            parent = up != nullptr ? up->parentInstance : juce::String();
-        }
+        if (!ids.insert(c.id).second) { error = "Duplicate id " + c.id + "."; return false; }
+        if (!validateCoupling(model, c, error)) return false;
     }
-    return true;
-}
-
-bool evaluate(const CadMechanics& model, const std::map<juce::String, double>& coordinates, std::map<juce::String, gp_Trsf>& world, juce::String& error)
-{
-    if (!validateJointGraph(model, error)) return false;
-    world.clear();
-    std::function<gp_Trsf(const juce::String&)> resolve = [&](const juce::String& id) -> gp_Trsf
-    {
-        if (const auto found = world.find(id); found != world.end()) return found->second;
-        const auto* instance = model.findInstance(id);
-        gp_Trsf result;
-        if (const auto* joint = model.jointForChild(id))
-        {
-            const auto q = coordinates.count(joint->id) != 0 ? coordinates.at(joint->id) : joint->reference;
-            const auto parent = joint->parentInstance.isEmpty() ? gp_Trsf() : resolve(joint->parentInstance);
-            result = parent.Multiplied(joint->parentToJoint.toTrsf()).Multiplied(motion(*joint, q)).Multiplied(joint->jointToChild.toTrsf());
-        }
-        else if (instance != nullptr) result = instance->placement.toTrsf();
-        world[id] = result;
-        return result;
-    };
-    for (const auto& instance : model.instances) resolve(instance.id);
     return true;
 }
 
@@ -143,6 +169,7 @@ bool validateMapping(const CadMechanics& model, const CadSignalMapping& mapping,
     const auto* joint = model.findJoint(mapping.jointId);
     if (joint == nullptr) { error = "Mapping refers to unknown joint '" + mapping.jointId + "'."; return false; }
     if (joint->type == "fixed") { error = joint->name + " is fixed and cannot be driven."; return false; }
+    if (joint->role != "driver") { error = joint->name + " is a " + joint->role + " coordinate; only driver coordinates can be mapped to DEWB signals."; return false; }
     if (mapping.signalId.trim().isEmpty()) { error = joint->name + ": choose the DEWB signal that drives it."; return false; }
     if (!quantityDrivesJoint(mapping.sourceQuantity, joint->type)) { error = joint->name + ": a " + joint->type + " joint cannot be driven by '" + mapping.sourceQuantity + "'."; return false; }
     double factor = 0.0;
@@ -178,20 +205,46 @@ bool frameFromJson(const juce::var& value, CadFrame& frame, juce::String& error)
     frame.qw /= norm; frame.qx /= norm; frame.qy /= norm; frame.qz /= norm;
     return true;
 }
+
+// Schema 1 positioned joint children through a single-parent tree. Used only to migrate those documents.
+std::map<juce::String, gp_Trsf> legacyReferencePlacements(const CadMechanics& model)
+{
+    std::map<juce::String, gp_Trsf> world;
+    std::set<juce::String> active;
+    std::function<gp_Trsf(const juce::String&)> resolve = [&](const juce::String& id) -> gp_Trsf
+    {
+        if (const auto found = world.find(id); found != world.end()) return found->second;
+        gp_Trsf result;
+        const CadJoint* parentJoint = nullptr;
+        for (const auto& j : model.joints) if (j.childInstance == id) { parentJoint = &j; break; }
+        if (parentJoint != nullptr && active.insert(id).second)
+        {
+            const auto parent = parentJoint->parentInstance.isEmpty() ? gp_Trsf() : resolve(parentJoint->parentInstance);
+            result = parent.Multiplied(parentJoint->parentToJoint.toTrsf()).Multiplied(parentJoint->jointToChild.toTrsf());
+        }
+        else if (const auto* instance = model.findInstance(id)) result = instance->placement.toTrsf();
+        world[id] = result;
+        return result;
+    };
+    for (const auto& instance : model.instances) resolve(instance.id);
+    return world;
+}
 }
 
 juce::var toJson(const CadMechanics& model)
 {
     auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty("schemaVersion", CadMechanics::kSchemaVersion);
     root->setProperty("lengthUnit", "mm");
     root->setProperty("modelId", model.modelId);
     root->setProperty("interfaceRevision", model.interfaceRevision);
     root->setProperty("profileRevision", model.profileRevision);
-    juce::Array<juce::var> instances, joints, mappings;
+    juce::Array<juce::var> instances, joints, couplings, mappings;
     for (const auto& i : model.instances)
     {
         auto o = std::make_unique<juce::DynamicObject>();
         o->setProperty("id", i.id); o->setProperty("name", i.name); o->setProperty("featureId", i.featureId); o->setProperty("placement", frameToJson(i.placement, 1.0));
+        o->setProperty("grounded", i.grounded);
         instances.add(juce::var(o.release()));
     }
     for (const auto& j : model.joints)
@@ -201,7 +254,15 @@ juce::var toJson(const CadMechanics& model)
         o->setProperty("parentInstance", j.parentInstance); o->setProperty("childInstance", j.childInstance);
         o->setProperty("parentToJoint", frameToJson(j.parentToJoint, 1.0)); o->setProperty("jointToChild", frameToJson(j.jointToChild, 1.0));
         o->setProperty("reference", j.reference); o->setProperty("hasLimits", j.hasLimits); o->setProperty("lower", j.lower); o->setProperty("upper", j.upper);
+        o->setProperty("role", j.role); o->setProperty("lockValue", j.lockValue); o->setProperty("enforceLimits", j.enforceLimits);
         joints.add(juce::var(o.release()));
+    }
+    for (const auto& c : model.couplings)
+    {
+        auto o = std::make_unique<juce::DynamicObject>();
+        o->setProperty("id", c.id); o->setProperty("name", c.name); o->setProperty("type", c.type); o->setProperty("jointA", c.jointA); o->setProperty("jointB", c.jointB);
+        o->setProperty("ratio", c.ratio); o->setProperty("pitchRadius", c.pitchRadius); o->setProperty("lead", c.lead); o->setProperty("offset", c.offset);
+        couplings.add(juce::var(o.release()));
     }
     for (const auto& m : model.mappings)
     {
@@ -210,15 +271,20 @@ juce::var toJson(const CadMechanics& model)
         o->setProperty("scale", m.scale); o->setProperty("offset", m.offset); o->setProperty("initialCoordinate", m.initialCoordinate);
         mappings.add(juce::var(o.release()));
     }
-    root->setProperty("instances", instances); root->setProperty("joints", joints); root->setProperty("mappings", mappings);
+    root->setProperty("instances", instances); root->setProperty("joints", joints); root->setProperty("couplings", couplings); root->setProperty("mappings", mappings);
     return juce::var(root.release());
 }
 
+// Migration policy for schema 1 (independent-joint documents): each instance that was a tree root becomes
+// grounded at its placement, each joint child's placement becomes its former chain-derived reference pose,
+// and every movable joint becomes a driver. The resulting mechanism behaves exactly as before.
 bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error)
 {
     CadMechanics loaded;
     if (!json.isObject()) { error = "Mechanical data is invalid."; return false; }
     if (json.getProperty("lengthUnit", "mm").toString() != "mm") { error = "Mechanical data must use millimetres."; return false; }
+    const int schema = (int) json.getProperty("schemaVersion", 1);
+    if (schema > CadMechanics::kSchemaVersion) { error = "Mechanical data uses schema " + juce::String(schema) + "; this DjehutiCAD reads up to schema " + juce::String(CadMechanics::kSchemaVersion) + "."; return false; }
     loaded.modelId = json.getProperty("modelId", "").toString();
     loaded.interfaceRevision = (int) json.getProperty("interfaceRevision", 0);
     loaded.profileRevision = (int) json.getProperty("profileRevision", 0);
@@ -226,6 +292,7 @@ bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error)
         for (const auto& v : *list)
         {
             CadMechanicalInstance i; i.id = v.getProperty("id", "").toString(); i.name = v.getProperty("name", "").toString(); i.featureId = v.getProperty("featureId", "").toString();
+            i.grounded = (bool) v.getProperty("grounded", false);
             if (i.id.isEmpty() || !frameFromJson(v.getProperty("placement", {}), i.placement, error)) { if (error.isEmpty()) error = "Instance entry is missing its id."; return false; }
             loaded.instances.push_back(i);
         }
@@ -235,8 +302,18 @@ bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error)
             CadJoint j; j.id = v.getProperty("id", "").toString(); j.name = v.getProperty("name", "").toString(); j.type = v.getProperty("type", "").toString();
             j.parentInstance = v.getProperty("parentInstance", "").toString(); j.childInstance = v.getProperty("childInstance", "").toString();
             j.reference = v.getProperty("reference", 0.0); j.hasLimits = (bool) v.getProperty("hasLimits", false); j.lower = v.getProperty("lower", 0.0); j.upper = v.getProperty("upper", 0.0);
+            j.role = v.getProperty("role", "driver").toString(); j.lockValue = v.getProperty("lockValue", 0.0); j.enforceLimits = (bool) v.getProperty("enforceLimits", false);
             if (j.id.isEmpty() || !frameFromJson(v.getProperty("parentToJoint", {}), j.parentToJoint, error) || !frameFromJson(v.getProperty("jointToChild", {}), j.jointToChild, error)) { if (error.isEmpty()) error = "Joint entry is missing its id."; return false; }
             loaded.joints.push_back(j);
+        }
+    if (const auto* list = json.getProperty("couplings", {}).getArray())
+        for (const auto& v : *list)
+        {
+            CadCoupling c; c.id = v.getProperty("id", "").toString(); c.name = v.getProperty("name", "").toString(); c.type = v.getProperty("type", "").toString();
+            c.jointA = v.getProperty("jointA", "").toString(); c.jointB = v.getProperty("jointB", "").toString();
+            c.ratio = v.getProperty("ratio", 1.0); c.pitchRadius = v.getProperty("pitchRadius", 0.01); c.lead = v.getProperty("lead", 0.001); c.offset = v.getProperty("offset", 0.0);
+            if (c.id.isEmpty()) { error = "Coupling entry is missing its id."; return false; }
+            loaded.couplings.push_back(c);
         }
     if (const auto* list = json.getProperty("mappings", {}).getArray())
         for (const auto& v : *list)
@@ -246,7 +323,19 @@ bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error)
             m.scale = v.getProperty("scale", 1.0); m.offset = v.getProperty("offset", 0.0); m.initialCoordinate = v.getProperty("initialCoordinate", 0.0);
             loaded.mappings.push_back(m);
         }
-    if (!validateJointGraph(loaded, error)) return false;
+    if (schema < 2)
+    {
+        const auto placements = legacyReferencePlacements(loaded);
+        std::set<juce::String> children;
+        for (const auto& j : loaded.joints) children.insert(j.childInstance);
+        for (auto& i : loaded.instances)
+        {
+            if (const auto found = placements.find(i.id); found != placements.end()) i.placement = CadFrame::fromTrsf(found->second);
+            i.grounded = children.count(i.id) == 0;
+        }
+        for (auto& j : loaded.joints) j.role = "driver";
+    }
+    if (!validateModel(loaded, error)) return false;
     model = std::move(loaded);
     return true;
 }

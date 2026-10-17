@@ -38,6 +38,7 @@ struct LinkSnapshot
 {
     LinkState state = LinkState::stopped;
     juce::String pipeName, pipePath, peerName, simulationId, lifecycle, message, lastSequence, simTimePs;
+    juce::String posedSequence, posedSimTimePs, solveProblem;   // last state that produced a valid mechanism pose
     int severity = 0, acceptedProfileRevision = -1, timelineGeneration = 0;
     juce::StringArray problems, limitWarnings;
     std::vector<SignalInfo> signals;

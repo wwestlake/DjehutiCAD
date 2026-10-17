@@ -28,7 +28,7 @@ public:
     std::function<void()> onOpenViews;
 
 private:
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -69,6 +69,11 @@ private:
     juce::String applicableConstraintTypes() const;
     bool isInstance(const juce::String& id) const;
     bool isJoint(const juce::String& id) const;
+    bool isCoupling(const juce::String& id) const;
+    void addCouplingFields(const djehuti::cad::CadCoupling* existing);
+    bool readCoupling(djehuti::cad::CadCoupling& coupling, juce::String& error) const;
+    void addMechanismStatus();
+    void mechanismChanged();
     bool isCommandTask() const;
     bool jointReferenceFrame(const juce::String& jointId, gp_Trsf& world) const;
     void addMotionPanels(juce::String& title, juce::String& instruction, juce::String& accept, bool& showAccept, bool& showCancel);
@@ -87,7 +92,7 @@ private:
         fitButton { "Fit All" }, resetViewButton { "Reset View" }, viewsButton { "3D Views" },
         selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, constrainButton { "Constrain" },
         fitSketchButton { "Fit Sketch" }, finishSketchButton { "Finish Sketch" },
-        instanceButton { "Instance" }, jointButton { "Joint" }, linkButton { "Motion Link" };
+        instanceButton { "Instance" }, jointButton { "Joint" }, couplingButton { "Coupling" }, linkButton { "Motion Link" };
     juce::TreeView tree { "Model" };
     std::unique_ptr<juce::TreeViewItem> rootItem;
     juce::Component centre, side;
@@ -104,7 +109,7 @@ private:
     juce::String booleanKind, sketchPlane, formContext;
     juce::String selectedId, editingSketchId, sketchEntityId, sketchSecondEntityId;
     juce::String profileId, targetId, toolId;
-    juce::String instanceBodyId, jointParentId, jointChildId;
+    juce::String instanceBodyId, jointParentId, jointChildId, couplingJointA, couplingJointB, shownMechanismSummary;
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
     djehuti::motion::MotionLink* motionLink = nullptr;
     std::uint64_t shownLinkSerial = 0;

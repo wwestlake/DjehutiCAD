@@ -252,6 +252,44 @@ extern "C" std::int64_t djehuti_cad_set_joint_mapping(const char* joint, const c
     return 0;
 }
 
+extern "C" std::int64_t djehuti_cad_set_grounded(const char* instance, std::int64_t grounded)
+{
+    if (auto service = activeCadService()) { juce::String error; const bool ok = service->setInstanceGrounded(instance != nullptr ? instance : "", grounded != 0, error); setCadError(error); return ok ? 1 : 0; }
+    setCadError("No CAD document is attached.");
+    return 0;
+}
+
+// Orientation as extrinsic rotations about world X, Y, Z in degrees.
+extern "C" std::int64_t djehuti_cad_set_instance_placement(const char* instance, double x, double y, double z, double rx, double ry, double rz)
+{
+    if (auto service = activeCadService()) { juce::String error; const bool ok = service->setInstancePlacement(instance != nullptr ? instance : "", djehuti::cad::mech::frameFromEulerDegrees(x, y, z, rx, ry, rz), error); setCadError(error); return ok ? 1 : 0; }
+    setCadError("No CAD document is attached.");
+    return 0;
+}
+
+extern "C" std::int64_t djehuti_cad_set_joint_role(const char* joint, const char* role, double lockValue, std::int64_t enforceLimits)
+{
+    if (auto service = activeCadService()) { juce::String error; const bool ok = service->setJointRole(joint != nullptr ? joint : "", role != nullptr ? role : "", lockValue, enforceLimits != 0, error); setCadError(error); return ok ? 1 : 0; }
+    setCadError("No CAD document is attached.");
+    return 0;
+}
+
+// factor: gear/linear ratio, rackPinion pitch radius (m) or screw lead (m per revolution).
+extern "C" const char* djehuti_cad_create_coupling(const char* type, const char* jointA, const char* jointB, double factor, double offset)
+{
+    if (auto service = activeCadService())
+    {
+        djehuti::cad::CadCoupling coupling;
+        coupling.type = type != nullptr ? type : ""; coupling.jointA = jointA != nullptr ? jointA : ""; coupling.jointB = jointB != nullptr ? jointB : "";
+        coupling.ratio = factor; coupling.pitchRadius = factor; coupling.lead = factor; coupling.offset = offset;
+        juce::String id, error;
+        if (service->createCoupling(coupling, id, error)) { setCadError({}); return returnCad(id); }
+        setCadError(error);
+    }
+    else setCadError("No CAD document is attached.");
+    return returnCad({});
+}
+
 extern "C" std::int64_t djehuti_cad_motion_preview(const char* joint, double value)
 {
     std::function<void(const std::string&, double)> hook;
@@ -331,6 +369,10 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_motion_preview", reinterpret_cast<void*>(&djehuti_cad_motion_preview));
         frust_plugin_register_host_function("djehuti_cad_motion_status", reinterpret_cast<void*>(&djehuti_cad_motion_status));
         frust_plugin_register_host_function("djehuti_cad_motion_lifecycle", reinterpret_cast<void*>(&djehuti_cad_motion_lifecycle));
+        frust_plugin_register_host_function("djehuti_cad_set_grounded", reinterpret_cast<void*>(&djehuti_cad_set_grounded));
+        frust_plugin_register_host_function("djehuti_cad_set_instance_placement", reinterpret_cast<void*>(&djehuti_cad_set_instance_placement));
+        frust_plugin_register_host_function("djehuti_cad_set_joint_role", reinterpret_cast<void*>(&djehuti_cad_set_joint_role));
+        frust_plugin_register_host_function("djehuti_cad_create_coupling", reinterpret_cast<void*>(&djehuti_cad_create_coupling));
     });
 }
 
@@ -601,6 +643,10 @@ std::string cadPrelude()
            "extern fn djehuti_cad_motion_preview(joint: String, value: f64) -> i64;\n"
            "extern fn djehuti_cad_motion_status() -> String;\n"
            "extern fn djehuti_cad_motion_lifecycle(command: String, step_ms: f64) -> i64;\n"
+           "extern fn djehuti_cad_set_grounded(instance: String, grounded: i64) -> i64;\n"
+           "extern fn djehuti_cad_set_instance_placement(instance: String, x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> i64;\n"
+           "extern fn djehuti_cad_set_joint_role(joint: String, role: String, lock_value: f64, enforce_limits: i64) -> i64;\n"
+           "extern fn djehuti_cad_create_coupling(type: String, joint_a: String, joint_b: String, factor: f64, offset: f64) -> String;\n"
            "extern fn djehuti_cad_last_error() -> String;\n";
 }
 
@@ -609,7 +655,8 @@ const std::vector<std::string>& cadHostFunctions()
     static const std::vector<std::string> names {
         "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
-        "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle"
+        "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
+        "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling"
     };
     return names;
 }

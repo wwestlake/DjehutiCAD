@@ -240,7 +240,12 @@ with a binding epoch that advances whenever the connection session, simulation s
 mechanical interface, profile or document is superseded (including undo/redo and New/Open). Before a
 queued state is drawn, DCAD rechecks — atomically with publication — that its epoch, simulation, profile
 and timeline are still current; superseded work is discarded and its `SynchronizeState` is never
-acknowledged. `StateApplied` is sent only for a synchronization actually published under the current binding.
+acknowledged. `StateApplied` is sent only for a synchronization actually published under the current binding,
+which includes solving the CAD mechanism: mapped coordinates are prescribed driver inputs and DCAD computes all
+dependent joints itself (see [MECHANISM_CONSTRAINTS.md](MECHANISM_CONSTRAINTS.md)). If that solve fails, DCAD
+keeps the last valid pose, reports `mechanismUnsolved`, and expects a new `SynchronizeState` (newer `sequence`
+or timeline) rather than a resend of the same one. DCAD's status separates the received state from the last
+posed state.
 
 Errors are reported as `LinkStatus` (`severity: "error"`), rate-limited to one per code per second:
 
@@ -254,6 +259,8 @@ Errors are reported as `LinkStatus` (`severity: "error"`), rate-limited to one p
 | `unknownJoint`, `missingJoint`, `nonFiniteValue` | Joint list does not match the accepted profile, or values are not finite |
 | `limitExceeded` (warning) | A coordinate is outside its engineering limits; the value is still applied, never clamped |
 | `unknownRequest` (warning) | A `LifecycleResult` matches no outstanding DCAD request |
+| `mechanismUnsolved` | The state is valid on the wire but DCAD's mechanism solver cannot pose it (conflicting inputs, hard bound, no convergence); the last valid pose stays; a `SynchronizeState` is not acknowledged |
+| `mappingConflict` (in `profileIncompatible` errors) | A mapping targets a joint whose CAD mechanism role is dependent or locked; only driver joints can be mapped |
 | `revalidationRequired` (warning), `heartbeat` (info) | Profile change; keep-alive |
 
 DCAD display states: `Stopped`, `Listening`, `Connected`, `Validating`, `Awaiting synchronization`,
