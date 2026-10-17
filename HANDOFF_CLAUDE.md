@@ -114,6 +114,16 @@ orthonormal right/up axes, determinant +1, and one consistent eye-based
 translation with view-space pan. Geometry is not rescaled or moved to hide
 camera problems.
 
+JUCE paints each viewport's component overlay after `renderOpenGL()` and
+leaves `GL_DEPTH_TEST` disabled. Depth testing used to be enabled only at
+context creation, so parts were layered in draw order while orbiting and
+seemed to swap places or turn around their own centers. `renderOpenGL()` now
+restores depth testing, back-face culling and no blending every frame. Before
+the fix this was reproduced in the GUI (a far box drawn over a near box), and
+afterwards near/far occlusion was observed to be correct during horizontal and
+vertical drags, with only the dragged view moving. The full mouse-orbit check
+is left to Bill.
+
 Snapshot tessellation uses OCCT surface-property normals at triangulation UV
 coordinates, applies face reversal and surface-location transforms, and checks
 triangle winding against the oriented normal. When UV normals are unavailable,
