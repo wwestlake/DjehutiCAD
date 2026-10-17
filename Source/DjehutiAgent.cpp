@@ -54,7 +54,7 @@ std::vector<ai_provider::ToolDefinition> tools()
         { "cad_cut", "Cut a closed sketch profile from an explicit solid target; support finite depth or through-all.", cut },
         { "cad_set_dimensions", "Change a managed CAD feature's dimensions in millimeters.", featureDimensions },
         { "cad_set_placement", "Set a feature's millimeter position and optional Euler rotations in degrees.", placement },
-        { "cad_boolean", "Create a union, subtract, or intersect feature from two managed feature ids.", booleanArgs },
+        { "cad_boolean", "Create a union, subtract, or intersect feature from two distinct solid body ids. For subtract, first is the target body to keep and second is the cutting tool. Both sources are hidden and stay in the feature history; undo restores them.", booleanArgs },
         { "cad_undo", "Undo the most recent CAD document command.", emptyObject },
         { "cad_redo", "Redo the most recently undone CAD document command.", emptyObject }
     };

@@ -64,6 +64,7 @@ struct CadSketch
 
 struct CadMesh
 {
+    juce::String featureId;
     std::vector<float> vertices;
     std::vector<std::uint32_t> indices;
 };

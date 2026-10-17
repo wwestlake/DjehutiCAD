@@ -75,20 +75,53 @@ select a second entity for two-entity constraints.
 Sketch dimensions and numeric entity position/center edits regenerate connected
 geometry. Closed planar profiles can be extruded into real OCCT prism solids.
 Sketch tools can be cut from an explicit solid target, including finite,
-reverse, and through-all cuts. Finish and Cancel controls are implemented;
-Cancel discards only an unfinished gesture. The properties panel is vertically
-scrollable so sketch and modeling actions remain reachable at the existing
-window sizes.
+reverse, and through-all cuts.
 
-Property inputs carry persistent captions (with mm units) that follow the
-selection (`CadWorkspacePanel::updateCaptions`): box width/depth/height along
-X/Y/Z, cylinder radius/height, box corner or cylinder base-center world
-position, extrude distance/cut depth, sketch line length or circle radius,
-and sketch entity positions in local plane coordinates. The shared dimension
-field states when Add Constraint reads it differently (for example radius for
-Apply, diameter for Add Constraint). A circle driven only by a diameter
-constraint shows and edits its diameter, matching what Apply already did.
-Verified by Debug build and a brief GUI check of line and circle captions.
+## CAD workspace layout and workflows
+
+`CadWorkspacePanel` is a conventional CAD workspace. The model tree (Origin,
+Bodies, Sketches, Features) is on the left. The centre is either the embedded
+model view (a `Viewport3D` with its own camera, fed from the shared snapshot) or
+the active sketch canvas. A contextual task panel is on the right, and status
+plus units sit along the bottom. Column splitters are stored as width fractions
+in the existing settings file (`cadWorkspaceLayout`). The task panel builds
+only the fields for the current selection or command. Its instruction text,
+validation/result message, and accept/cancel buttons stay pinned outside the
+scrolling field area.
+
+- Sketch: Create Sketch, choose XY/XZ/YZ (plus offset), then Create Sketch.
+  This opens sketch mode: a mode banner, the Select/Line/Rectangle/Circle/
+  Constrain tools and a prominent Finish Sketch. The full-size canvas zooms
+  with the wheel, pans with right/middle drag, has Fit Sketch and an adaptive
+  grid, and shows a live preview with dimension readouts. Drawing tools stay
+  active until Select or Esc; Esc first cancels only the current gesture.
+  Selecting an entity shows its length or radius/diameter, its plane
+  coordinates, and a separate constraint group with its own value field.
+  Finish Sketch keeps the geometry and selects the sketch, whose panel offers
+  Edit Sketch, Extrude and Cut Sketch (double-click also edits).
+- Extrude / Cut Sketch: role slots for Profile (sketch) and Target (body),
+  plus distance/depth, Reverse and Through all.
+- Subtract / Union / Intersect: Target (body kept) and Tool (cutting body)
+  slots, filled by picking in the tree or by clicking a body in the model view.
+  `Viewport3D::pickBody` does a screen-space triangle test against the
+  snapshot meshes, which now carry `featureId`. Target/Tool are highlighted
+  green/red in both the view and the tree. Accept stays disabled until two
+  different solids are chosen. A subtract that leaves the volume unchanged
+  reports that the Tool does not intersect.
+
+The root cause of Subtract appearing to do nothing was in the old UI.
+Operands were typed IDs filled by "Use Selected as..." buttons, and selecting
+a feature cleared the second operand. The refusal message went to the bottom
+of a long scrolling form, and the workspace had no model view to show a
+successful result. `CadDocument::booleanOp` now also rejects non-solid
+operands and results with no solid (all callers share this path). Boolean
+kernels report `IsDone`/`HasErrors` failures instead of producing empty shapes.
+
+Verified on Debug, interactively, in the running application. That check
+covered: plane choice, a rectangle drawn with live preview, Finish Sketch,
+Extrude, an overlapping cylinder, Target/Tool picked in the model view,
+Subtract showing a real hole, Undo restoring both sources, and the disabled
+Subtract with an instruction while Tool was missing.
 
 This is not a complete arbitrary sketch solver. The current behavior is a
 bounded constraint/validation implementation, not general free-form constraint
@@ -191,6 +224,11 @@ Useful entry points:
   not implemented in this CAD foundation.
 - Mesh and GUI behavior still need focused direct observation when the native
   application is available through an appropriate UI surface.
+- Sketches are not drawn in the 3D model view; they appear only in the sketch
+  canvas. Picking is body-level only (no face/edge selection).
+- New primitives are created at the origin, and their placement is edited
+  afterwards in the body panel. The sketch Esc behavior, constraint group, and
+  splitter persistence were checked only by source review and build.
 
 ## Working rules for future orders
 

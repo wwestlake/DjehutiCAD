@@ -17,12 +17,17 @@ public:
     void resized() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void resetCamera();
     void prepareFrame(float sharedAngle, std::uint64_t serial);
     void setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next);
     void fitAll();
     juce::String diagnostics() const;
+    void setTitle(const juce::String& text) { title = text; repaint(); }
+    void setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next);
+    juce::String pickBody(juce::Point<float> position) const;
+    std::function<void(const juce::String& featureId)> onBodyPicked;
 
 private:
     void timerCallback() override;
@@ -46,7 +51,13 @@ private:
     float sceneCenterX = 0.0f, sceneCenterY = 0.0f, sceneCenterZ = 0.0f, sceneRadius = 1.0f;
     bool hasSceneBounds = false, hasFramedInitialScene = false, userCameraChanged = false;
     std::uint64_t boundsRevision = 0;
-    juce::Point<int> dragStart;
+    juce::Point<int> dragStart, pressPosition;
+    juce::String title;
+    std::shared_ptr<const djehuti::cad::CadRenderSnapshot> pickSnapshot;
+    juce::SpinLock highlightLock;
+    std::vector<std::pair<juce::String, juce::Colour>> highlights;
+    struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; };
+    std::vector<MeshRange> meshRanges;
     bool glReady = false;
     juce::String glStatus = "Waiting for OpenGL context";
     std::array<GLsync, 3> fences {};

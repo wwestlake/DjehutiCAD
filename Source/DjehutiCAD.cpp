@@ -43,6 +43,7 @@ DjehutiCAD::DjehutiCAD()
     frust_engine::setCadCommandService(cadService);
     cadWorkspace = std::make_unique<CadWorkspacePanel>(cadService);
     tabs.addTab("CAD Workspace", juce::Colour(0xff11161b), cadWorkspace.get(), true);
+    cadWorkspace->onOpenViews = [this] { selectWorkspace(3); };
     frustPanel = std::make_unique<FrustPanel>();
     tabs.addTab("FRust", juce::Colour(0xff11161b), frustPanel.get(), false);
     nodePanel = std::make_unique<NodeDesignerPanel>();
@@ -170,6 +171,7 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
     }
     else
     {
+        menu.addItem(31, "CAD Workspace Guide");
         menu.addItem(30, "About DjehutiCAD");
     }
     return menu;
@@ -216,6 +218,16 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
     }
     else if (commandId == 21)
         authSession.clearSession();
+    else if (commandId == 31)
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "CAD Workspace Guide",
+                                               "Sketch to solid:\n"
+                                               "1. Create Sketch, choose the XY, XZ or YZ plane, then Create Sketch.\n"
+                                               "2. Pick Line, Rectangle or Circle and drag in the canvas. Esc cancels a gesture; Select edits entities.\n"
+                                               "3. Finish Sketch, keep the sketch selected, then Extrude (or Cut Sketch with a Target body).\n\n"
+                                               "Subtract:\n"
+                                               "Choose Subtract, pick the Target (body to keep) and the Tool (cutting body) in the tree or model view, then press Subtract. "
+                                               "Both sources stay in the history, hidden; Undo restores them.\n\n"
+                                               "Model view: drag to orbit, Shift or right-drag to pan, wheel to zoom, click to select a body.");
     else if (commandId == 30)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About DjehutiCAD",
                                                "DjehutiCAD 0.1.0\nA FRust-programmable CAD foundation.");
@@ -225,6 +237,7 @@ void DjehutiCAD::restoreSettings()
 {
     const auto selected = properties.getUserSettings()->getIntValue("selectedTab", 0);
     selectWorkspace(juce::jlimit(0, 4, selected));
+    cadWorkspace->restoreLayoutState(properties.getUserSettings()->getValue("cadWorkspaceLayout"));
 }
 
 void DjehutiCAD::saveSettings()
@@ -232,6 +245,7 @@ void DjehutiCAD::saveSettings()
     if (auto* settings = properties.getUserSettings())
     {
         settings->setValue("selectedTab", tabs.getCurrentTabIndex());
+        if (cadWorkspace != nullptr) settings->setValue("cadWorkspaceLayout", cadWorkspace->layoutState());
         settings->saveIfNeeded();
     }
 }

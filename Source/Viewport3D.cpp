@@ -36,6 +36,14 @@ M4 camera(float yaw, float pitch, float distance, float targetX, float targetY, 
     m.v[14] = dot(forward, eye);
     return m;
 }
+M4 projectionFor(int width, int height, float distance, float sceneRadius)
+{
+    const auto aspect = height > 0 ? juce::jmax(0.01f, (float) width / (float) height) : 1.0f;
+    const auto depthRadius = juce::jmax(0.001f, sceneRadius);
+    const auto nearZ = juce::jmax(0.001f, distance - depthRadius * 1.5f);
+    const auto farZ = juce::jmax(nearZ + 1.0f, distance + depthRadius * 1.5f);
+    return perspective(0.85f, aspect, nearZ, farZ);
+}
 M4 rotation(float a) { M4 m = identity(); m.v[0] = std::cos(a); m.v[2] = std::sin(a); m.v[8] = -std::sin(a); m.v[10] = std::cos(a); return m; }
 }
 
@@ -72,10 +80,50 @@ Viewport3D::Viewport3D(int number) : viewNumber(number)
     setOpaque(false); context.setRenderer(this); context.setContinuousRepainting(true); context.setOpenGLVersionRequired(juce::OpenGLContext::openGL4_1); context.attachTo(*this);
 }
 Viewport3D::~Viewport3D() { context.detach(); }
-void Viewport3D::paint(juce::Graphics& g) { g.setColour(juce::Colour(0xffa9c8d2)); g.drawText("View " + juce::String(viewNumber), 10, 8, 100, 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
+void Viewport3D::paint(juce::Graphics& g) { g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
 void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged) frameScene(); }
 void Viewport3D::timerCallback() {}
-void Viewport3D::mouseDown(const juce::MouseEvent& e) { dragStart = e.position.roundToInt(); }
+void Viewport3D::mouseDown(const juce::MouseEvent& e) { dragStart = pressPosition = e.position.roundToInt(); }
+void Viewport3D::mouseUp(const juce::MouseEvent& e)
+{
+    // A click without dragging picks a body; any drag stays pure camera navigation.
+    if (e.mods.isRightButtonDown() || e.mods.isShiftDown() || e.position.roundToInt().getDistanceFrom(pressPosition) > 3 || onBodyPicked == nullptr) return;
+    onBodyPicked(pickBody(e.position));
+}
+juce::String Viewport3D::pickBody(juce::Point<float> position) const
+{
+    if (pickSnapshot == nullptr || getWidth() <= 0 || getHeight() <= 0) return {};
+    const auto mvp = mul(projectionFor(getWidth(), getHeight(), distance, sceneRadius), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
+    const auto w = (float) getWidth(), h = (float) getHeight();
+    juce::String best; float bestDepth = 2.0f;
+    for (const auto& mesh : pickSnapshot->meshes)
+    {
+        const auto project = [&](std::uint32_t index, juce::Point<float>& screen, float& depth)
+        {
+            const auto* v = mesh.vertices.data() + index * 6u;
+            float clip[4];
+            for (int row = 0; row < 4; ++row) clip[row] = mvp.v[row] * v[0] + mvp.v[4 + row] * v[1] + mvp.v[8 + row] * v[2] + mvp.v[12 + row];
+            if (clip[3] <= 1.0e-6f) return false;
+            screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * w, (1.0f - clip[1] / clip[3]) * 0.5f * h }; depth = clip[2] / clip[3];
+            return true;
+        };
+        for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
+        {
+            juce::Point<float> a, b, c; float da = 0, db = 0, dc = 0;
+            if (!project(mesh.indices[i], a, da) || !project(mesh.indices[i + 1], b, db) || !project(mesh.indices[i + 2], c, dc)) continue;
+            const auto area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+            if (std::abs(area) < 1.0e-6f) continue;
+            const auto u = ((b.x - position.x) * (c.y - position.y) - (c.x - position.x) * (b.y - position.y)) / area;
+            const auto v = ((c.x - position.x) * (a.y - position.y) - (a.x - position.x) * (c.y - position.y)) / area;
+            const auto t = 1.0f - u - v;
+            if (u < 0.0f || v < 0.0f || t < 0.0f) continue;
+            const auto depth = u * da + v * db + t * dc;
+            if (depth >= -1.0f && depth < bestDepth) { bestDepth = depth; best = mesh.featureId; }
+        }
+    }
+    return best;
+}
+void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { const juce::SpinLock::ScopedLockType lock(highlightLock); highlights = std::move(next); }
 void Viewport3D::mouseDrag(const juce::MouseEvent& e) { const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } userCameraChanged = true; dragStart = now; }
 void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w)
 {
@@ -120,22 +168,18 @@ void Viewport3D::frameScene()
     distance = juce::jmax(0.001f, margin / std::tan(limitingHalfFov));
     panX = panY = 0.0f;
 }
-void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { updateSceneBounds(next); pendingSnapshot = std::move(next); }
+void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { updateSceneBounds(next); pickSnapshot = next; pendingSnapshot = std::move(next); }
 juce::String Viewport3D::diagnostics() const { return glStatus; }
 void Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 {
-    const auto aspect = getHeight() > 0 ? juce::jmax(0.01f, (float) getWidth() / (float) getHeight()) : 1.0f;
-    const auto depthRadius = juce::jmax(0.001f, sceneRadius);
-    const auto nearZ = juce::jmax(0.001f, distance - depthRadius * 1.5f);
-    const auto farZ = juce::jmax(nearZ + 1.0f, distance + depthRadius * 1.5f);
-    const auto p = perspective(0.85f, aspect, nearZ, farZ); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
+    const auto p = projectionFor(getWidth(), getHeight(), distance, sceneRadius); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
     DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle; frames.publish(packet);
 }
 
 void Viewport3D::newOpenGLContextCreated()
 {
     const char* vertex = "#version 410 core\nlayout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(std140) uniform FrameData { mat4 uMVP; mat4 uModel; }; out vec3 n; void main(){ n=mat3(uModel)*normal; gl_Position=uMVP*vec4(position,1.0); }";
-    const char* fragment = "#version 410 core\nin vec3 n; out vec4 colour; void main(){ vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(n),l),0.0); colour=vec4(vec3(0.18,0.62,0.78)*(0.25+0.75*d),1.0); }";
+    const char* fragment = "#version 410 core\nin vec3 n; uniform vec3 uColour; out vec4 colour; void main(){ vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(n),l),0.0); colour=vec4(uColour*(0.25+0.75*d),1.0); }";
     shader = std::make_unique<juce::OpenGLShaderProgram>(context);
     if (!shader->addVertexShader(vertex) || !shader->addFragmentShader(fragment) || !shader->link()) { glStatus = "Shader error: " + shader->getLastError(); juce::Logger::writeToLog(glStatus); shader.reset(); repaint(); return; }
     positionAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "position"); normalAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "normal");
@@ -153,8 +197,10 @@ void Viewport3D::renderOpenGL()
     {
         std::vector<float> vertices;
         std::vector<std::uint32_t> indices;
+        meshRanges.clear();
         for (const auto& mesh : pendingSnapshot->meshes)
         {
+            meshRanges.push_back({ mesh.featureId, static_cast<GLsizei>(indices.size()), static_cast<GLsizei>(mesh.indices.size()) });
             const auto base = static_cast<std::uint32_t>(vertices.size() / 6);
             vertices.insert(vertices.end(), mesh.vertices.begin(), mesh.vertices.end());
             for (const auto index : mesh.indices) indices.push_back(base + index);
@@ -178,10 +224,24 @@ void Viewport3D::renderOpenGL()
         DjehutiMat4 matrices[2]; std::memcpy(matrices[0].v, finalMvp.v, sizeof(finalMvp.v)); matrices[1] = lastFrame.model;
         glBindBuffer(GL_UNIFORM_BUFFER, frameBuffers[activeSlot]); glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(matrices), matrices);
     }
-    glBindBufferBase(GL_UNIFORM_BUFFER, 0, frameBuffers[activeSlot]); shader->use(); if (geometryIndexCount > 0) { glBindVertexArray(vao); glDrawElements(GL_TRIANGLES, geometryIndexCount, GL_UNSIGNED_INT, nullptr); glBindVertexArray(0); } if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, frameBuffers[activeSlot]); shader->use();
+    if (geometryIndexCount > 0)
+    {
+        std::vector<std::pair<juce::String, juce::Colour>> colours;
+        { const juce::SpinLock::ScopedLockType lock(highlightLock); colours = highlights; }
+        glBindVertexArray(vao);
+        for (const auto& range : meshRanges)
+        {
+            juce::Colour colour(0xff2e9ec7);
+            for (const auto& item : colours) if (item.first == range.featureId) colour = item.second;
+            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+            glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));
+        }
+        glBindVertexArray(0);
+    } if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 void Viewport3D::drawCube(const float*) {}
-void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); frameBuffers.fill(0); vao = vbo = ibo = 0; frames.reset(); lastSlot = -1; hasFrame = false; uploadedGeometryRevision = 0; geometryIndexCount = 0; shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
+void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); frameBuffers.fill(0); vao = vbo = ibo = 0; frames.reset(); lastSlot = -1; hasFrame = false; uploadedGeometryRevision = 0; geometryIndexCount = 0; meshRanges.clear(); shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
 void Viewport3D::openGLContextClosing() { releaseGL(); }
 
 class ThreeDViewsPanel::ViewTile final : public juce::Component
