@@ -1,0 +1,284 @@
+{
+  "formatVersion": 5,
+  "units": "mm",
+  "nextNumber": 12,
+  "features": [
+    {
+      "id": "cylinder-1",
+      "name": "Gear A disc",
+      "type": "cylinder",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 10,
+      "depth": 10,
+      "height": 5,
+      "radius": 20,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": false
+    },
+    {
+      "id": "box-2",
+      "name": "Gear A marker",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 26,
+      "depth": 4,
+      "height": 5,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": -26,
+      "y": -2,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": false
+    },
+    {
+      "id": "union-3",
+      "name": "Gear A",
+      "type": "union",
+      "firstOperand": "cylinder-1",
+      "secondOperand": "box-2",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 10,
+      "depth": 10,
+      "height": 10,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "cylinder-4",
+      "name": "Gear B disc",
+      "type": "cylinder",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 10,
+      "depth": 10,
+      "height": 5,
+      "radius": 10,
+      "reverse": false,
+      "throughAll": false,
+      "x": 30,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": false
+    },
+    {
+      "id": "box-5",
+      "name": "Gear B marker",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 14,
+      "depth": 3,
+      "height": 5,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 30,
+      "y": -1.5,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": false
+    },
+    {
+      "id": "union-6",
+      "name": "Gear B",
+      "type": "union",
+      "firstOperand": "cylinder-4",
+      "secondOperand": "box-5",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 10,
+      "depth": 10,
+      "height": 10,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    }
+  ],
+  "references": [],
+  "sketches": [],
+  "mechanics": {
+    "schemaVersion": 2,
+    "lengthUnit": "mm",
+    "modelId": "6f1c2a10-0000-4000-8000-00000000ge01",
+    "interfaceRevision": 1,
+    "profileRevision": 1,
+    "instances": [
+      {
+        "id": "inst-7",
+        "name": "Gear A",
+        "featureId": "union-3",
+        "placement": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-8",
+        "name": "Gear B",
+        "featureId": "union-6",
+        "placement": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "grounded": false
+      }
+    ],
+    "joints": [
+      {
+        "id": "joint-9",
+        "name": "Gear A axle",
+        "type": "revolute",
+        "parentInstance": "",
+        "childInstance": "inst-7",
+        "parentToJoint": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "reference": 0.0,
+        "hasLimits": false,
+        "lower": 0.0,
+        "upper": 0.0,
+        "role": "driver",
+        "lockValue": 0.0,
+        "enforceLimits": false
+      },
+      {
+        "id": "joint-10",
+        "name": "Gear B axle",
+        "type": "revolute",
+        "parentInstance": "",
+        "childInstance": "inst-8",
+        "parentToJoint": {
+          "translation": [
+            30,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            -30,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "reference": 0.0,
+        "hasLimits": false,
+        "lower": 0.0,
+        "upper": 0.0,
+        "role": "dependent",
+        "lockValue": 0.0,
+        "enforceLimits": false
+      }
+    ],
+    "couplings": [
+      {
+        "id": "coupling-11",
+        "name": "Gear mesh",
+        "type": "gear",
+        "jointA": "joint-9",
+        "jointB": "joint-10",
+        "ratio": -2.0,
+        "pitchRadius": 0.01,
+        "lead": 0.001,
+        "offset": 0.0
+      }
+    ],
+    "mappings": []
+  }
+}

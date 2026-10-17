@@ -2142,6 +2142,14 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
           { in("joint", "string"), in("signal", "string"), in("quantity", "string"), in("unit", "string"), in("scale", "f64"), in("offset", "f64"), in("initial", "f64") }, { out("ok", "i64") } },
         { "cad_motion_lifecycle", "CAD Simulation Command", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
           { in("command", "string"), in("step ms", "f64") }, { out("scheduled", "i64") } },
+        { "cad_set_grounded", "CAD Ground Instance", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("instance", "string"), in("grounded", "i64") }, { out("ok", "i64") } },
+        { "cad_set_instance_placement", "CAD Instance Placement", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("instance", "string"), in("x", "f64"), in("y", "f64"), in("z", "f64"), in("rx deg", "f64"), in("ry deg", "f64"), in("rz deg", "f64") }, { out("ok", "i64") } },
+        { "cad_set_joint_role", "CAD Joint Role", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("joint", "string"), in("role", "string"), in("lock value", "f64"), in("hard bounds", "i64") }, { out("ok", "i64") } },
+        { "cad_create_coupling", "CAD Coupling", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("type", "string"), in("joint A", "string"), in("joint B", "string"), in("factor", "f64"), in("offset", "f64") }, { out("coupling", "string") } },
         // A FRust programmable component's electrical interface (Workbench):
         // values are f64 volts, amps, seconds; each names a pin, parameter
         // or state variable of the component.

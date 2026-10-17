@@ -64,7 +64,8 @@ juce::String LinkSnapshot::toJson() const
     return juce::JSON::toString(makeObject({ { "state", stateName(state) }, { "pipeName", pipeName }, { "pipePath", pipePath }, { "peer", peerName },
                                              { "simulationId", simulationId }, { "lifecycle", lifecycle }, { "message", message },
                                              { "acceptedProfileRevision", acceptedProfileRevision }, { "timelineGeneration", timelineGeneration },
-                                             { "lastSequence", lastSequence }, { "simTimePs", simTimePs }, { "signals", signalList },
+                                             { "lastSequence", lastSequence }, { "simTimePs", simTimePs }, { "posedSequence", posedSequence },
+                                             { "posedSimTimePs", posedSimTimePs }, { "solveProblem", solveProblem }, { "signals", signalList },
                                              { "problems", problemList }, { "limitWarnings", warningList },
                                              { "lifecycleControl", makeObject({ { "peerSupports", lifecycleControl }, { "available", lifecycleAvailable },
                                                                                 { "unavailableReason", lifecycleUnavailableReason }, { "pendingCommand", pendingCommand },
@@ -288,7 +289,7 @@ void MotionLink::clearWatermarks()
 {
     watermarkSimulationId.clear(); lastSequenceText.clear(); lastSyncSequence.clear();
     lastSequence = 0; lastTick = -1; lastMicrostep = 0; lastSyncAcked = false;
-    status.timelineGeneration = 0; status.lastSequence.clear(); status.simTimePs.clear();
+    status.timelineGeneration = 0; status.lastSequence.clear(); status.simTimePs.clear(); status.posedSequence.clear(); status.posedSimTimePs.clear(); status.solveProblem.clear();
 }
 
 // Supersedes the binding: queued states and the outstanding command belong to it and can never publish later,
@@ -408,7 +409,11 @@ void MotionLink::handleAsyncUpdate()
         notify = statusDirty; statusDirty = false;
     }
     runtime->setDriver(simulationOwns ? cad::CadMotionRuntime::Driver::simulation : cad::CadMotionRuntime::Driver::preview);
-    board->set(snapshot().toJson());
+    {
+        auto json = juce::JSON::parse(snapshot().toJson());
+        if (auto* object = json.getDynamicObject()) object->setProperty("mechanism", juce::JSON::parse(runtime->statusJson()));
+        board->set(juce::JSON::toString(json, true));
+    }
     if (notify && onStatusChanged) onStatusChanged();
 }
 
@@ -426,7 +431,20 @@ void MotionLink::publishPending()
     if (!current) return;
     if (work.synchronize && work.sequence != lastSyncSequence) return;
     runtime->setDriver(cad::CadMotionRuntime::Driver::simulation);
-    runtime->applySimulationCoordinates(work.coordinates);
+    const auto solved = runtime->applySimulationCoordinates(work.coordinates);
+    if (!solved.valid)
+    {
+        // The received state cannot pose the mechanism: keep the last valid pose and never acknowledge it as applied.
+        status.solveProblem = "DEWB state " + work.sequence + " could not be solved (" + cad::kin::statusName(solved.status) + "): " + solved.message
+                            + (solved.problems.isEmpty() ? juce::String() : " " + solved.problems.joinIntoString("; "));
+        sendStatus("error", "mechanismUnsolved", status.solveProblem + (work.synchronize ? " The SynchronizeState was not applied; send a new SynchronizeState." : ""), !work.synchronize);
+        setState(work.synchronize ? LinkState::awaitingSync : status.state,
+                 status.solveProblem + " Showing the last solved pose" + (status.posedSimTimePs.isEmpty() ? juce::String(".") : " (t = " + juce::String(status.posedSimTimePs.getLargeIntValue() / 1.0e12, 6) + " s)."), 2);
+        return;
+    }
+    status.solveProblem.clear();
+    status.posedSequence = work.sequence;
+    status.posedSimTimePs = status.simTimePs;
     if (work.synchronize)
     {
         stateApplied = lastSyncAcked = true;
@@ -513,6 +531,7 @@ juce::StringArray MotionLink::validateBinding(const Contract& c, const std::vect
         const auto joint = c.joints.find(m.jointId);
         if (joint == c.joints.end()) { fail("unknownJoint", m.jointId, m.signalId, "Mapping refers to unknown joint " + m.jointId + "."); continue; }
         const auto& j = joint->second;
+        if (j.role != "driver") { fail("mappingConflict", m.jointId, m.signalId, j.name + " is a " + j.role + " coordinate of the mechanism; only driver coordinates can be mapped to DEWB signals."); continue; }
         if (!cad::mech::quantityDrivesJoint(m.sourceQuantity, j.type)) { fail("quantityMismatch", m.jointId, m.signalId, j.name + ": " + m.sourceQuantity + " cannot drive a " + j.type + " joint."); continue; }
         const SignalInfo* signal = nullptr;
         for (const auto& s : signals) if (s.id == m.signalId) signal = &s;

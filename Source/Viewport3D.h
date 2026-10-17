@@ -47,7 +47,7 @@ private:
     std::unique_ptr<juce::OpenGLShaderProgram> shader;
     std::unique_ptr<juce::OpenGLShaderProgram::Attribute> positionAttribute;
     std::unique_ptr<juce::OpenGLShaderProgram::Attribute> normalAttribute;
-    GLuint vao = 0, vbo = 0, ibo = 0;
+    GLuint vao = 0, vbo = 0, ibo = 0, axisVao = 0, axisVbo = 0;
     DjehutiFrameResourceRing frames;
     float yaw = 0.55f, pitch = 0.35f, distance = 4.0f, panX = 0.0f, panY = 0.0f;
     float targetX = 0.0f, targetY = 0.0f, targetZ = 0.0f;

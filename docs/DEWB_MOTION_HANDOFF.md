@@ -31,6 +31,14 @@ simulator behaviour is DEWB's to implement.
    (echo `modelId`, `interfaceRevision`, `profileRevision`, `simulationId` exactly) or `BindingReject`.
 5. `SynchronizeState` (complete state), wait for `StateApplied`, then stream `StateFrame`s.
 
+## Mechanisms on the DCAD side (no DEWB changes)
+
+DCAD now solves mechanisms (gears, slider-cranks, other closed loops). DEWB still publishes only the
+coordinates of the **mapped** joints; DCAD treats them as prescribed inputs and computes every dependent
+joint. Do not compute or send dependent coordinates. Two new `LinkStatus` codes may appear: `mechanismUnsolved`
+(DCAD could not pose your state; a `SynchronizeState` is then not acknowledged — send a new one with a newer
+`sequence` when your state changes) and `mappingConflict` inside `profileIncompatible` errors.
+
 ## Signal catalog
 
 * Stable, unique ids; DCAD never matches by name or guesses. Do not carry over `fallbackSignal` /

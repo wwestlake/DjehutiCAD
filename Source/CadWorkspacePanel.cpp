@@ -430,6 +430,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
                               ToolSpec { &fitSketchButton, "Frame the whole sketch in the canvas." },
                               ToolSpec { &instanceButton, "Create an assembly instance of a solid body so it can move." },
                               ToolSpec { &jointButton, "Connect two instances (or an instance and the world) with a fixed, revolute or prismatic joint." },
+                              ToolSpec { &couplingButton, "Couple two joint coordinates: gear ratio, linear ratio, rack and pinion, or screw lead." },
                               ToolSpec { &linkButton, "Connect joints to DEWB simulation signals over the motion link." } })
     {
         styleButton(*spec.button, spec.tip);
@@ -447,6 +448,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     unionButton.onClick = [this] { startTask(Task::boolean, "union"); };
     intersectButton.onClick = [this] { startTask(Task::boolean, "intersect"); };
     instanceButton.onClick = [this] { startTask(Task::newInstance); };
+    couplingButton.onClick = [this] { startTask(Task::newCoupling); };
     jointButton.onClick = [this] { startTask(Task::newJoint); };
     linkButton.onClick = [this] { startTask(Task::link); };
     undoButton.onClick = [this] { juce::String e; if (!service->undo(e)) showError(e); else { refreshFromDocument(true); setMessage("Undone.", 0); } };
@@ -536,7 +538,7 @@ void CadWorkspacePanel::resized()
         place(row, sketchButton); place(row, boxButton); place(row, cylinderButton); row.removeFromLeft(14);
         place(row, extrudeButton); place(row, cutButton); row.removeFromLeft(14);
         place(row, subtractButton); place(row, unionButton); place(row, intersectButton); row.removeFromLeft(14);
-        place(row, instanceButton); place(row, jointButton); place(row, linkButton);
+        place(row, instanceButton); place(row, jointButton); place(row, couplingButton); place(row, linkButton);
     }
     else
     {
@@ -586,7 +588,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
     if (!force && document.revision() == shownRevision) return;
     shownRevision = document.revision();
     modelView.setSnapshot(service->snapshot());
-    auto missing = [&](const juce::String& id) { return id.isNotEmpty() && document.find(id) == nullptr && document.mechanicsData().findInstance(id) == nullptr && document.mechanicsData().findJoint(id) == nullptr; };
+    auto missing = [&](const juce::String& id) { return id.isNotEmpty() && document.find(id) == nullptr && document.mechanicsData().findInstance(id) == nullptr && document.mechanicsData().findJoint(id) == nullptr && document.mechanicsData().findCoupling(id) == nullptr; };
     if (missing(selectedId)) selectedId.clear();
     if (missing(targetId)) targetId.clear();
     if (missing(toolId)) toolId.clear();
@@ -601,7 +603,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
     }
     if (task == Task::body && selectedId.isEmpty()) task = Task::none;
     if (task == Task::sketch && selectedId.isEmpty()) task = Task::none;
-    if ((task == Task::instance || task == Task::joint) && selectedId.isEmpty()) task = Task::none;
+    if ((task == Task::instance || task == Task::joint || task == Task::coupling) && selectedId.isEmpty()) task = Task::none;
     if (task == Task::sketchEntity && sketchEntityId.isEmpty()) task = Task::sketchEdit;
     refreshTree();
     updateHighlights();
@@ -620,8 +622,9 @@ void CadWorkspacePanel::refreshTree()
     auto* features = new GroupItem("Features");
     auto* assembly = new GroupItem("Assembly");
     const auto& model = service->document().mechanicsData();
-    for (const auto& instance : model.instances) assembly->addSubItem(new FeatureItem(*this, instance.id, instance.name, "instance"));
+    for (const auto& instance : model.instances) assembly->addSubItem(new FeatureItem(*this, instance.id, instance.name, instance.grounded ? "grounded" : "instance"));
     for (const auto& joint : model.joints) assembly->addSubItem(new FeatureItem(*this, joint.id, joint.name, joint.type + (model.mappingForJoint(joint.id) != nullptr ? " *" : "")));
+    for (const auto& coupling : model.couplings) assembly->addSubItem(new FeatureItem(*this, coupling.id, coupling.name, coupling.type == "rackPinion" ? "rack" : coupling.type));
     for (const auto& f : service->document().features())
     {
         auto* item = new FeatureItem(*this, f);
@@ -660,7 +663,8 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
     selectFeature(id);
 }
 
-bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::cut || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link; }
+bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::cut || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isCoupling(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findCoupling(id) != nullptr; }
 bool CadWorkspacePanel::isInstance(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findInstance(id) != nullptr; }
 bool CadWorkspacePanel::isJoint(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findJoint(id) != nullptr; }
 
@@ -668,7 +672,7 @@ void CadWorkspacePanel::setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime
 {
     motionRuntime = std::move(runtime);
     motionLink = link;
-    if (motionRuntime != nullptr) { auto source = motionRuntime; modelView.setPoseSource([source] { return source->pose(); }); }
+    if (motionRuntime != nullptr) { auto source = motionRuntime; modelView.setPoseSource([source] { return source->pose(); }); motionRuntime->onPoseChanged = [this] { mechanismChanged(); }; }
     if (motionLink != nullptr) motionLink->onStatusChanged = [this] { linkChanged(); };
     linkChanged();
 }
@@ -677,7 +681,9 @@ void CadWorkspacePanel::linkChanged()
 {
     if (motionLink == nullptr) return;
     const auto status = motionLink->snapshot();
-    unitsLabel.setText("Motion link: " + djehuti::motion::stateName(status.state) + "  |  Millimetres  |  Right-handed XYZ", juce::dontSendNotification);
+    const auto mechanism = motionRuntime != nullptr && !service->document().mechanicsData().joints.empty()
+                         ? "Mechanism: " + (motionRuntime->showingLastValidPose() ? juce::String("unsolved (last valid pose shown)") : djehuti::cad::kin::statusName(motionRuntime->lastAttempt().status)) + "  |  " : juce::String();
+    unitsLabel.setText(mechanism + "Motion link: " + djehuti::motion::stateName(status.state) + "  |  Millimetres  |  Right-handed XYZ", juce::dontSendNotification);
     unitsLabel.setColour(juce::Label::textColourId, status.severity == 2 ? juce::Colour(0xffff8a80) : status.state == djehuti::motion::LinkState::streaming || status.state == djehuti::motion::LinkState::synchronized ? juce::Colour(0xff8fd7c7) : dimTextColour);
     if (status.serial != shownLinkSerial && (task == Task::link || task == Task::joint)) { shownLinkSerial = status.serial; requestRebuild(true); }
 }
@@ -691,6 +697,7 @@ void CadWorkspacePanel::selectFeature(const juce::String& id)
     task = f == nullptr ? Task::none : (f->type == "sketch" ? Task::sketch : Task::body);
     if (isInstance(id)) task = Task::instance;
     else if (isJoint(id)) task = Task::joint;
+    else if (isCoupling(id)) task = Task::coupling;
     else if (f == nullptr) selectedId.clear();
     syncTreeSelection(); updateHighlights(); updateToolbar();
     rebuildTaskPanel(false);
@@ -719,6 +726,8 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
     instanceBodyId.clear(); jointParentId.clear(); jointChildId.clear();
     if (next == Task::newInstance && isSolid(selectedId)) instanceBodyId = selectedId;
     if (next == Task::newJoint) { activeRole = 1; if (isInstance(selectedId)) { jointChildId = selectedId; activeRole = 0; } }
+    couplingJointA.clear(); couplingJointB.clear();
+    if (next == Task::newCoupling) { activeRole = 0; if (isJoint(selectedId)) { couplingJointA = selectedId; activeRole = 1; } }
     syncTreeSelection(); updateHighlights(); updateToolbar();
     rebuildTaskPanel(false);
 }
@@ -740,12 +749,12 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     const auto& document = service->document();
     const auto* f = document.find(selectedId);
     if ((task == Task::body || task == Task::sketch) && f == nullptr) task = Task::none;
-    if ((task == Task::instance && !isInstance(selectedId)) || (task == Task::joint && !isJoint(selectedId))) task = Task::none;
+    if ((task == Task::instance && !isInstance(selectedId)) || (task == Task::joint && !isJoint(selectedId)) || (task == Task::coupling && !isCoupling(selectedId))) task = Task::none;
     juce::String title, instruction, accept = "Apply", cancel = "Cancel";
     bool showAccept = true, showCancel = true;
     const auto slotText = [&](const juce::String& id, const juce::String& empty) { return id.isEmpty() ? empty : featureName(id); };
 
-    if (task == Task::instance || task == Task::joint || task == Task::newInstance || task == Task::newJoint || task == Task::link)
+    if (task == Task::instance || task == Task::joint || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::coupling || task == Task::newCoupling)
         addMotionPanels(title, instruction, accept, showAccept, showCancel);
     else switch (task)
     {
@@ -949,6 +958,13 @@ juce::String CadWorkspacePanel::applicableConstraintTypes() const
 
 void CadWorkspacePanel::assignRole(const juce::String& id)
 {
+    if (task == Task::newCoupling)
+    {
+        if (!isJoint(id)) { setMessage(featureName(id) + " is not a joint. Pick the two joints to couple in the Assembly group of the tree.", 1); return; }
+        if (activeRole == 0) { couplingJointA = id; if (couplingJointB == id) couplingJointB.clear(); if (couplingJointB.isEmpty()) activeRole = 1; }
+        else { couplingJointB = id; if (couplingJointA == id) couplingJointA.clear(); }
+        commandMessage.clear(); rebuildTaskPanel(true); return;
+    }
     if (task == Task::newJoint)
     {
         if (!isInstance(id)) { setMessage(featureName(id) + " is not an assembly instance. Create an instance of the body first (Instance).", 1); return; }
@@ -1158,7 +1174,7 @@ void CadWorkspacePanel::cancelTask()
         case Task::body: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;
         case Task::sketchEntity: selectSketchEntity({}, false); return;
         case Task::sketchEdit: case Task::sketch: case Task::none: return;
-        case Task::instance: case Task::joint: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;
+        case Task::instance: case Task::joint: case Task::coupling: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;
         default: break;
     }
     selectFeature(selectedId);
@@ -1238,7 +1254,8 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what)
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
-    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &linkButton }) b->setVisible(!sketching);
+    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton }) b->setVisible(!sketching);
+    couplingButton.setToggleState(task == Task::newCoupling, juce::dontSendNotification);
     instanceButton.setToggleState(task == Task::newInstance, juce::dontSendNotification); jointButton.setToggleState(task == Task::newJoint, juce::dontSendNotification); linkButton.setToggleState(task == Task::link, juce::dontSendNotification);
     for (auto* b : { &selectToolButton, &lineButton, &rectangleButton, &circleButton, &constrainButton, &fitSketchButton, &finishSketchButton }) b->setVisible(sketching);
     undoButton.setVisible(true); redoButton.setVisible(true);
@@ -1312,9 +1329,8 @@ bool CadWorkspacePanel::jointReferenceFrame(const juce::String& jointId, gp_Trsf
     const auto& model = service->document().mechanicsData();
     const auto* joint = model.findJoint(jointId);
     if (joint == nullptr) return false;
-    std::map<juce::String, gp_Trsf> frames; juce::String error;
-    if (!djehuti::cad::mech::evaluate(model, {}, frames, error)) return false;
-    const auto parent = joint->parentInstance.isEmpty() ? gp_Trsf() : frames[joint->parentInstance];
+    const auto* parentInstance = model.findInstance(joint->parentInstance);
+    const auto parent = parentInstance == nullptr ? gp_Trsf() : parentInstance->placement.toTrsf();
     world = parent.Multiplied(joint->parentToJoint.toTrsf());
     return true;
 }
@@ -1330,19 +1346,25 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
     if (task == Task::instance)
     {
         const auto* instance = model.findInstance(selectedId);
-        const auto* joint = model.jointForChild(selectedId);
         title = instance->name; instruction = "An assembly instance of " + featureName(instance->featureId) + ". It moves as one rigid body.";
         form->addHeader("Instance");
         form->addText("name", "Name", instance->name, "Display name; renaming keeps every connection.");
         form->addNote({}, "Body: " + featureName(instance->featureId) + "  |  id " + instance->id, 1);
+        form->addToggle("grounded", "Grounded (fixed to the world)", instance->grounded, "A grounded instance stays at its placement; the mechanism is solved relative to it and the world.");
         form->addHeader("Reference placement (world)");
-        if (joint != nullptr) form->addNote({}, "Placed by joint " + joint->name + ". Edit the joint to move this instance.", 2);
+        if (!instance->grounded && model.instanceHasJoints(selectedId)) form->addNote({}, "Positioned by its joints. Ground it, or edit the joint frames, to move it.", 2);
         else
         {
+            double rx = 0.0, ry = 0.0, rz = 0.0;
+            cad::mech::eulerDegreesFromFrame(instance->placement, rx, ry, rz);
             form->addNumber("x", "Origin X", instance->placement.x, "mm", "Instance frame origin in world millimetres.");
             form->addNumber("y", "Origin Y", instance->placement.y, "mm", "Instance frame origin in world millimetres.");
             form->addNumber("z", "Origin Z", instance->placement.z, "mm", "Instance frame origin in world millimetres.");
+            form->addNumber("rx", "Rotate X", rx, "deg", "Orientation: rotation about world X, applied first (extrinsic X, Y, Z).");
+            form->addNumber("ry", "Rotate Y", ry, "deg", "Orientation: rotation about world Y, applied second.");
+            form->addNumber("rz", "Rotate Z", rz, "deg", "Orientation: rotation about world Z, applied last.");
         }
+        addMechanismStatus();
         form->addHeader("Actions");
         const auto id = selectedId;
         form->addButton("addJoint", "Add joint for this instance...", async([id](CadWorkspacePanel& p) { p.selectedId = id; p.startTask(Task::newJoint); }), "Create a joint with this instance as the child.");
@@ -1376,11 +1398,22 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
             form->addToggle("limits", "Engineering limits", joint->hasLimits, "Report coordinates outside these limits (values are never clamped).");
             form->addNumber("lower", "Lower", toUi(joint->type, joint->lower), unit, "Lower engineering limit.");
             form->addNumber("upper", "Upper", toUi(joint->type, joint->upper), unit, "Upper engineering limit.");
-            form->addHeader("Preview");
+            form->addToggle("hardBounds", "Enforce limits as hard bounds", joint->enforceLimits, "When on, the solver refuses poses outside the limits; when off, limits only produce warnings.");
+            form->addHeader("Mechanism role");
+            auto& roleBox = form->addChoice("role", "Role", { "driver", "dependent", "locked" }, joint->role == "driver" ? 0 : joint->role == "dependent" ? 1 : 2,
+                                            "Driver: an input you or DEWB prescribe. Dependent: solved from the constraints. Locked: held at the lock value.");
+            form->addNumber("lockValue", "Lock value", toUi(joint->type, joint->lockValue), unit, "Coordinate held while the role is locked.");
+            roleBox.onChange = [this] { if (form == nullptr) return; form->setRowVisible("lockValue", form->choiceText("role") == "locked"); resized(); validateTask(); };
+            form->setRowVisible("lockValue", joint->role == "locked");
             const auto current = motionRuntime != nullptr ? motionRuntime->coordinate(joint->id) : joint->reference;
-            form->addNumber("preview", "Value", toUi(joint->type, current), unit, "Temporary runtime coordinate; never saved and never added to undo.");
-            form->addButton("previewApply", simulationOwns ? "Preview (DEWB is driving)" : "Preview", async([](CadWorkspacePanel& p) { p.previewJoint(false); }), "Move the joint to the preview value.");
-            form->addButton("previewReset", "Reset all to reference", async([](CadWorkspacePanel& p) { p.previewJoint(true); }), "Return every joint to its reference coordinate.");
+            if (joint->role == "driver")
+            {
+                form->addHeader("Preview");
+                form->addNumber("preview", "Value", toUi(joint->type, current), unit, "Temporary driver input; dependent joints follow. Never saved and never added to undo.");
+                form->addButton("previewApply", simulationOwns ? "Preview (DEWB is driving)" : "Preview", async([](CadWorkspacePanel& p) { p.previewJoint(false); }), "Solve the mechanism with this driver value.");
+                form->addButton("previewReset", "Reset all to reference", async([](CadWorkspacePanel& p) { p.previewJoint(true); }), "Return every driver to its reference coordinate.");
+            }
+            else form->addNote({}, (joint->role == "dependent" ? "Solved value: " : "Locked at: ") + juce::String(toUi(joint->type, current), 4) + " " + unit + ". Drive the mechanism through its driver joints.", 2);
             if (std::abs(current - joint->reference) > 1.0e-12)
                 form->addNote({}, "Current coordinate: " + juce::String(toUi(joint->type, current), 3) + " " + unit + (joint->type == "revolute" ? " (" + juce::String(current / (2.0 * juce::MathConstants<double>::pi), 3) + " rev)" : juce::String()), 1);
 
@@ -1425,6 +1458,7 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
             quantityBox.onChange = syncRows;
             form->setRowVisible("initial", cad::mech::isRateQuantity(quantity)); form->setRowVisible("offset", !cad::mech::isRateQuantity(quantity));
         }
+        addMechanismStatus();
         form->addHeader("Actions");
         const auto id = selectedId;
         form->addButton("delete", "Delete joint", async([id](CadWorkspacePanel& p) { juce::String e; if (!p.service->removeJoint(id, e)) p.showError(e); else { p.refreshFromDocument(true); p.selectFeature({}); p.setMessage("Joint deleted. Undo restores it.", 0); } }), "Delete this joint and its mapping.");
@@ -1445,8 +1479,8 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
     if (task == Task::newJoint)
     {
         title = "New Joint"; instruction = "Choose the parent (or World) and the child instance, then the joint frame. The child keeps its current position at the reference coordinate."; accept = "Create Joint";
-        gp_Trsf childWorld; std::map<juce::String, gp_Trsf> frames; juce::String error;
-        if (jointChildId.isNotEmpty() && cad::mech::evaluate(model, {}, frames, error) && frames.count(jointChildId) != 0) childWorld = frames[jointChildId];
+        gp_Trsf childWorld;
+        if (const auto* child = model.findInstance(jointChildId)) childWorld = child->placement.toTrsf();
         const auto childOrigin = childWorld.TranslationPart();
         form->addHeader("Instances");
         form->addSlot("parent", "Parent", jointParentId.isEmpty() ? juce::String("World") : featureName(jointParentId), targetColour, activeRole == 0,
@@ -1483,8 +1517,26 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
         return;
     }
 
+    if (task == Task::newCoupling || task == Task::coupling)
+    {
+        const auto* existing = task == Task::coupling ? model.findCoupling(selectedId) : nullptr;
+        title = existing != nullptr ? existing->name : juce::String("New Coupling");
+        instruction = "Couple two joint coordinates: (qB - refB) = k (qA - refA) + offset. Pick joints in the Assembly group of the tree.";
+        accept = existing != nullptr ? "Apply" : "Create Coupling";
+        addCouplingFields(existing);
+        addMechanismStatus();
+        if (existing != nullptr)
+        {
+            const auto id = selectedId;
+            form->addHeader("Actions");
+            form->addButton("delete", "Delete coupling", async([id](CadWorkspacePanel& p) { juce::String e; if (!p.service->removeCoupling(id, e)) p.showError(e); else { p.refreshFromDocument(true); p.selectFeature({}); p.setMessage("Coupling deleted. Undo restores it.", 0); } }), "Delete this coupling.");
+        }
+        return;
+    }
+
     // Task::link
     title = "Motion Link"; showAccept = false; showCancel = true;
+    addMechanismStatus();
     const auto status = motionLink != nullptr ? motionLink->snapshot() : djehuti::motion::LinkSnapshot {};
     instruction = "DEWB connects to this named pipe, advertises its signals, accepts the connection profile, then streams motion.";
     form->addHeader("Status");
@@ -1545,14 +1597,22 @@ void CadWorkspacePanel::validateMotionTask(juce::String& problem, int& severity)
     if (task == Task::instance)
     {
         if (form->text("name").isEmpty()) { problem = "Name cannot be empty."; severity = 2; }
-        for (const auto* key : { "x", "y", "z" }) requireNumber(key, "Origin");
+        for (const auto* key : { "x", "y", "z", "rx", "ry", "rz" }) requireNumber(key, "Placement");
     }
     else if (task == Task::newInstance) { if (instanceBodyId.isEmpty()) problem = "Select the solid body to instance."; }
+    else if (task == Task::newCoupling || task == Task::coupling)
+    {
+        djehuti::cad::CadCoupling c; juce::String error;
+        if (task == Task::newCoupling && (couplingJointA.isEmpty() || couplingJointB.isEmpty())) problem = couplingJointA.isEmpty() ? "Select joint A (the input side) in the tree." : "Select joint B (the coupled side) in the tree.";
+        else if (!readCoupling(c, error)) { problem = error; severity = 2; }
+        else if (!djehuti::cad::mech::validateCoupling(service->document().mechanicsData(), c, error)) { problem = error; severity = 2; }
+    }
     else if (task == Task::joint || task == Task::newJoint)
     {
         if (task == Task::joint && form->text("name").isEmpty()) { problem = "Name cannot be empty."; severity = 2; }
         if (task == Task::newJoint && jointChildId.isEmpty()) problem = "Select the child instance that the joint moves.";
-        for (const auto* key : { "ox", "oy", "oz", "ax", "ay", "az", "reference", "lower", "upper" }) requireNumber(key, "Joint values");
+        for (const auto* key : { "ox", "oy", "oz", "ax", "ay", "az", "reference", "lower", "upper", "lockValue" }) requireNumber(key, "Joint values");
+        if (problem.isEmpty() && form->toggle("hardBounds") && !form->toggle("limits")) { problem = "Hard bounds need engineering limits; switch limits on or bounds off."; severity = 2; }
         if (problem.isEmpty() && std::abs(form->number("ax")) + std::abs(form->number("ay")) + std::abs(form->number("az")) < 1.0e-9) { problem = "The joint axis must be a non-zero direction."; severity = 2; }
         if (problem.isEmpty() && form->toggle("limits") && form->rowVisible("lower") && form->number("lower") > form->number("upper")) { problem = "The lower limit must not exceed the upper limit."; severity = 2; }
     }
@@ -1576,11 +1636,14 @@ bool CadWorkspacePanel::acceptMotionTask()
         if (instance == nullptr) return false;
         bool ok = true;
         if (form->text("name") != instance->name) ok = service->renameMechanical(selectedId, form->text("name"), e);
+        if (ok && form->toggle("grounded") != instance->grounded) ok = service->setInstanceGrounded(selectedId, form->toggle("grounded"), e);
         if (ok && form->control("x") != nullptr && (instance = service->document().mechanicsData().findInstance(selectedId)) != nullptr)
         {
-            auto placement = instance->placement;
-            placement.x = form->number("x"); placement.y = form->number("y"); placement.z = form->number("z");
-            if (placement.x != instance->placement.x || placement.y != instance->placement.y || placement.z != instance->placement.z) ok = service->setInstancePlacement(selectedId, placement, e);
+            const auto placement = mech::frameFromEulerDegrees(form->number("x"), form->number("y"), form->number("z"), form->number("rx"), form->number("ry"), form->number("rz"));
+            const auto& old = instance->placement;
+            const bool changed = std::abs(placement.x - old.x) > 1.0e-9 || std::abs(placement.y - old.y) > 1.0e-9 || std::abs(placement.z - old.z) > 1.0e-9
+                              || std::abs(std::abs(placement.qw * old.qw + placement.qx * old.qx + placement.qy * old.qy + placement.qz * old.qz) - 1.0) > 1.0e-12;
+            if (changed) ok = service->setInstancePlacement(selectedId, placement, e);
         }
         refreshFromDocument(true); rebuildTaskPanel(false);
         if (!ok) showError(e); else setMessage("Instance updated.", 0);
@@ -1601,14 +1664,129 @@ bool CadWorkspacePanel::acceptMotionTask()
             request.hasLimits = form->toggle("limits");
             request.lower = fromUi(request.type, form->number("lower")); request.upper = fromUi(request.type, form->number("upper"));
         }
-        const bool ok = existing != nullptr ? service->updateJoint(selectedId, request, e) : service->createJoint(request, id, e);
-        if (!ok) { showError(e); return false; }
+        bool frameChanged = existing == nullptr;
+        if (existing != nullptr)
+        {
+            gp_Trsf frame; jointReferenceFrame(selectedId, frame);
+            const auto o = frame.TranslationPart(); const gp_Dir a = gp_Dir(0, 0, 1).Transformed(frame);
+            const gp_Vec requested(request.axisX, request.axisY, request.axisZ);
+            frameChanged = request.type != existing->type || std::abs(request.originX - o.X()) > 1.0e-9 || std::abs(request.originY - o.Y()) > 1.0e-9 || std::abs(request.originZ - o.Z()) > 1.0e-9
+                        || (requested.Magnitude() > 0.0 && gp_Vec(a).Angle(requested) > 1.0e-9) || std::abs(request.reference - existing->reference) > 1.0e-12
+                        || request.hasLimits != existing->hasLimits || std::abs(request.lower - existing->lower) > 1.0e-12 || std::abs(request.upper - existing->upper) > 1.0e-12;
+        }
+        bool ok = true;
+        if (existing != nullptr && request.name != existing->name && !frameChanged) ok = service->renameMechanical(selectedId, request.name, e);
+        if (ok && frameChanged) ok = existing != nullptr ? service->updateJoint(selectedId, request, e) : service->createJoint(request, id, e);
+        if (ok && existing != nullptr && request.type != "fixed" && form->control("role") != nullptr)
+        {
+            const auto* now = service->document().mechanicsData().findJoint(selectedId);
+            const auto role = form->choiceText("role");
+            const auto lockValue = form->rowVisible("lockValue") ? fromUi(request.type, form->number("lockValue")) : now->lockValue;
+            const auto hard = form->toggle("hardBounds") && request.hasLimits;
+            if (role != now->role || std::abs(lockValue - now->lockValue) > 1.0e-12 || hard != now->enforceLimits) ok = service->setJointRole(selectedId, role, lockValue, hard, e);
+        }
+        if (!ok) { refreshFromDocument(true); rebuildTaskPanel(false); showError(e); return false; }
         refreshFromDocument(true);
         selectFeature(existing != nullptr ? selectedId : id);
-        setMessage(existing != nullptr ? "Joint updated." : featureName(id) + " created. Preview it here or map a DEWB signal.", 0);
+        setMessage(existing != nullptr ? "Joint updated." : featureName(id) + " created. Set its mechanism role, preview it, or map a DEWB signal.", 0);
+        return true;
+    }
+    if (task == Task::newCoupling || task == Task::coupling)
+    {
+        CadCoupling coupling;
+        if (!readCoupling(coupling, e)) { showError(e); return false; }
+        const bool ok = task == Task::coupling ? service->updateCoupling(selectedId, coupling, e) : service->createCoupling(coupling, id, e);
+        if (!ok) { showError(e); return false; }
+        refreshFromDocument(true);
+        selectFeature(task == Task::coupling ? selectedId : id);
+        setMessage("Coupling saved. Make the coupled joint dependent so the solver computes it from the input joint.", 0);
         return true;
     }
     return false;
+}
+
+// Coupling fields: the units follow the type (gear phase in degrees; linear, rack and screw offsets in mm).
+void CadWorkspacePanel::addCouplingFields(const djehuti::cad::CadCoupling* existing)
+{
+    using namespace djehuti;
+    const auto pi = juce::MathConstants<double>::pi;
+    const juce::StringArray types { "gear", "linear", "rackPinion", "screw" };
+    const auto type = existing != nullptr ? existing->type : juce::String("gear");
+    const auto a = existing != nullptr ? existing->jointA : couplingJointA, b = existing != nullptr ? existing->jointB : couplingJointB;
+    form->addHeader("Joints");
+    if (existing != nullptr) form->addNote({}, "A (input): " + featureName(a) + "\nB (coupled): " + featureName(b), 2);
+    else
+    {
+        const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
+        form->addSlot("jointA", "Joint A", a.isEmpty() ? juce::String("Select the input joint") : featureName(a), targetColour, activeRole == 0, async([](CadWorkspacePanel& p) { p.activeRole = 0; p.rebuildTaskPanel(true); }), "Input side of the coupling.");
+        form->addSlot("jointB", "Joint B", b.isEmpty() ? juce::String("Select the coupled joint") : featureName(b), toolColour, activeRole == 1, async([](CadWorkspacePanel& p) { p.activeRole = 1; p.rebuildTaskPanel(true); }), "Coupled side of the coupling.");
+    }
+    form->addHeader("Relationship");
+    form->addText("name", "Name", existing != nullptr ? existing->name : juce::String(), "Optional display name.");
+    auto& typeBox = form->addChoice("couplingType", "Type", { "Gear (rotation : rotation)", "Linear (travel : travel)", "Rack and pinion", "Screw" }, juce::jmax(0, types.indexOf(type)),
+                                    "Gear: both revolute. Linear: both prismatic. Rack and pinion and screw: A revolute, B prismatic.");
+    form->addNumber("ratio", "Ratio", existing != nullptr ? existing->ratio : -1.0, "", "Signed ratio dB/dA. External gears turn in opposite directions (negative).");
+    form->addNumber("pitchRadius", "Pitch radius", (existing != nullptr ? existing->pitchRadius : 0.01) * 1000.0, "mm", "Rack travel per radian of pinion rotation (signed).");
+    form->addNumber("lead", "Lead", (existing != nullptr ? existing->lead : 0.001) * 1000.0, "mm/rev", "Screw travel per revolution (signed; negative for left-hand threads).");
+    const auto offsetUi = existing == nullptr ? 0.0 : (existing->type == "gear" ? existing->offset * 180.0 / pi : existing->offset * 1000.0);
+    form->addNumber("offset", "Offset", offsetUi, "", "Phase (gear, degrees) or offset (linear, rack, screw, millimetres) of B at the reference of A.");
+    const auto sync = [this]
+    {
+        if (form == nullptr) return;
+        const auto index = dynamic_cast<juce::ComboBox*>(form->control("couplingType"))->getSelectedItemIndex();
+        form->setRowVisible("ratio", index <= 1); form->setRowVisible("pitchRadius", index == 2); form->setRowVisible("lead", index == 3);
+        form->setCaption("offset", index == 0 ? "Phase (deg)" : "Offset (mm)");
+        resized(); validateTask();
+    };
+    typeBox.onChange = sync;
+    sync();
+}
+
+bool CadWorkspacePanel::readCoupling(djehuti::cad::CadCoupling& c, juce::String& error) const
+{
+    if (form == nullptr) return false;
+    const juce::StringArray types { "gear", "linear", "rackPinion", "screw" };
+    const auto* box = dynamic_cast<juce::ComboBox*>(form->control("couplingType"));
+    if (box == nullptr) return false;
+    const auto* existing = task == Task::coupling ? service->document().mechanicsData().findCoupling(selectedId) : nullptr;
+    c.type = types[juce::jmax(0, box->getSelectedItemIndex())];
+    c.name = form->text("name");
+    c.jointA = existing != nullptr ? existing->jointA : couplingJointA;
+    c.jointB = existing != nullptr ? existing->jointB : couplingJointB;
+    for (const auto* key : { "ratio", "pitchRadius", "lead", "offset" })
+        if (form->rowVisible(key) && !form->numberValid(key)) { error = "Coupling values must be numbers."; return false; }
+    c.ratio = form->number("ratio"); c.pitchRadius = form->number("pitchRadius") / 1000.0; c.lead = form->number("lead") / 1000.0;
+    c.offset = c.type == "gear" ? form->number("offset") * juce::MathConstants<double>::pi / 180.0 : form->number("offset") / 1000.0;
+    return true;
+}
+
+// Solve status of the whole mechanism, shown wherever mechanism data is edited.
+void CadWorkspacePanel::addMechanismStatus()
+{
+    if (motionRuntime == nullptr || service->document().mechanicsData().joints.empty()) return;
+    const auto& r = motionRuntime->lastAttempt();
+    form->addHeader("Mechanism");
+    juce::String text = (r.valid ? juce::String("Solved: ") : juce::String("Not solved: ")) + djehuti::cad::kin::statusName(r.status) + ". " + r.message;
+    if (motionRuntime->showingLastValidPose()) text << " The view shows the last valid pose.";
+    text << "\nUnknowns " << r.unknowns << ", equations " << r.equations << ", rank " << r.rank << ", closure " << juce::String(r.positionResidualMm, 8) << " mm / " << juce::String(r.angleResidualRad, 10) << " rad";
+    if (r.freeCoordinates > 0) text << "\nFree: " << r.freeJoints.joinIntoString(", ");
+    if (r.rigidBodyFreedom > 0) text << "\nUngrounded: " << r.floatingInstances.joinIntoString(", ");
+    for (const auto& p : r.problems) text << "\n" << p;
+    for (const auto& w : r.warnings) text << "\n" << w;
+    form->addNote({}, text, juce::jmin(10, 3 + r.problems.size() + r.warnings.size() + (r.freeCoordinates > 0 ? 1 : 0) + (r.rigidBodyFreedom > 0 ? 1 : 0)));
+}
+
+void CadWorkspacePanel::mechanismChanged()
+{
+    if (motionRuntime == nullptr) return;
+    linkChanged();
+    // Rebuild the panel only when the solve outcome changes, not for every streamed pose.
+    const auto summary = motionRuntime->lastAttempt().summary() + (motionRuntime->showingLastValidPose() ? "|stale" : "");
+    if (summary != shownMechanismSummary)
+    {
+        shownMechanismSummary = summary;
+        if (task == Task::joint || task == Task::coupling || task == Task::instance || task == Task::newCoupling) requestRebuild(true);
+    }
 }
 
 void CadWorkspacePanel::saveMapping()
@@ -1677,7 +1855,7 @@ void CadWorkspacePanel::deleteFeature(const juce::String& id)
 }
 
 bool CadWorkspacePanel::isSolid(const juce::String& id) const { const auto* f = service->document().find(id); return f != nullptr && isSolidType(f->type) && !f->shape.IsNull(); }
-juce::String CadWorkspacePanel::featureName(const juce::String& id) const { if (const auto* f = service->document().find(id)) return f->name; const auto& model = service->document().mechanicsData(); if (const auto* i = model.findInstance(id)) return i->name; if (const auto* j = model.findJoint(id)) return j->name; return id; }
+juce::String CadWorkspacePanel::featureName(const juce::String& id) const { if (const auto* f = service->document().find(id)) return f->name; const auto& model = service->document().mechanicsData(); if (const auto* i = model.findInstance(id)) return i->name; if (const auto* j = model.findJoint(id)) return j->name; if (const auto* c = model.findCoupling(id)) return c->name; return id; }
 
 void CadWorkspacePanel::newDocument()
 {

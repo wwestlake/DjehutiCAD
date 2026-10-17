@@ -122,6 +122,24 @@ DjehutiCAD::DjehutiCAD()
                     mapping.scale = number("scale", 1.0); mapping.offset = number("offset"); mapping.initialCoordinate = number("initialCoordinate");
                     safeThis->cadService->setJointMapping(mapping, error);
                 }
+                else if (name == "cad_set_instance_grounded") safeThis->cadService->setInstanceGrounded(parsed.getProperty("instance", "").toString(), static_cast<bool>(parsed.getProperty("grounded", true)), error);
+                else if (name == "cad_set_instance_placement")
+                {
+                    auto vector = [&](const char* key, int index) { const auto* list = parsed.getProperty(key, {}).getArray(); return list != nullptr && list->size() == 3 ? (double) (*list)[index] : 0.0; };
+                    const auto frame = djehuti::cad::mech::frameFromEulerDegrees(vector("origin", 0), vector("origin", 1), vector("origin", 2), vector("rotationDeg", 0), vector("rotationDeg", 1), vector("rotationDeg", 2));
+                    safeThis->cadService->setInstancePlacement(parsed.getProperty("instance", "").toString(), frame, error);
+                }
+                else if (name == "cad_set_joint_role")
+                    safeThis->cadService->setJointRole(parsed.getProperty("joint", "").toString(), parsed.getProperty("role", "").toString(), number("lockValue"), static_cast<bool>(parsed.getProperty("enforceLimits", false)), error);
+                else if (name == "cad_create_coupling")
+                {
+                    djehuti::cad::CadCoupling coupling;
+                    coupling.name = parsed.getProperty("name", "").toString(); coupling.type = parsed.getProperty("type", "").toString();
+                    coupling.jointA = parsed.getProperty("jointA", "").toString(); coupling.jointB = parsed.getProperty("jointB", "").toString();
+                    coupling.ratio = number("ratio", 1.0); coupling.pitchRadius = number("pitchRadius", 0.01); coupling.lead = number("lead", 0.001); coupling.offset = number("offset");
+                    safeThis->cadService->createCoupling(coupling, id, error);
+                }
+                else if (name == "cad_remove_coupling") safeThis->cadService->removeCoupling(parsed.getProperty("coupling", "").toString(), error);
                 else if (name == "cad_motion_preview")
                 {
                     if (static_cast<bool>(parsed.getProperty("reset", false))) safeThis->motionRuntime->resetToReference();
@@ -289,7 +307,8 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "2. Joint: choose the parent (or World) and child instances, the type (fixed, revolute about +Z, prismatic along +Z) and the joint frame.\n"
                                                "3. Select the joint to preview a coordinate (runtime only, never saved) or map a DEWB signal to it.\n"
                                                "4. Motion Link: Start Listening and give DEWB the pipe path; DEWB validates the profile, synchronizes, then streams motion.\n"
-                                               "5. Simulation controls in the Motion Link panel (Start/Resume, Pause, Stop Simulation, Reset, Single Step) ask DEWB to change its run state; they need a DEWB that advertises lifecycle control, and the model moves only when DEWB reports the new state.");
+                                               "5. Mechanisms: ground at least one instance (or joint parts to the world), give each joint a role (driver = input, dependent = solved, locked = held), add Couplings for gears, linear ratios, rack and pinion or screws; closed loops such as slider-cranks are allowed. Preview a driver and the dependent joints follow; the status shows remaining freedom and constraint errors.\n"
+                                               "6. Simulation controls in the Motion Link panel (Start/Resume, Pause, Stop Simulation, Reset, Single Step) ask DEWB to change its run state; they need a DEWB that advertises lifecycle control, and the model moves only when DEWB reports the new state.");
     else if (commandId == 30)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About DjehutiCAD",
                                                "DjehutiCAD 0.1.0\nA FRust-programmable CAD foundation.");

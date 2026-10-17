@@ -6,8 +6,13 @@
 #include <map>
 #include <vector>
 
-// Authored mechanical relationships (assembly instances, joints and the signal connection profile).
-// These are document data stored in OCAF; runtime poses are derived from them and never written back.
+// Authored mechanical relationships: assembly instances, joints (the physical connections of the mechanical
+// graph), coordinate couplings, coordinate roles and the signal connection profile. These are document data
+// stored in OCAF; solved coordinates and poses are derived at runtime and never written back.
+//
+// The mechanical graph may contain closed loops (four-bar, slider-crank). The kinematics solver
+// (CadKinematics.h) builds an internal spanning forest plus loop-closure equations; the authored graph here
+// stays intact and authoritative.
 namespace djehuti::cad
 {
 // A rigid frame: translation in millimetres plus a unit Hamilton quaternion (w, x, y, z). The frame maps
@@ -22,17 +27,22 @@ struct CadFrame
 
 // An assembly occurrence of a solid feature. Its identity is independent of the feature's modeling history,
 // so two instances of the same body move independently. placement is the instance frame in world millimetres
-// for root instances; for a joint child the world frame is derived from the joint chain instead.
+// in the assembly's reference configuration (all joints at their reference coordinates). A grounded instance
+// is fixed to the world at its placement.
 struct CadMechanicalInstance
 {
     juce::String id, name, featureId;
     CadFrame placement;
+    bool grounded = false;
 };
 
-// world(child) = world(parent) * parentToJoint * motion(q - reference) * jointToChild
+// A joint is a physical connection between a parent instance (or the world) and a child instance:
+//   world(child) = world(parent) * parentToJoint * motion(q - reference) * jointToChild
 // parentToJoint maps joint-frame coordinates into the parent instance frame (world when parent is empty).
 // jointToChild maps child-instance-frame coordinates into the joint frame at the reference coordinate.
 // motion() rotates about (revolute) or translates along (prismatic) the joint frame's +Z axis.
+// The coordinate role says how a solve treats q: driver (prescribed input), dependent (solved from the
+// constraints) or locked (held at lockValue). Limits are advisory unless enforceLimits makes them hard bounds.
 struct CadJoint
 {
     juce::String id, name, type;      // "fixed" | "revolute" | "prismatic"
@@ -42,6 +52,21 @@ struct CadJoint
     double reference = 0.0;           // radians (revolute) or metres (prismatic)
     bool hasLimits = false;
     double lower = 0.0, upper = 0.0;  // same units as reference
+    juce::String role = "driver";     // "driver" | "dependent" | "locked" (ignored for fixed joints)
+    double lockValue = 0.0;           // radians or metres, used when role == "locked"
+    bool enforceLimits = false;       // true: limits are hard kinematic bounds for the solver
+};
+
+// A user-authored coordinate coupling between two joints (never inferred from touching geometry):
+//   (qB - referenceB) = k * (qA - referenceA) + offset
+// gear: A and B revolute, k = ratio (signed), offset = phase in rad
+// linear: A and B prismatic, k = ratio (signed), offset in m
+// rackPinion: A revolute, B prismatic, k = pitchRadius in m per rad (signed), offset in m
+// screw: A revolute, B prismatic, k = lead / (2 pi) with lead in m per revolution (signed), offset in m
+struct CadCoupling
+{
+    juce::String id, name, type, jointA, jointB;
+    double ratio = 1.0, pitchRadius = 0.01, lead = 0.001, offset = 0.0;
 };
 
 // Connection-profile entry: which DEWB signal drives a joint and how it converts to the joint coordinate.
@@ -55,18 +80,21 @@ struct CadSignalMapping
 
 struct CadMechanics
 {
+    static constexpr int kSchemaVersion = 2;
     juce::String modelId;
     int interfaceRevision = 0;   // advances when anything DEWB validates against changes (not on renames)
     int profileRevision = 0;     // advances when the interface or any mapping changes
     std::vector<CadMechanicalInstance> instances;
     std::vector<CadJoint> joints;
+    std::vector<CadCoupling> couplings;
     std::vector<CadSignalMapping> mappings;
 
     const CadMechanicalInstance* findInstance(const juce::String& id) const;
     const CadJoint* findJoint(const juce::String& id) const;
-    const CadJoint* jointForChild(const juce::String& instanceId) const;
+    const CadCoupling* findCoupling(const juce::String& id) const;
     const CadSignalMapping* mappingForJoint(const juce::String& jointId) const;
-    bool empty() const { return instances.empty() && joints.empty() && mappings.empty(); }
+    bool instanceHasJoints(const juce::String& instanceId) const;
+    bool empty() const { return instances.empty() && joints.empty() && couplings.empty() && mappings.empty(); }
 };
 
 namespace mech
@@ -79,8 +107,11 @@ juce::StringArray unitsFor(const juce::String& quantity);
 bool unitToSI(const juce::String& quantity, const juce::String& unit, double& factor);
 gp_Trsf motion(const CadJoint& joint, double coordinate);
 gp_Trsf frameFromOriginAxis(double ox, double oy, double oz, double ax, double ay, double az);
-bool evaluate(const CadMechanics& model, const std::map<juce::String, double>& coordinates, std::map<juce::String, gp_Trsf>& world, juce::String& error);
-bool validateJointGraph(const CadMechanics& model, juce::String& error);
+CadFrame frameFromEulerDegrees(double x, double y, double z, double rx, double ry, double rz);   // extrinsic XYZ
+void eulerDegreesFromFrame(const CadFrame& frame, double& rx, double& ry, double& rz);
+double couplingFactor(const CadCoupling& coupling);
+bool validateModel(const CadMechanics& model, juce::String& error);
+bool validateCoupling(const CadMechanics& model, const CadCoupling& coupling, juce::String& error);
 bool validateMapping(const CadMechanics& model, const CadSignalMapping& mapping, juce::String& error);
 juce::var toJson(const CadMechanics& model);
 bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error);

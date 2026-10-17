@@ -128,11 +128,9 @@ bool CadDocument::restoreMechanicsFromOCAF(juce::String& error)
 // Reference-configuration world frame of an instance (all joints at their reference coordinates).
 bool CadDocument::referenceWorld(const juce::String& instanceId, gp_Trsf& world, juce::String& error) const
 {
-    std::map<juce::String, gp_Trsf> frames;
-    if (!mech::evaluate(mechanics, {}, frames, error)) return false;
-    const auto found = frames.find(instanceId);
-    if (found == frames.end()) { error = "Unknown assembly instance: " + instanceId; return false; }
-    world = found->second;
+    const auto* instance = mechanics.findInstance(instanceId);
+    if (instance == nullptr) { error = "Unknown assembly instance: " + instanceId; return false; }
+    world = instance->placement.toTrsf();
     return true;
 }
 
@@ -147,7 +145,6 @@ bool CadDocument::jointFramesFromRequest(const CadJointRequest& request, CadJoin
     if (request.hasLimits && request.lower > request.upper) { error = "The lower limit must not exceed the upper limit."; return false; }
     // Keep the child exactly where it is now at the reference coordinate; the parent frame comes from the current reference pose.
     gp_Trsf childWorld, parentWorld;
-    if (const auto* existing = mechanics.jointForChild(request.childInstance); existing != nullptr && existing->id != joint.id) { error = "That instance already has a parent joint (" + existing->name + ")."; return false; }
     if (!referenceWorld(request.childInstance, childWorld, error)) return false;
     if (request.parentInstance.isNotEmpty() && !referenceWorld(request.parentInstance, parentWorld, error)) return false;
     const auto jointWorld = mech::frameFromOriginAxis(request.originX, request.originY, request.originZ, request.axisX, request.axisY, request.axisZ);
@@ -184,7 +181,7 @@ bool CadDocument::setInstancePlacement(const juce::String& id,const CadFrame& pl
         for (auto& instance : mechanics.instances)
             if (instance.id == id)
             {
-                if (const auto* joint = mechanics.jointForChild(id)) { e = instance.name + " is placed by joint " + joint->name + "; edit the joint instead."; return false; }
+                if (!instance.grounded && mechanics.instanceHasJoints(id)) { e = instance.name + " is positioned by its joints; ground it or edit the joints to move it."; return false; }
                 const auto norm = std::sqrt(placement.qw * placement.qw + placement.qx * placement.qx + placement.qy * placement.qy + placement.qz * placement.qz);
                 if (!std::isfinite(placement.x) || !std::isfinite(placement.y) || !std::isfinite(placement.z) || !std::isfinite(norm) || norm < 1.0e-9) { e = "Instance placement must be finite with a non-zero rotation."; return false; }
                 instance.placement = placement;
@@ -217,6 +214,7 @@ bool CadDocument::renameMechanical(const juce::String& id,const juce::String& na
     {
         if (name.trim().isEmpty()) { e = "Name cannot be empty."; return false; }
         for (auto& instance : mechanics.instances) if (instance.id == id) { instance.name = name.trim(); return true; }
+        for (auto& coupling : mechanics.couplings) if (coupling.id == id) { coupling.name = name.trim(); return true; }
         for (auto& joint : mechanics.joints) if (joint.id == id) { joint.name = name.trim(); return true; }
         e = "Unknown instance or joint: " + id;
         return false;
@@ -232,7 +230,7 @@ bool CadDocument::createJoint(const CadJointRequest& request,juce::String& id,ju
         if (!jointFramesFromRequest(request, joint, e)) return false;
         if (joint.name.isEmpty()) joint.name = joint.type.substring(0, 1).toUpperCase() + joint.type.substring(1) + " " + joint.id.fromLastOccurrenceOf("-", false, false);
         mechanics.joints.push_back(joint);
-        if (!mech::validateJointGraph(mechanics, e)) return false;
+        if (!mech::validateModel(mechanics, e)) return false;
         ++mechanics.interfaceRevision; ++mechanics.profileRevision;
         id = joint.id;
         return true;
@@ -251,7 +249,7 @@ bool CadDocument::updateJoint(const juce::String& id,const CadJointRequest& requ
                 if (!jointFramesFromRequest(request, updated, e)) return false;
                 if (updated.name.isEmpty()) updated.name = joint.name;
                 joint = updated;
-                if (!mech::validateJointGraph(mechanics, e)) return false;
+                if (!mech::validateModel(mechanics, e)) return false;
                 if (const auto* mapping = mechanics.mappingForJoint(id); mapping != nullptr && !mech::quantityDrivesJoint(mapping->sourceQuantity, joint.type))
                     { e = "The saved signal mapping does not fit a " + joint.type + " joint; remove it first."; return false; }
                 ++mechanics.interfaceRevision; ++mechanics.profileRevision;
@@ -270,6 +268,7 @@ bool CadDocument::removeJoint(const juce::String& id,juce::String& error)
         mechanics.joints.erase(std::remove_if(mechanics.joints.begin(), mechanics.joints.end(), [&](const CadJoint& j) { return j.id == id; }), mechanics.joints.end());
         if (mechanics.joints.size() == before) { e = "Unknown joint: " + id; return false; }
         mechanics.mappings.erase(std::remove_if(mechanics.mappings.begin(), mechanics.mappings.end(), [&](const CadSignalMapping& m) { return m.jointId == id; }), mechanics.mappings.end());
+        mechanics.couplings.erase(std::remove_if(mechanics.couplings.begin(), mechanics.couplings.end(), [&](const CadCoupling& c) { return c.jointA == id || c.jointB == id; }), mechanics.couplings.end());
         ++mechanics.interfaceRevision; ++mechanics.profileRevision;
         return true;
     }, error);
@@ -284,6 +283,82 @@ bool CadDocument::setJointMapping(const CadSignalMapping& mapping,juce::String& 
         for (auto& existing : mechanics.mappings) if (existing.jointId == mapping.jointId) { existing = mapping; replaced = true; }
         if (!replaced) mechanics.mappings.push_back(mapping);
         ++mechanics.profileRevision;
+        return true;
+    }, error);
+}
+
+bool CadDocument::setInstanceGrounded(const juce::String& id,bool grounded,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto& instance : mechanics.instances)
+            if (instance.id == id) { instance.grounded = grounded; ++mechanics.interfaceRevision; ++mechanics.profileRevision; return true; }
+        e = "Unknown assembly instance: " + id;
+        return false;
+    }, error);
+}
+
+bool CadDocument::setJointRole(const juce::String& jointId,const juce::String& role,double lockValue,bool enforceLimits,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto& joint : mechanics.joints)
+            if (joint.id == jointId)
+            {
+                if (joint.type == "fixed") { e = joint.name + " is fixed and has no coordinate role."; return false; }
+                if (role != "driver" && mechanics.mappingForJoint(jointId) != nullptr) { e = joint.name + " is mapped to a DEWB signal, which makes it a driver; remove the mapping before making it " + role + "."; return false; }
+                joint.role = role; joint.lockValue = lockValue; joint.enforceLimits = enforceLimits;
+                if (!mech::validateModel(mechanics, e)) return false;
+                ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+                return true;
+            }
+        e = "Unknown joint: " + jointId;
+        return false;
+    }, error);
+}
+
+bool CadDocument::createCoupling(const CadCoupling& request,juce::String& id,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        CadCoupling coupling = request;
+        coupling.id = newId("coupling", nextNumber++);
+        if (coupling.name.trim().isEmpty()) coupling.name = (coupling.type == "rackPinion" ? juce::String("Rack and pinion") : coupling.type.substring(0, 1).toUpperCase() + coupling.type.substring(1)) + " " + coupling.id.fromLastOccurrenceOf("-", false, false);
+        if (!mech::validateCoupling(mechanics, coupling, e)) return false;
+        mechanics.couplings.push_back(coupling);
+        ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        id = coupling.id;
+        return true;
+    }, error);
+}
+
+bool CadDocument::updateCoupling(const juce::String& id,const CadCoupling& request,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto& coupling : mechanics.couplings)
+            if (coupling.id == id)
+            {
+                auto updated = request; updated.id = id;
+                if (updated.name.trim().isEmpty()) updated.name = coupling.name;
+                if (!mech::validateCoupling(mechanics, updated, e)) return false;
+                coupling = updated;
+                ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+                return true;
+            }
+        e = "Unknown coupling: " + id;
+        return false;
+    }, error);
+}
+
+bool CadDocument::removeCoupling(const juce::String& id,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        const auto before = mechanics.couplings.size();
+        mechanics.couplings.erase(std::remove_if(mechanics.couplings.begin(), mechanics.couplings.end(), [&](const CadCoupling& c) { return c.id == id; }), mechanics.couplings.end());
+        if (mechanics.couplings.size() == before) { e = "Unknown coupling: " + id; return false; }
+        ++mechanics.interfaceRevision; ++mechanics.profileRevision;
         return true;
     }, error);
 }
@@ -458,7 +533,7 @@ bool CadDocument::deserializeSketches(const juce::String& json,juce::String& err
 bool CadDocument::syncOCAFFromItems(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();writeInteger(root.FindChild(kMetaTag,true),1,nextNumber);const auto features=root.FindChild(kFeatureContainerTag,true);for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)!=0){const auto oldId=readString(label,2);bool stillPresent=false;for(const auto& f:items)if(f.id==oldId){stillPresent=true;break;}if(!stillPresent)recordDeleted(label);}writeInteger(label,1,0);}for(const auto& f:items){if(f.shape.IsNull()&&f.type!="sketch"){error="Cannot record a null shape for feature: "+f.id;return false;}const auto label=features.FindChild(kFeatureTagBase+featureNumber(f.id),true);writeInteger(label,1,1);writeString(label,2,f.id);writeString(label,3,f.name);writeString(label,4,f.type);writeString(label,5,f.firstOperand);writeString(label,6,f.secondOperand);writeString(label,7,f.sketchId);writeString(label,8,f.targetFeatureId);writeReal(label,10,f.width);writeReal(label,11,f.depth);writeReal(label,12,f.height);writeReal(label,13,f.radius);writeReal(label,14,f.x);writeReal(label,15,f.y);writeReal(label,16,f.z);writeReal(label,17,f.rx);writeReal(label,18,f.ry);writeReal(label,19,f.rz);writeInteger(label,20,f.visible?1:0);writeInteger(label,21,f.reverse?1:0);writeInteger(label,22,f.throughAll?1:0);recordGeneratedOrModified(label,f.shape);}for(const auto& entry:operationHistory){for(TDF_ChildIterator it(features);it.More();it.Next())if(readString(it.Value(),2)==entry.featureId){recordOperationHistory(it.Value(),entry);break;}}const auto refs=root.FindChild(kReferenceContainerTag,true);for(TDF_ChildIterator it(refs);it.More();it.Next())writeInteger(it.Value(),1,0);for(size_t i=0;i<references.size();++i){const auto label=refs.FindChild((int)i+1,true);writeInteger(label,1,1);writeString(label,2,references[i].ownerFeatureId);writeString(label,3,references[i].topologyKind);writeString(label,4,references[i].semanticRole);const auto* owner=find(references[i].ownerFeatureId);if(owner==nullptr)continue;if(references[i].topologyKind=="edge"&&references[i].semanticRole=="box-bottom-x-edge"){TopoDS_Shape edge;if(!representativeBoxEdge(*owner,edge)){error="The supported persistent reference could not be mapped to current document geometry.";return false;}recordGeneratedOrModifiedAt(label.FindChild(kReferenceShapeTag,true).FindChild(kShapeTag,true),edge);}}return true; }
 bool CadDocument::syncItemsFromOCAF(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();const auto meta=root.FindChild(kMetaTag,false);const auto features=root.FindChild(kFeatureContainerTag,false);if(features.IsNull()){error="Native CAD document has no feature container.";return false;}nextNumber=readInteger(meta,1,1);items.clear();bool allShapesNamed=true;for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)==0)continue;CadFeature f;f.id=readString(label,2);f.name=readString(label,3);f.type=readString(label,4);f.firstOperand=readString(label,5);f.secondOperand=readString(label,6);f.sketchId=readString(label,7);f.targetFeatureId=readString(label,8);f.width=readReal(label,10,f.width);f.depth=readReal(label,11,f.depth);f.height=readReal(label,12,f.height);f.radius=readReal(label,13,f.radius);f.x=readReal(label,14,0);f.y=readReal(label,15,0);f.z=readReal(label,16,0);f.rx=readReal(label,17,0);f.ry=readReal(label,18,0);f.rz=readReal(label,19,0);f.visible=readInteger(label,20,1)!=0;f.reverse=readInteger(label,21,0)!=0;f.throughAll=readInteger(label,22,0)!=0;if(f.id.isEmpty()||f.type.isEmpty()){error="Native CAD document contains an invalid feature.";return false;}const auto stored=namedShape(label.FindChild(kShapeTag,false));if((stored.IsNull()||stored->IsEmpty())&&f.type!="sketch"){allShapesNamed=false;}else if(!stored.IsNull()&&!stored->IsEmpty())f.shape=TNaming_Tool::CurrentShape(stored);items.push_back(std::move(f));}references.clear();const auto refs=root.FindChild(kReferenceContainerTag,false);if(!refs.IsNull())for(TDF_ChildIterator it(refs);it.More();it.Next())if(readInteger(it.Value(),1,0)!=0)references.push_back({readString(it.Value(),2),readString(it.Value(),3),readString(it.Value(),4)});if(allShapesNamed)return true;return rebuild(error); }
 
-juce::String CadDocument::serialize() const { auto root=std::make_unique<juce::DynamicObject>();root->setProperty("formatVersion",4);root->setProperty("units","mm");root->setProperty("nextNumber",nextNumber);juce::Array<juce::var> list;for(const auto& f:items){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("id",f.id);o->setProperty("name",f.name);o->setProperty("type",f.type);o->setProperty("firstOperand",f.firstOperand);o->setProperty("secondOperand",f.secondOperand);o->setProperty("sketchId",f.sketchId);o->setProperty("targetFeatureId",f.targetFeatureId);o->setProperty("width",f.width);o->setProperty("depth",f.depth);o->setProperty("height",f.height);o->setProperty("radius",f.radius);o->setProperty("reverse",f.reverse);o->setProperty("throughAll",f.throughAll);o->setProperty("x",f.x);o->setProperty("y",f.y);o->setProperty("z",f.z);o->setProperty("rx",f.rx);o->setProperty("ry",f.ry);o->setProperty("rz",f.rz);o->setProperty("visible",f.visible);list.add(juce::var(o.release()));}root->setProperty("features",juce::var(list));juce::Array<juce::var> refs;for(const auto& r:references){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("ownerFeatureId",r.ownerFeatureId);o->setProperty("topologyKind",r.topologyKind);o->setProperty("semanticRole",r.semanticRole);refs.add(juce::var(o.release()));}root->setProperty("references",juce::var(refs));root->setProperty("sketches",juce::JSON::parse(serializeSketches()));root->setProperty("mechanics",mech::toJson(mechanics));return juce::JSON::toString(juce::var(root.release())); }
+juce::String CadDocument::serialize() const { auto root=std::make_unique<juce::DynamicObject>();root->setProperty("formatVersion",5);root->setProperty("units","mm");root->setProperty("nextNumber",nextNumber);juce::Array<juce::var> list;for(const auto& f:items){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("id",f.id);o->setProperty("name",f.name);o->setProperty("type",f.type);o->setProperty("firstOperand",f.firstOperand);o->setProperty("secondOperand",f.secondOperand);o->setProperty("sketchId",f.sketchId);o->setProperty("targetFeatureId",f.targetFeatureId);o->setProperty("width",f.width);o->setProperty("depth",f.depth);o->setProperty("height",f.height);o->setProperty("radius",f.radius);o->setProperty("reverse",f.reverse);o->setProperty("throughAll",f.throughAll);o->setProperty("x",f.x);o->setProperty("y",f.y);o->setProperty("z",f.z);o->setProperty("rx",f.rx);o->setProperty("ry",f.ry);o->setProperty("rz",f.rz);o->setProperty("visible",f.visible);list.add(juce::var(o.release()));}root->setProperty("features",juce::var(list));juce::Array<juce::var> refs;for(const auto& r:references){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("ownerFeatureId",r.ownerFeatureId);o->setProperty("topologyKind",r.topologyKind);o->setProperty("semanticRole",r.semanticRole);refs.add(juce::var(o.release()));}root->setProperty("references",juce::var(refs));root->setProperty("sketches",juce::JSON::parse(serializeSketches()));root->setProperty("mechanics",mech::toJson(mechanics));return juce::JSON::toString(juce::var(root.release())); }
 bool CadDocument::deserialize(const juce::String& json,juce::String& error) { const auto parsed=juce::JSON::parse(json);auto* root=parsed.getDynamicObject();if(!root){error="CAD document is not valid JSON.";return false;}if(root->getProperty("units").toString()!="mm"){error="Only millimeter CAD documents are supported.";return false;}std::vector<CadFeature> loaded;if(auto* array=root->getProperty("features").getArray())for(const auto& value:*array){auto* o=value.getDynamicObject();if(!o){error="CAD feature entry is invalid.";return false;}CadFeature f;f.id=o->getProperty("id").toString();f.name=o->getProperty("name").toString();f.type=o->getProperty("type").toString();f.firstOperand=o->getProperty("firstOperand").toString();f.secondOperand=o->getProperty("secondOperand").toString();f.sketchId=o->getProperty("sketchId").toString();f.targetFeatureId=o->getProperty("targetFeatureId").toString();f.width=number(o->getProperty("width"),f.width);f.depth=number(o->getProperty("depth"),f.depth);f.height=number(o->getProperty("height"),f.height);f.radius=number(o->getProperty("radius"),f.radius);f.reverse=static_cast<bool>(o->getProperty("reverse"));f.throughAll=static_cast<bool>(o->getProperty("throughAll"));f.x=number(o->getProperty("x"),0);f.y=number(o->getProperty("y"),0);f.z=number(o->getProperty("z"),0);f.rx=number(o->getProperty("rx"),0);f.ry=number(o->getProperty("ry"),0);f.rz=number(o->getProperty("rz"),0);f.visible=static_cast<bool>(o->getProperty("visible"));loaded.push_back(std::move(f));}const auto old=items;const auto oldSketches=sketches;const auto oldMechanicsJson=mechanics;const auto oldRefs=references;const auto oldNext=nextNumber;items=std::move(loaded);references.clear();nextNumber=(int)root->getProperty("nextNumber");if(nextNumber<1)nextNumber=(int)items.size()+1;if(auto* array=root->getProperty("references").getArray())for(const auto& value:*array)if(auto* o=value.getDynamicObject())references.push_back({o->getProperty("ownerFeatureId").toString(),o->getProperty("topologyKind").toString(),o->getProperty("semanticRole").toString()});if(root->hasProperty("mechanics")&&!mech::fromJson(root->getProperty("mechanics"),mechanics,error)){items=old;sketches=oldSketches;mechanics=oldMechanicsJson;references=oldRefs;nextNumber=oldNext;return false;}if(!root->hasProperty("mechanics")){mechanics={};mechanics.modelId=juce::Uuid().toDashedString();}if(root->hasProperty("sketches")&&!deserializeSketches(juce::JSON::toString(root->getProperty("sketches")),error)){mechanics=oldMechanicsJson;items=old;sketches=oldSketches;references=oldRefs;nextNumber=oldNext;return false;}if(!rebuild(error)||!syncOCAFFromItems(error)){items=old;sketches=oldSketches;mechanics=oldMechanicsJson;references=oldRefs;nextNumber=oldNext;rebuild(error);return false;}writeString(ocafDocument->Main().FindChild(kSketchContainerTag,true),1,serializeSketches());writeString(ocafDocument->Main().FindChild(kMechanicsContainerTag,true),1,juce::JSON::toString(mech::toJson(mechanics),true));return true; }
 bool CadDocument::saveNative(const juce::File& file,juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto encoded=juce::File(file.getFullPathName()+".cbf");encoded.deleteFile();const auto status=ocafApplication->SaveAs(ocafDocument,pathString(encoded));if(status!=PCDM_SS_OK||!encoded.existsAsFile()){error="Unable to write native CAD document: "+file.getFullPathName();return false;}file.deleteFile();if(!encoded.moveFileTo(file)){encoded.deleteFile();error="Unable to finalize native CAD document: "+file.getFullPathName();return false;}return true; }
 bool CadDocument::loadNative(const juce::File& file,juce::String& error) { const auto encoded=juce::File(file.getFullPathName()+".cbf");encoded.deleteFile();if(!file.copyFileTo(encoded)){error="Unable to stage native CAD document: "+file.getFullPathName();return false;}Handle(TDocStd_Document) opened;const auto status=ocafApplication->Open(pathString(encoded),opened);encoded.deleteFile();if(status!=PCDM_RS_OK||opened.IsNull()){error="Unable to open native CAD document: "+file.getFullPathName();return false;}const auto oldDocument=ocafDocument;const auto oldItems=items;const auto oldSketches=sketches;const auto oldRefs=references;const auto oldNext=nextNumber;ocafDocument=opened;const auto sketchData=readString(ocafDocument->Main().FindChild(kSketchContainerTag,false),1);const auto oldMechanics=mechanics;if((!sketchData.isEmpty()&&!deserializeSketches(sketchData,error))||!syncItemsFromOCAF(error)||!restoreMechanicsFromOCAF(error)){ocafDocument=oldDocument;items=oldItems;sketches=oldSketches;mechanics=oldMechanics;references=oldRefs;nextNumber=oldNext;return false;}documentFile=file;dirty=false;ocafDocument->SetUndoLimit(100);ocafDocument->ClearUndos();ocafDocument->ClearRedos();invalidate();return true; }
