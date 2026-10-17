@@ -446,6 +446,18 @@ SolveResult solve(const CadMechanics& model, const SolveRequest& request, const 
                 if (lambda > 1.0e10 || std::sqrt(stepNorm) * factor < 1.0e-15) { stagnated = true; break; }
             }
         }
+        if (!converged && !stagnated && n > 0 && m > 0)
+        {
+            // A residual minimum (J^T r ~ 0 while r stays large) means the inputs cannot all hold here.
+            double g2 = 0.0, jf2 = 0.0;
+            for (int j = 1; j <= n; ++j)
+            {
+                double g = 0.0;
+                for (int i = 1; i <= m; ++i) { g += J(i, j) * r(i); jf2 += J(i, j) * J(i, j); }
+                g2 += g * g;
+            }
+            stagnated = std::sqrt(g2) <= 1.0e-6 * std::sqrt(jf2) * r.Norm();
+        }
         if (!converged) break;
     }
 

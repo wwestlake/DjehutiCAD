@@ -259,6 +259,97 @@ interactively, and there is no end-to-end DEWB run yet: the DEWB side is a
 separate assignment. The next boundary is DEWB implementing
 `docs/DEWB_MOTION_HANDOFF.md`, then a joint DEWB-to-DCAD run.
 
+### Mechanism constraints and dependent motion (2026-10-17)
+
+The mechanical model is now a constraint graph (`mechanics.schemaVersion` 2,
+`.djc` `formatVersion` 5). The full reference is
+`docs/MECHANISM_CONSTRAINTS.md`; the examples are
+`examples/mechanisms/gear_pair.djc` and `examples/mechanisms/slider_crank.djc`.
+
+- Model: instances can be `grounded`. Joints may form closed loops and
+  several joints may meet at one instance; the single-parent/acyclic rule is
+  gone. Each movable joint has a `role` (driver / dependent / locked, with
+  `lockValue`) and `enforceLimits` (hard bounds; limits stay advisory
+  otherwise). `couplings[]` are explicit gear (ratio + phase), linear,
+  rack-and-pinion (pitch radius) and screw (lead per revolution). Instance
+  placement is the reference-configuration world frame.
+- Migration of schema 1: tree roots become grounded, joint children get their
+  former chain-derived placement, all joints become drivers, so old documents
+  behave as before.
+- Solver: `Source/CadKinematics.h/.cpp`, `kin::solve(model, request)`. It
+  builds a spanning forest from world plus grounded instances, turns the other
+  joints into 6-row loop closures, adds coupling rows, and uses analytic
+  screw Jacobians, column scaling, damped least-squares steps with OCCT
+  `math_SVD`, step limits, continuation substeps from the last valid pose, and
+  `math_Jacobi` rank/free-coordinate diagnostics. Verification is
+  independent: position ≤ 1e-6 mm, angle ≤ 1e-9 rad, coupling ≤ 1e-9, drivers
+  exact, finite values, hard bounds. Statuses: solved, underconstrained,
+  singular (valid); conflicting, boundViolation, notConverged, invalidInput,
+  cancelled (invalid). The residual-minimum test (Jᵀr ≈ 0 with large r)
+  classifies unreachable inputs as `conflicting`.
+- Runtime: `CadMotionRuntime` solves only when inputs or the document revision
+  change. Failed solves keep the last valid pose. Preview is driver-only and
+  reverts on failure. The status bar shows `Mechanism: …`. Joint axes are
+  drawn in the views (amber revolute, cyan prismatic). New and Open (a new
+  `documentInstance()`) reset the runtime to the reference configuration, so
+  no driver value or pose carries over between documents with repeated ids.
+- Motion link: mapped joints must be drivers (`mappingConflict`). An
+  unsolvable state sends `LinkStatus` `mechanismUnsolved`, and an unsolvable
+  `SynchronizeState` is not acknowledged. Status separates received from
+  posed sequence/time. The wire contract is unchanged.
+- UI: Grounded toggle and full origin + rotation (degrees, extrinsic XYZ) for
+  grounded or jointless instances; joint role/lock/hard-bounds; Coupling
+  command and panel (with units); mechanism status group.
+- Automation: commands `setInstanceGrounded`, `setInstancePlacement`,
+  `setJointRole`, `createCoupling`, `updateCoupling`, `removeCoupling`; agent
+  `cad_set_instance_grounded`, `cad_set_instance_placement`,
+  `cad_set_joint_role`, `cad_create_coupling`, `cad_remove_coupling`; FRust
+  `djehuti_cad_set_grounded`, `djehuti_cad_set_instance_placement`,
+  `djehuti_cad_set_joint_role`, `djehuti_cad_create_coupling`; nodes CAD
+  Ground Instance, CAD Instance Placement, CAD Joint Role, CAD Coupling; Help
+  items Mechanisms and Simulation. These compile; they were not run
+  interactively.
+- IK boundary: the solver assembles `Term`s (rows + Jacobian columns). IK
+  will add a pose-target term and reuse everything else. No IK exists.
+
+Checked in the running Debug app (2026-10-17), with driver values entered in
+the joint panel's Preview, and dependent values read from each joint's
+"Solved value" and the Mechanism status group:
+
+- `gear_pair.djc` (ratio −2): Gear A axle at 30° gave Gear B axle −60.000°,
+  and at −135° gave 270.000°. Status was solved (unknowns 1, rank 1, closure
+  0 mm / 0 rad). Both axles stayed at their world pivots, and the markers
+  turned in opposite directions as expected. All three 3D Views showed the
+  same pose. Opening another file afterwards gave no unsaved-changes prompt
+  (preview did not dirty the document).
+- `slider_crank.djc` (r 30 mm, L 80 mm; slide measured from x = 110 mm):
+
+  | Crank | Slide (expected) | Slide (observed) |
+  |---|---|---|
+  | 90° | −35.84 mm | −35.838 mm |
+  | 180° | −60.00 mm | −60.000 mm |
+  | −120° | −49.34 mm | −49.336 mm |
+  | 30° | −5.44 mm | −5.436 mm |
+
+  At 90° the pins were checked too: crank pin −112.024° (expected −112.02°),
+  wrist pin 22.024° (expected 22.02°). Every value solved with closure
+  0 mm / 0 rad (unknowns 3, equations 6, rank 3; the 3 redundant planar rows
+  are reported as consistent). The rail stayed fixed and the slider moved
+  only along its rail axis. After Fit All, the 3D Views showed the same
+  pose as the model view.
+- Defect found and fixed: opening `slider_crank.djc` after previewing the
+  gear pair inherited the gear pair's runtime state (both files use
+  `joint-9`, `inst-7`, `inst-8`). The crank came up at −135°, the gear pose
+  was shown as "last valid", and the solve reported `boundViolation`.
+  `CadMotionRuntime` now resets on a new `documentInstance()`. After a
+  rebuild, the same sequence opened the slider-crank solved at its
+  reference configuration.
+- Not exercised interactively: the `conflicting` (residual-minimum)
+  classification, couplings other than gear, the locked role, hard-bound
+  rejection from a preview, a DEWB-driven mechanism over the pipe, and the
+  automation and FRust/node entry points (compiled only).
+- Inverse kinematics is future work. It is not implemented.
+
 ## Rendering and views
 
 The application provides three independent 3D view cameras by default, with
@@ -351,8 +442,7 @@ Useful entry points:
 - There is no arbitrary face-attached sketch system.
 - There is no general topology-selection UI or broad persistent face/edge
   guarantee.
-- Assemblies, mechanisms, loft, sweep, revolve, and simulation integration are
-  not implemented in this CAD foundation.
+- Loft, sweep and revolve are not implemented.
 - Mesh and GUI behavior still need focused direct observation when the native
   application is available through an appropriate UI surface.
 - Sketches are not drawn in the 3D model view; they appear only in the sketch
@@ -360,11 +450,14 @@ Useful entry points:
 - New primitives are created at the origin, and their placement is edited
   afterwards in the body panel. The sketch Esc behavior, constraint group, and
   splitter persistence were checked only by source review and build.
-- Motion is driven only: there is no assembly constraint solving and no
-  force/feedback co-simulation, and v1 has no interpolation between states.
-- Instance placement is edited as a translation in the UI (orientation is
-  stored but not editable there). There is no slider or animated sweep for
-  preview.
+- Mechanisms are forward kinematics only: no inverse kinematics, dragging,
+  contact, cams, belts or force/feedback co-simulation, and v1 has no
+  interpolation between states. `conflicting` is a numerical finding near the
+  last pose, not a proof of impossibility.
+- Instance placement is editable only for grounded or jointless instances;
+  jointed instances are placed by their joints. There is no slider or
+  animated sweep for preview. Ctrl+Z in the model view did not undo (the
+  toolbar Undo/Redo buttons work).
 - The motion pipe uses JUCE named pipes with default security. JUCE exposes no
   `PIPE_REJECT_REMOTE_CLIENTS`, and it allocates a payload before the 1 MiB
   check. A JUCE server pipe silently accepts the next client after a

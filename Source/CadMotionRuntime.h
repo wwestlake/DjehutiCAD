@@ -73,6 +73,6 @@ private:
     kin::SolveResult valid, attempt;
     bool hasValid = false, hasAttempt = false;
     Driver currentDriver = Driver::preview;
-    std::uint64_t shownRevision = 0, serial = 0;
+    std::uint64_t shownRevision = 0, shownInstance = 0, serial = 0;
 };
 }

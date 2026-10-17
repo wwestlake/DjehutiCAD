@@ -5,6 +5,7 @@ namespace djehuti::cad
 CadMotionRuntime::CadMotionRuntime(std::shared_ptr<CadCommandService> s) : service(std::move(s))
 {
     shownRevision = service->document().revision();
+    shownInstance = service->document().documentInstance();
     solveNow({});
     startTimerHz(30);
 }
@@ -65,8 +66,17 @@ juce::String CadMotionRuntime::statusJson() const
 // Solve only when the authored model changes; idle frames cost nothing.
 void CadMotionRuntime::timerCallback()
 {
-    if (service->document().revision() == shownRevision) return;
-    shownRevision = service->document().revision();
+    const auto& document = service->document();
+    if (document.documentInstance() != shownInstance)
+    {
+        // New or Open replaced the document: ids may repeat across files, so nothing carries over.
+        shownInstance = document.documentInstance();
+        shownRevision = document.revision();
+        resetToReference();
+        return;
+    }
+    if (document.revision() == shownRevision) return;
+    shownRevision = document.revision();
     solveNow(inputs);
 }
 
