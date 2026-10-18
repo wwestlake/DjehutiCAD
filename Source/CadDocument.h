@@ -74,6 +74,7 @@ struct CadMesh
 struct CadRenderSnapshot
 {
     std::uint64_t revision = 0;
+    std::uint64_t documentInstance = 0;   // which document (New/Open) the meshes belong to
     std::vector<CadMesh> meshes;
 };
 

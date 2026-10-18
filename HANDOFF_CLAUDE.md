@@ -34,6 +34,48 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Document framing and idle viewport activity — October 18, 2026
+
+Framing: each view frames the visible geometry once when it is created and when a document is opened or
+created (`Viewport3D::requestFit`). The fit waits until the view has a size, the render snapshot belongs to
+the requested document, and a runtime pose computed from that same document state (instance and revision)
+has arrived. Render and pose snapshots now carry the document instance and revision for this. Each view keeps
+its own viewing direction. User camera input cancels a pending fit, and edits, IK results, selection and
+repaints never refit. Fit All and Reset View are unchanged. An empty document keeps a neutral view and fits
+its first geometry.
+
+Rendering: `setContinuousRepainting(false)`. `prepareFrame` publishes a frame packet and requests one GL
+render only when the projection or view matrix, the published pose (mechanism, IK or DEWB), geometry,
+highlights, visibility, size or GL context changed. Hidden views (other tab, minimised window) do nothing
+and catch up when shown. Until JUCE has created the context, the view keeps requesting renders, because
+JUCE creates it inside a requested render. A failed publish (all three ring slots in flight) stays dirty and
+retries. The workspace and 3D Views timers poll at 60 Hz while frames change and drop to 10 Hz after one
+idle second; camera input, new geometry and published poses bring them back. The frame-resource ring,
+shader pipeline, fences and context lifecycle are unchanged.
+
+Measured (Debug build, `ik_arm.djc` open, no input, 10 s samples, process CPU as % of one core):
+
+| State | Before | After |
+|---|---|---|
+| CAD Workspace showing | 97.5 % | 7.3 % |
+| 3D Views tab showing | not measured | 6.2 % |
+| Window minimised | 43.8 % | 7.5 % |
+
+The remainder is all on the message thread with no GL work. The likely main contributor is the motion link's
+10 Hz status board, which re-serialises the full status and mechanism JSON every tick. It was left unchanged:
+motion-link code is outside this assignment.
+
+Observed in the running app: the arm and slider-crank examples framed correctly on open, in either order
+and repeatedly; 3D views that were hidden at open time, and a newly added view, framed correctly when shown.
+Orbit (View 1) and zoom (View 3) changed only their own view. A window resize kept user cameras. Fit All
+refit every view in its own direction. An IK Solve and a short target drag on the slider-crank updated the
+model view and all three 3D views. Not exercised: pan (the automation could not hold Shift or the right
+button during a drag; it uses the same camera path as orbit), DPI change, and a live DEWB stream.
+
+Defects caught during the pass and fixed before merge: a comment inserted mid-line in the viewport
+constructor disabled `attachTo`, so no context was created; a document switch briefly fitted the previous
+document's bounds; and a view without its first pose fitted unposed bounds.
+
 ## IK in-app verification pass — October 18, 2026
 
 This pass supersedes the "NOT observed" visual limitations in the closeout below. Observed directly in the

@@ -44,6 +44,7 @@ struct CadDragHandle
 struct CadPoseSnapshot
 {
     std::uint64_t serial = 0;
+    std::uint64_t documentInstance = 0, documentRevision = 0;   // the document state these poses were computed from
     std::vector<CadPoseInstance> instances;
     std::set<juce::String> instancedFeatures;   // bodies drawn only through their instances
     std::vector<CadAxisMarker> axes;

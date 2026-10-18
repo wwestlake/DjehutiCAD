@@ -473,6 +473,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     centre.addAndMakeVisible(modelView); centre.addChildComponent(*sketchCanvas);
     modelView.setTitle("Perspective  |  Model  (drag to orbit, Shift/right-drag to pan, wheel to zoom, click to select)");
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
+    modelView.onFrameRequested = [this] { wakeFrames(); };
     modelView.onTargetDragged = [this](const juce::String& targetId, const std::array<float, 3>& point, bool finished) { ikTargetDragged(targetId, point, finished); };
 
     side.addAndMakeVisible(taskTitle); side.addAndMakeVisible(taskInstruction); side.addAndMakeVisible(taskViewport); side.addAndMakeVisible(messageLabel);
@@ -579,15 +580,35 @@ bool CadWorkspacePanel::keyPressed(const juce::KeyPress& key)
     return false;
 }
 
+// The timer only polls for change: a frame is published and rendered when something changed. After a second
+// without change it drops to 10 Hz; camera input, new geometry and poses bring it back to 60 Hz.
 void CadWorkspacePanel::timerCallback()
 {
+    const auto revision = service->document().revision();
+    const auto instance = service->document().documentInstance();
+    const bool documentChanged = revision != shownRevision || instance != shownDocument;
     refreshFromDocument();
-    if (modelView.isShowing()) modelView.prepareFrame(0.0f, ++frameSerial);
+    const bool published = modelView.prepareFrame(0.0f, ++frameSerial);
+    if (documentChanged || published) wakeFrames();
+    else if (fastFrames && ++idleFrameTicks >= 60) { fastFrames = false; startTimerHz(10); }
+}
+
+void CadWorkspacePanel::wakeFrames()
+{
+    idleFrameTicks = 0;
+    if (!fastFrames) { fastFrames = true; startTimerHz(60); }
 }
 
 void CadWorkspacePanel::refreshFromDocument(bool force)
 {
     const auto& document = service->document();
+    if (document.documentInstance() != shownDocument)
+    {
+        // New or Open: frame the new document once its geometry and pose are available.
+        shownDocument = document.documentInstance();
+        modelView.requestFit(shownDocument);
+        force = true;
+    }
     if (!force && document.revision() == shownRevision) return;
     shownRevision = document.revision();
     modelView.setSnapshot(service->snapshot());
@@ -1819,6 +1840,7 @@ void CadWorkspacePanel::addMechanismStatus()
 void CadWorkspacePanel::mechanismChanged()
 {
     if (motionRuntime == nullptr) return;
+    wakeFrames();   // a new pose was published (preview, IK, DEWB): draw it without waiting for a slow tick
     linkChanged();
     // Rebuild the panel only when the solve outcome changes, not for every streamed pose.
     const auto summary = motionRuntime->lastAttempt().summary() + (motionRuntime->showingLastValidPose() ? "|stale" : "");

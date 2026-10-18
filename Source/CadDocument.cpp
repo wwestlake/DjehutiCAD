@@ -493,6 +493,7 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
     if (cachedSnapshot != nullptr && cachedRevision == documentRevision) return cachedSnapshot;
     auto next = std::make_shared<CadRenderSnapshot>();
     next->revision = documentRevision;
+    next->documentInstance = instanceId;
     for (const auto& f : items)
         if (f.visible && !f.shape.IsNull())
         {
