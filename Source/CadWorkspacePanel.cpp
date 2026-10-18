@@ -691,7 +691,19 @@ void CadWorkspacePanel::setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime
 {
     motionRuntime = std::move(runtime);
     motionLink = link;
-    if (motionRuntime != nullptr) { auto source = motionRuntime; modelView.setPoseSource([source] { return source->pose(); }); motionRuntime->onPoseChanged = [this] { mechanismChanged(); }; motionRuntime->onIkChanged = [this] { if (task == Task::ik) requestRebuild(true); }; }
+    if (motionRuntime != nullptr) { auto source = motionRuntime; modelView.setPoseSource([source] { return source->pose(); }); motionRuntime->onPoseChanged = [this] { mechanismChanged(); }; motionRuntime->onIkChanged = [this]
+        {
+            if (task != Task::ik) return;
+            // A requested solve finished: replace the "Solving" note with its outcome.
+            if (ikSolvePending && motionRuntime->hasIkResult())
+            {
+                ikSolvePending = false;
+                const auto& r = motionRuntime->lastIkResult();
+                if (r.valid) setMessage("Targets reached (" + djehuti::cad::kin::statusName(r.status) + "). The document is unchanged.", 0);
+                else setMessage(djehuti::cad::kin::statusName(r.status) + ": " + r.message + " The last valid pose stays.", r.status == djehuti::cad::kin::Status::invalidInput ? 2 : 1);
+            }
+            requestRebuild(true);
+        }; }
     if (motionLink != nullptr) motionLink->onStatusChanged = [this] { linkChanged(); };
     linkChanged();
 }
@@ -2022,13 +2034,16 @@ void CadWorkspacePanel::addIkPanel(juce::String& title, juce::String& instructio
     int selectedTask = 0;
     for (size_t i = 0; i < model.ikTasks.size(); ++i) { taskNames.add(model.ikTasks[i].name); if (model.ikTasks[i].id == draft.id) selectedTask = (int) i + 1; }
     auto& taskBox = form->addChoice("ikTask", "Task", taskNames, selectedTask, "Saved IK tasks of this document, or a new task.");
-    taskBox.onChange = [this]
+    // The handlers below rebuild the form, which deletes the drop-down that is calling them, so the rebuild is
+    // deferred until the drop-down's callback has returned.
+    taskBox.onChange = async([](CadWorkspacePanel& p)
     {
-        const auto index = form->choice("ikTask");
-        const auto& tasks = service->document().mechanicsData().ikTasks;
-        loadIkDraft(index > 0 && index <= (int) tasks.size() ? tasks[(size_t) index - 1].id : juce::String());
-        rebuildTaskPanel(false); showIkMarkers();
-    };
+        if (p.form == nullptr || p.task != Task::ik) return;
+        const auto index = p.form->choice("ikTask");
+        const auto& tasks = p.service->document().mechanicsData().ikTasks;
+        p.loadIkDraft(index > 0 && index <= (int) tasks.size() ? tasks[(size_t) index - 1].id : juce::String());
+        p.rebuildTaskPanel(false); p.showIkMarkers();
+    });
     form->addText("ikName", "Name", draft.name, "Task name shown in the Assembly tree.");
     form->addNote({}, draft.id.isEmpty() ? juce::String("Not saved yet.") : "id " + draft.id + (ikDirty ? "  |  unsaved changes" : "  |  saved"), 1);
     if (simulationOwns)
@@ -2058,7 +2073,11 @@ void CadWorkspacePanel::addIkPanel(juce::String& title, juce::String& instructio
         for (const auto& t : draft.targets) names.add(t.name + (t.enabled ? juce::String() : juce::String(" (off)")));
         ikTargetIndex = juce::jlimit(0, (int) draft.targets.size() - 1, ikTargetIndex);
         auto& targetBox = form->addChoice("ikTarget", "Edit target", names, ikTargetIndex, "Target whose fields are shown below.");
-        targetBox.onChange = [this] { readIkForm(); ikTargetIndex = form->choice("ikTarget"); ikFormStale = true; rebuildTaskPanel(false); showIkMarkers(); };
+        targetBox.onChange = async([](CadWorkspacePanel& p)
+        {
+            if (p.form == nullptr || p.task != Task::ik) return;
+            p.readIkForm(); p.ikTargetIndex = p.form->choice("ikTarget"); p.ikFormStale = true; p.rebuildTaskPanel(false); p.showIkMarkers();
+        });
     }
     form->addButton("ikAddTarget", "Add target", async([](CadWorkspacePanel& p)
     {
@@ -2090,7 +2109,8 @@ void CadWorkspacePanel::addIkPanel(juce::String& title, juce::String& instructio
         auto& instanceBox = form->addChoice("tInstance", "Endpoint on", instanceNames, instanceIndex, "Instance that carries the endpoint (you can also click it in the model view).");
         auto& referenceBox = form->addChoice("tReference", "Reference", referenceNames, referenceIndex, "Frame the desired pose is expressed in: the world or another instance (evaluated in the same configuration).");
         auto& modeBox = form->addChoice("tMode", "Mode", { "Full pose", "Position only", "Orientation only" }, t.mode == "position" ? 1 : t.mode == "orientation" ? 2 : 0, "Which part of the endpoint pose must match.");
-        for (auto* box : { &instanceBox, &referenceBox, &modeBox }) box->onChange = [this] { readIkForm(); rebuildTaskPanel(false); showIkMarkers(); };
+        for (auto* box : { &instanceBox, &referenceBox, &modeBox })
+            box->onChange = async([](CadWorkspacePanel& p) { if (p.form == nullptr || p.task != Task::ik) return; p.readIkForm(); p.rebuildTaskPanel(false); p.showIkMarkers(); });
         double rx = 0, ry = 0, rz = 0;
         cad::mech::eulerDegreesFromFrame(t.toolFrame, rx, ry, rz);
         form->addHeader("Tool frame on the endpoint instance");
@@ -2159,7 +2179,8 @@ void CadWorkspacePanel::addIkPanel(juce::String& title, juce::String& instructio
         if (r.valid && r.freeCoordinates > 0) { text << "\nRemaining freedom: " << r.freeJoints.joinIntoString(", "); ++lines; }
     }
     else text << "Not solved in this session yet.";
-    const auto shown = motionRuntime != nullptr ? motionRuntime->shownTargetReports() : std::vector<cad::kin::TargetReport> {};
+    // Evaluate this panel's task, not whichever task the runtime displayed before this rebuild.
+    const auto shown = motionRuntime != nullptr ? motionRuntime->shownTargetReports(draft) : std::vector<cad::kin::TargetReport> {};
     if (!shown.empty())
     {
         text << "\nShown pose:";
@@ -2201,6 +2222,7 @@ void CadWorkspacePanel::solveIkDraft()
     if (ikDraft == nullptr || motionRuntime == nullptr) return;
     juce::String error;
     if (!motionRuntime->requestIkAsync(*ikDraft, error, 2000.0)) { showError(error); return; }
+    ikSolvePending = true;
     setMessage("Solving the IK task. The document is unchanged; the Result section will show the outcome.", 0);
 }
 
@@ -2248,7 +2270,7 @@ void CadWorkspacePanel::ikTargetDragged(const juce::String& targetId, const std:
         showIkMarkers();
         juce::String e;
         if (!motionRuntime->requestIkAsync(*ikDraft, e)) showError(e);
-        else if (finished) setMessage("Target moved to " + juce::String(local.X(), 2) + ", " + juce::String(local.Y(), 2) + ", " + juce::String(local.Z(), 2) + " mm. Solving; the document is unchanged.", 0);
+        else { ikSolvePending = true; if (finished) setMessage("Target moved to " + juce::String(local.X(), 2) + ", " + juce::String(local.Y(), 2) + ", " + juce::String(local.Z(), 2) + " mm. Solving; the document is unchanged.", 0); }
         return;
     }
 }

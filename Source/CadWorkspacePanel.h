@@ -128,6 +128,7 @@ private:
     int ikTargetIndex = 0;
     bool ikDirty = false, ikDragEnabled = false, ikMarkersShown = false, ikFormStale = false;   // stale: the form still shows another task or target
     juce::String ikDragPlane = "XY";
+    bool ikSolvePending = false;   // a Solve or drag request awaits its outcome message
     std::uint64_t ikDocument = 0;   // document instance the draft belongs to; New/Open discards it
     int activeRole = 0;
     juce::String commandMessage, validationMessage;

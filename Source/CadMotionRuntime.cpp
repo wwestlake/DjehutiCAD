@@ -298,11 +298,15 @@ bool CadMotionRuntime::captureTarget(CadIkTarget& target, juce::String& error) c
 
 std::vector<kin::TargetReport> CadMotionRuntime::shownTargetReports() const
 {
+    return displayTask != nullptr ? shownTargetReports(*displayTask) : std::vector<kin::TargetReport> {};
+}
+
+std::vector<kin::TargetReport> CadMotionRuntime::shownTargetReports(const CadIkTask& task) const
+{
     std::vector<kin::TargetReport> reports;
-    if (displayTask == nullptr) return reports;
-    for (const auto& t : displayTask->targets)
-        if (t.enabled && shownWorld.count(t.instanceId) != 0)
-            reports.push_back(kin::evaluateTarget(t, shownWorld, displayTask->positionToleranceMm, displayTask->angleToleranceRad));
+    for (const auto& t : task.targets)
+        if (t.enabled && shownWorld.count(t.instanceId) != 0 && (t.referenceInstance.isEmpty() || shownWorld.count(t.referenceInstance) != 0))
+            reports.push_back(kin::evaluateTarget(t, shownWorld, task.positionToleranceMm, task.angleToleranceRad));
     return reports;
 }
 
