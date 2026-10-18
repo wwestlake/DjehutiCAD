@@ -2,8 +2,8 @@
 
 DjehutiCAD solves the motion of user-authored mechanisms: you prescribe some joint coordinates (drivers),
 and the solver computes the remaining (dependent) coordinates so that every physical connection and coupling
-holds. This is forward kinematics on a general constraint graph. Inverse kinematics (targets, dragging) is a
-later assignment that will reuse the same solver (see the last section).
+holds. This is forward kinematics on a general constraint graph. Local inverse kinematics adds endpoint
+targets and temporarily adjustable drivers to the same solver; see [inverse kinematics](INVERSE_KINEMATICS.md).
 
 Examples: [`examples/mechanisms/gear_pair.djc`](../examples/mechanisms/gear_pair.djc) and
 [`examples/mechanisms/slider_crank.djc`](../examples/mechanisms/slider_crank.djc) (File → Open CAD Document).
@@ -30,11 +30,12 @@ Examples: [`examples/mechanisms/gear_pair.djc`](../examples/mechanisms/gear_pair
   connect to ground. Nothing is grounded implicitly: an instance with no path to ground is reported as
   *ungrounded* (6 unconstrained rigid-body degrees of freedom) and is shown at its authored placement.
 * Each movable joint has a **role**:
-  * **driver** — a prescribed input (local preview, or a DEWB-mapped signal). The solver never changes it.
+  * **driver** — a prescribed input (local preview, or a DEWB-mapped signal). Forward solving holds it exactly;
+    local IK may explicitly release selected drivers for that solve only.
   * **dependent** — solved from the constraints.
   * **locked** — held at its lock value.
 * Several drivers are allowed. Inputs that over-determine the mechanism are a failure; the solver never
-  averages, adjusts drivers or breaks a connection to make a pose look plausible.
+  averages prescribed inputs or breaks a connection to make a pose look plausible.
 * **Free coordinates**: when the constraints leave dependent coordinates undetermined, the solve is valid but
   `underconstrained`; free coordinates keep their last values (continuation policy) and are listed by name.
 
@@ -93,8 +94,8 @@ says "unsolved (last valid pose shown)". The authored document is never changed 
 ## Persistence and migration
 
 The mechanics JSON is stored in OCAF (one undo history) and in engineering JSON (`formatVersion` 5,
-`mechanics.schemaVersion` 2), with stable `inst-`, `joint-` and `coupling-` ids. New fields: instance
-`grounded`; joint `role`, `lockValue`, `enforceLimits`; `couplings[]`.
+`mechanics.schemaVersion` 3), with stable instance, joint, coupling, and IK task/target ids. Schema 2 introduced instance
+`grounded`; joint `role`, `lockValue`, `enforceLimits`; `couplings[]`. Schema 3 adds `ikTasks[]`; schemas 1 and 2 still load.
 
 Migration of schema 1 (independent joints, single-parent tree): every instance that was a tree root becomes
 grounded at its placement, every joint child's placement becomes its former chain-derived reference pose, and
@@ -122,10 +123,12 @@ commands. Agent tools: `cad_set_instance_grounded`, `cad_set_instance_placement`
 `djehuti_cad_create_coupling`. Node editor: CAD Ground Instance, CAD Instance Placement, CAD Joint Role, CAD
 Coupling.
 
-## Extension boundary for inverse kinematics
+## Shared inverse-kinematics solver
 
 `CadKinematics.cpp` assembles a system of `Term`s (residual rows + Jacobian columns over the unknown joint
 coordinates) on top of a configuration evaluator that provides body poses, joint world frames, twists and the
-spanning-forest paths. Loop closures and couplings are the current terms. Inverse kinematics adds a pose-target
+spanning-forest paths. Loop closures, couplings, and inverse-kinematics pose targets share this system. IK adds a target
 term (position and/or orientation of an instance frame) to the same system and reuses the scaling, damped SVD
-steps, continuation, rank diagnostics and verification. No IK controls exist yet.
+steps, continuation, rank diagnostics and verification. The IK panel supports saved tasks, endpoint frames,
+position/orientation/full-pose targets, bounded background solving, and target dragging. See
+[INVERSE_KINEMATICS.md](INVERSE_KINEMATICS.md) for interaction, automation, examples, and limitations.

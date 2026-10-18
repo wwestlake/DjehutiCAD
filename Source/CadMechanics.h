@@ -140,7 +140,8 @@ bool validateCoupling(const CadMechanics& model, const CadCoupling& coupling, ju
 bool validateMapping(const CadMechanics& model, const CadSignalMapping& mapping, juce::String& error);
 // Structure of an IK task (references, modes, finite frames, tolerances). Joint eligibility (driver role)
 // is checked when a solve is requested, so roles stay editable while tasks exist.
-bool validateIkTask(const CadMechanics& model, const CadIkTask& task, juce::String& error);
+// Unsaved previews have no document id; persisted definitions always require one.
+bool validateIkTask(const CadMechanics& model, const CadIkTask& task, juce::String& error, bool requireId = true);
 juce::var ikTaskToJson(const CadIkTask& task);
 bool ikTaskFromJson(const juce::var& json, CadIkTask& task, juce::String& error);
 juce::var toJson(const CadMechanics& model);

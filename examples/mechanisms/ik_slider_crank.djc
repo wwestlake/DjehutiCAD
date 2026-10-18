@@ -1,0 +1,483 @@
+{
+  "formatVersion": 5,
+  "units": "mm",
+  "nextNumber": 100,
+  "features": [
+    {
+      "id": "box-1",
+      "name": "Crank",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 40,
+      "depth": 8,
+      "height": 5,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": -5,
+      "y": -4,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "box-2",
+      "name": "Connecting rod",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 90,
+      "depth": 6,
+      "height": 5,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 25,
+      "y": -3,
+      "z": 5,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "box-3",
+      "name": "Slider",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 20,
+      "depth": 16,
+      "height": 8,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 100,
+      "y": -8,
+      "z": 10,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "box-4",
+      "name": "Rail",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 190,
+      "depth": 24,
+      "height": 4,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": -10,
+      "y": -12,
+      "z": -8,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    }
+  ],
+  "references": [],
+  "sketches": [],
+  "mechanics": {
+    "schemaVersion": 3,
+    "lengthUnit": "mm",
+    "modelId": "6da018c0-d3b4-4cd4-b001-0a0000000002",
+    "interfaceRevision": 1,
+    "profileRevision": 1,
+    "instances": [
+      {
+        "id": "inst-5",
+        "name": "Rail",
+        "featureId": "box-4",
+        "placement": {
+          "translation": [
+            -10,
+            -12,
+            -8
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "grounded": true
+      },
+      {
+        "id": "inst-6",
+        "name": "Crank",
+        "featureId": "box-1",
+        "placement": {
+          "translation": [
+            -2.3301270189221936,
+            -5.964101615137755,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.9659258262890683,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.25881904510252074
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-7",
+        "name": "Connecting rod",
+        "featureId": "box-2",
+        "placement": {
+          "translation": [
+            20.506939099313875,
+            12.990706191468428,
+            5.0
+          ],
+          "rotation": {
+            "w": 0.9955562773755828,
+            "x": 0.0,
+            "y": 0.0,
+            "z": -0.09416845850958558
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-8",
+        "name": "Slider",
+        "featureId": "box-3",
+        "placement": {
+          "translation": [
+            94.56193034104172,
+            -8.000000000000005,
+            10.0
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": -5.551115123125783e-17
+          }
+        },
+        "grounded": false
+      }
+    ],
+    "joints": [
+      {
+        "id": "joint-9",
+        "name": "Crank pivot",
+        "type": "revolute",
+        "parentInstance": "inst-5",
+        "childInstance": "inst-6",
+        "parentToJoint": {
+          "translation": [
+            10,
+            12,
+            8
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            -2.3301270189221936,
+            -5.964101615137755,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.9659258262890683,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.25881904510252074
+          }
+        },
+        "reference": 0,
+        "hasLimits": true,
+        "lower": -1.5707963267948966,
+        "upper": 1.5707963267948966,
+        "role": "driver",
+        "lockValue": 0.0,
+        "enforceLimits": true
+      },
+      {
+        "id": "joint-10",
+        "name": "Crank pin",
+        "type": "revolute",
+        "parentInstance": "inst-6",
+        "childInstance": "inst-7",
+        "parentToJoint": {
+          "translation": [
+            35,
+            4,
+            5
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            -5.745116690399595,
+            0.9968120252545161,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.9372609293310514,
+            "x": 0.0,
+            "y": 0.0,
+            "z": -0.34862867115240787
+          }
+        },
+        "reference": 0,
+        "hasLimits": false,
+        "lower": 0.0,
+        "upper": 0.0,
+        "role": "dependent",
+        "lockValue": 0.0,
+        "enforceLimits": false
+      },
+      {
+        "id": "joint-11",
+        "name": "Wrist pin",
+        "type": "revolute",
+        "parentInstance": "inst-7",
+        "childInstance": "inst-8",
+        "parentToJoint": {
+          "translation": [
+            85,
+            3,
+            5
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            -8.32264602843857,
+            -9.733116822750855,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.9955562773755828,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.09416845850958552
+          }
+        },
+        "reference": 0,
+        "hasLimits": false,
+        "lower": 0.0,
+        "upper": 0.0,
+        "role": "dependent",
+        "lockValue": 0.0,
+        "enforceLimits": false
+      },
+      {
+        "id": "joint-12",
+        "name": "Slide",
+        "type": "prismatic",
+        "parentInstance": "inst-5",
+        "childInstance": "inst-8",
+        "parentToJoint": {
+          "translation": [
+            120,
+            12,
+            18
+          ],
+          "rotation": {
+            "w": 0.7071067811865476,
+            "x": 0.0,
+            "y": 0.7071067811865476,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0,
+            -8,
+            -15.438069658958284
+          ],
+          "rotation": {
+            "w": 0.7071067811865476,
+            "x": 0.0,
+            "y": -0.7071067811865476,
+            "z": 0.0
+          }
+        },
+        "reference": 0,
+        "hasLimits": true,
+        "lower": -0.05956193034104172,
+        "upper": 0.010438069658958285,
+        "role": "dependent",
+        "lockValue": 0.0,
+        "enforceLimits": true
+      }
+    ],
+    "couplings": [],
+    "mappings": [],
+    "ikTasks": [
+      {
+        "id": "ik-40",
+        "name": "Slide to 74.162 mm",
+        "adjustableJoints": [
+          "joint-9"
+        ],
+        "positionToleranceMm": 0.01,
+        "angleToleranceRad": 0.0001,
+        "targets": [
+          {
+            "id": "target-50",
+            "name": "Tool endpoint",
+            "instance": "inst-8",
+            "referenceInstance": "",
+            "toolFrame": {
+              "translation": [
+                10,
+                8,
+                0
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "desired": {
+              "translation": [
+                74.16198487095663,
+                0,
+                10
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "mode": "position",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "ik-41",
+        "name": "Beyond crank hard limit",
+        "adjustableJoints": [
+          "joint-9"
+        ],
+        "positionToleranceMm": 0.01,
+        "angleToleranceRad": 0.0001,
+        "targets": [
+          {
+            "id": "target-51",
+            "name": "Tool endpoint",
+            "instance": "inst-8",
+            "referenceInstance": "",
+            "toolFrame": {
+              "translation": [
+                10,
+                8,
+                0
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "desired": {
+              "translation": [
+                50,
+                0,
+                10
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "mode": "position",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "ik-42",
+        "name": "Off rail target",
+        "adjustableJoints": [
+          "joint-9"
+        ],
+        "positionToleranceMm": 0.01,
+        "angleToleranceRad": 0.0001,
+        "targets": [
+          {
+            "id": "target-52",
+            "name": "Tool endpoint",
+            "instance": "inst-8",
+            "referenceInstance": "",
+            "toolFrame": {
+              "translation": [
+                10,
+                8,
+                0
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "desired": {
+              "translation": [
+                74.16198487095663,
+                20,
+                10
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "mode": "position",
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  }
+}

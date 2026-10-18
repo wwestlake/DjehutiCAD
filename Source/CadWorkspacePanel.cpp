@@ -2179,7 +2179,7 @@ void CadWorkspacePanel::validateIkPanel(juce::String& problem, int& severity)
         if (problem.isEmpty() && form->control(key) != nullptr && form->rowVisible(key) && !form->numberValid(key)) { problem = "IK values must be numbers."; severity = 2; }
     if (problem.isEmpty() && ikDraft->name.trim().isEmpty()) { problem = "Name the task."; severity = 2; }
     juce::String error;
-    if (problem.isEmpty() && !djehuti::cad::mech::validateIkTask(service->document().mechanicsData(), *ikDraft, error)) { problem = error; severity = 2; }
+    if (problem.isEmpty() && !djehuti::cad::mech::validateIkTask(service->document().mechanicsData(), *ikDraft, error, false)) { problem = error; severity = 2; }
     if (problem.isEmpty() && ikDraft->adjustableJoints.isEmpty()) problem = "Select the driver joints the solve may adjust.";
     if (problem.isEmpty() && ikDraft->targets.empty()) problem = "Add a target.";
 }
@@ -2199,10 +2199,9 @@ void CadWorkspacePanel::solveIkDraft()
 {
     readIkForm();
     if (ikDraft == nullptr || motionRuntime == nullptr) return;
-    const auto result = motionRuntime->solveIk(*ikDraft);
-    rebuildTaskPanel(false);
-    if (result.valid) setMessage("Targets reached: " + djehuti::cad::kin::statusName(result.status) + ". The document is unchanged.", 0);
-    else setMessage(djehuti::cad::kin::statusName(result.status) + ": " + result.message + " The last valid pose stays.", result.status == djehuti::cad::kin::Status::invalidInput ? 2 : 1);
+    juce::String error;
+    if (!motionRuntime->requestIkAsync(*ikDraft, error, 2000.0)) { showError(error); return; }
+    setMessage("Solving the IK task. The document is unchanged; the Result section will show the outcome.", 0);
 }
 
 bool CadWorkspacePanel::saveIkDraft()

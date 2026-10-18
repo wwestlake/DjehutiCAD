@@ -3,6 +3,7 @@
 #include "DjehutiCAD.h"
 #include "FrustExecution.h"
 #include "CadDocument.h"
+#include "CadIkCommands.h"
 #include "Viewport3D.h"
 
 #include <BRepBndLib.hxx>
@@ -13,6 +14,83 @@
 
 namespace
 {
+// Opt-in checks of this feature through the real document/runtime/command path.
+// Uses the existing app target; it does not build a separate JUCE test runner.
+bool runCadIkCheck(const juce::File& examples, juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::var& detail = {})
+    {
+        auto item = new juce::DynamicObject();
+        item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        return ok;
+    };
+    juce::String error;
+    auto arm = std::make_shared<CadCommandService>();
+    if (!record(arm->load(examples.getChildFile("ik_arm.djc"), error), "load spatial arm", error)) return false;
+    const auto tasks = arm->document().mechanicsData().ikTasks;
+    if (!record(tasks.size() == 3, "three arm target modes")) return false;
+    CadMotionRuntime armRuntime(arm);
+    const auto authored = juce::JSON::toString(mech::toJson(arm->document().mechanicsData()));
+    const auto revision = arm->document().revision();
+    for (const auto& task : tasks)
+    {
+        armRuntime.resetToReference();
+        const auto result = armRuntime.solveIk(task);
+        record(result.valid && !result.targets.empty() && result.targets.front().reached, "arm " + task.targets.front().mode, result.toJson());
+    }
+    auto draft = tasks.front(); draft.id.clear();
+    armRuntime.resetToReference();
+    const auto draftResult = armRuntime.solveIk(draft);
+    record(draftResult.valid, "unsaved task preview", draftResult.toJson());
+    const auto command = juce::JSON::parse(ikcmd::execute("solve", juce::JSON::parse("{\"task\":\"" + tasks.back().id + "\"}"), *arm, armRuntime));
+    record((bool) command.getProperty("ok", false), "shared IK command", command);
+    record(arm->document().revision() == revision && !arm->document().modified()
+           && authored == juce::JSON::toString(mech::toJson(arm->document().mechanicsData())), "preview leaves authored model unchanged");
+    const auto beforeGuard = armRuntime.pose();
+    armRuntime.setDriver(CadMotionRuntime::Driver::simulation);
+    record(!armRuntime.solveIk(tasks.front()).valid && armRuntime.pose() == beforeGuard, "DEWB ownership rejects local IK");
+    armRuntime.setDriver(CadMotionRuntime::Driver::preview);
+
+    draft.name = "Authored copy";
+    for (auto& target : draft.targets) target.id.clear();
+    juce::String created;
+    if (record(arm->createIkTask(draft, created, error), "author task transaction", error))
+    {
+        record(arm->undo(error) && arm->document().mechanicsData().findIkTask(created) == nullptr, "undo task creation", error);
+        record(arm->redo(error) && arm->document().mechanicsData().findIkTask(created) != nullptr, "redo task creation", error);
+        const auto file = juce::File::getCurrentWorkingDirectory().getChildFile("build").getChildFile("ik-check-" + juce::Uuid().toString() + ".djo");
+        CadCommandService reopened;
+        const bool reopenedOk = arm->save(file, error) && reopened.load(file, error);
+        record(reopenedOk && juce::JSON::toString(mech::toJson(arm->document().mechanicsData()))
+               == juce::JSON::toString(mech::toJson(reopened.document().mechanicsData())), "native task save/reopen", error);
+        if (file.existsAsFile()) file.deleteFile();
+    }
+
+    auto slider = std::make_shared<CadCommandService>();
+    if (!record(slider->load(examples.getChildFile("ik_slider_crank.djc"), error), "load inverse slider-crank", error)) return false;
+    const auto sliderTasks = slider->document().mechanicsData().ikTasks;
+    if (!record(sliderTasks.size() == 3, "slider target cases")) return false;
+    CadMotionRuntime sliderRuntime(slider);
+    const auto reached = sliderRuntime.solveIk(sliderTasks.front());
+    record(reached.valid && std::abs(sliderRuntime.coordinate("joint-9") - juce::MathConstants<double>::pi / 3.0) < 1.0e-3,
+           "slider target with closed-loop crank at 90 degrees (60 from reference)", reached.toJson());
+    for (size_t i = 1; i < sliderTasks.size(); ++i)
+    {
+        const auto last = sliderRuntime.pose();
+        const auto missed = sliderRuntime.solveIk(sliderTasks[i]);
+        const auto shown = sliderRuntime.pose();
+        bool retained = last->instances.size() == shown->instances.size();
+        for (size_t k = 0; retained && k < last->instances.size(); ++k) retained = last->instances[k].matrix == shown->instances[k].matrix;
+        record(!missed.valid && retained && sliderRuntime.showingLastValidPose(), sliderTasks[i].name + " rejects candidate and retains pose", missed.toJson());
+    }
+    return passed;
+}
+
 bool runCadFoundationCheck(juce::String& detail)
 {
     djehuti::cad::CadCommandService service;
@@ -87,6 +165,16 @@ public:
 
     void initialise(const juce::String& commandLine) override
     {
+        if (commandLine.startsWith("--cad-ik-check"))
+        {
+            const auto args = juce::StringArray::fromTokens(commandLine, true);
+            const auto examples = args.size() > 1 ? juce::File(args[1].unquoted()) : juce::File::getCurrentWorkingDirectory().getChildFile("examples/mechanisms");
+            juce::var report;
+            const bool ok = runCadIkCheck(examples, report);
+            const auto result = juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-ik-check.result.json");
+            result.replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
         if (commandLine.contains("--cad-foundation-check"))
         {
             juce::String detail;

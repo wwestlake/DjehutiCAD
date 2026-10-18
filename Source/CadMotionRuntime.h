@@ -81,8 +81,8 @@ public:
     // Local inverse kinematics. Every entry point uses kin::solveTask with the current prescribed drivers and
     // the last valid configuration as the seed; only complete, verified poses are published, and a failed solve
     // keeps the last valid pose. Not available while DEWB owns the pose (simulation driver).
-    kin::SolveResult solveIk(const CadIkTask& task);                       // synchronous: Solve button and automation
-    bool requestIkAsync(const CadIkTask& task, juce::String& error);       // dragging: one active job, one replaceable pending request
+    kin::SolveResult solveIk(const CadIkTask& task);                       // synchronous shared automation result
+    bool requestIkAsync(const CadIkTask& task, juce::String& error, double timeBudgetMs = 200.0); // one active + one replaceable pending request
     // The task whose markers are drawn (desired from the task, achieved from the displayed pose) and the target
     // whose drag plane ("XY", "XZ" or "YZ" of its reference frame) is shown; nullptr clears the markers.
     void setIkDisplay(const CadIkTask* task, const juce::String& dragTargetId = {}, const juce::String& dragPlane = "XY");

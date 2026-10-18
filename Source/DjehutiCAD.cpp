@@ -50,7 +50,7 @@ std::string DjehutiCAD::runIkCommand(const juce::Component::SafePointer<DjehutiC
     auto done = std::make_shared<juce::WaitableEvent>();
     auto output = std::make_shared<std::string>(R"({"ok": false, "error": "DjehutiCAD did not answer within 20 s."})");
     juce::MessageManager::callAsync([run, done, output] { *output = run(); done->signal(); });
-    done->wait(20000);
+    if (!done->wait(20000)) return R"({"ok": false, "error": "DjehutiCAD did not answer within 20 s."})";
     return *output;
 }
 

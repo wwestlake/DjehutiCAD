@@ -1,0 +1,711 @@
+{
+  "formatVersion": 5,
+  "units": "mm",
+  "nextNumber": 100,
+  "features": [
+    {
+      "id": "box-1",
+      "name": "Grounded base",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 40,
+      "depth": 40,
+      "height": 10,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "cylinder-2",
+      "name": "Pedestal",
+      "type": "cylinder",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 10,
+      "depth": 10,
+      "height": 30,
+      "radius": 9,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "box-3",
+      "name": "Upper arm",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 100,
+      "depth": 12,
+      "height": 12,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "box-4",
+      "name": "Forearm",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 80,
+      "depth": 10,
+      "height": 10,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "cylinder-5",
+      "name": "Wrist roll",
+      "type": "cylinder",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 10,
+      "depth": 10,
+      "height": 20,
+      "radius": 8,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 90,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "box-6",
+      "name": "Wrist pitch",
+      "type": "box",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 20,
+      "depth": 14,
+      "height": 14,
+      "radius": 5,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0,
+      "visible": true
+    },
+    {
+      "id": "cylinder-7",
+      "name": "Tool holder",
+      "type": "cylinder",
+      "firstOperand": "",
+      "secondOperand": "",
+      "sketchId": "",
+      "targetFeatureId": "",
+      "width": 10,
+      "depth": 10,
+      "height": 25,
+      "radius": 6,
+      "reverse": false,
+      "throughAll": false,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 90,
+      "rz": 0,
+      "visible": true
+    }
+  ],
+  "references": [],
+  "sketches": [],
+  "mechanics": {
+    "schemaVersion": 3,
+    "lengthUnit": "mm",
+    "modelId": "6da018c0-d3b4-4cd4-b001-0a0000000001",
+    "interfaceRevision": 1,
+    "profileRevision": 1,
+    "instances": [
+      {
+        "id": "inst-10",
+        "name": "Grounded base",
+        "featureId": "box-1",
+        "placement": {
+          "translation": [
+            -20,
+            -20,
+            -10
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "grounded": true
+      },
+      {
+        "id": "inst-11",
+        "name": "Pedestal",
+        "featureId": "cylinder-2",
+        "placement": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 0.9848077530122081,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.17364817766693036
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-12",
+        "name": "Upper arm",
+        "featureId": "box-3",
+        "placement": {
+          "translation": [
+            0.0,
+            0.0,
+            30.0
+          ],
+          "rotation": {
+            "w": 0.9392278472760162,
+            "x": 0.05221701409779436,
+            "y": -0.2961374027275428,
+            "z": 0.16561121050749117
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-13",
+        "name": "Forearm",
+        "featureId": "box-4",
+        "placement": {
+          "translation": [
+            76.97511313200573,
+            28.01664995932355,
+            87.35764363510462
+          ],
+          "rotation": {
+            "w": 0.9512512425641978,
+            "x": -0.04494345552754776,
+            "y": 0.25488700224417876,
+            "z": 0.16773125949652065
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-14",
+        "name": "Wrist roll",
+        "featureId": "cylinder-5",
+        "placement": {
+          "translation": [
+            142.07892763995568,
+            51.71250057740548,
+            47.357643635104615
+          ],
+          "rotation": {
+            "w": 0.948979454430948,
+            "x": 0.07960424450132782,
+            "y": 0.27459973122432013,
+            "z": 0.13302686547026615
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-15",
+        "name": "Wrist pitch",
+        "featureId": "box-6",
+        "placement": {
+          "translation": [
+            158.35488126694315,
+            57.63646323192596,
+            37.35764363510461
+          ],
+          "rotation": {
+            "w": 0.9822460670878251,
+            "x": 0.10149474992724268,
+            "y": 0.10563939137948711,
+            "z": 0.11718275648182178
+          }
+        },
+        "grounded": false
+      },
+      {
+        "id": "inst-16",
+        "name": "Tool holder",
+        "featureId": "cylinder-7",
+        "placement": {
+          "translation": [
+            177.3592220898349,
+            62.66942904373824,
+            33.682825949218795
+          ],
+          "rotation": {
+            "w": 0.9225080697119069,
+            "x": 0.35226038932685166,
+            "y": 0.1323689455420117,
+            "z": 0.08584836447948403
+          }
+        },
+        "grounded": false
+      }
+    ],
+    "joints": [
+      {
+        "id": "joint-20",
+        "name": "Base turn",
+        "type": "revolute",
+        "parentInstance": "inst-10",
+        "childInstance": "inst-11",
+        "parentToJoint": {
+          "translation": [
+            20,
+            20,
+            10
+          ],
+          "rotation": {
+            "w": 1.0,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 0.9848077530122081,
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.17364817766693036
+          }
+        },
+        "reference": 0,
+        "role": "driver",
+        "lockValue": 0,
+        "hasLimits": true,
+        "lower": -2.792526803190927,
+        "upper": 2.792526803190927,
+        "enforceLimits": true
+      },
+      {
+        "id": "joint-21",
+        "name": "Shoulder",
+        "type": "revolute",
+        "parentInstance": "inst-11",
+        "childInstance": "inst-12",
+        "parentToJoint": {
+          "translation": [
+            0,
+            0,
+            30
+          ],
+          "rotation": {
+            "w": 0.7071067811865476,
+            "x": -0.7071067811865476,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.6743797232066279,
+            "x": 0.6743797232066279,
+            "y": -0.2126311099715939,
+            "z": -0.2126311099715939
+          }
+        },
+        "reference": 0,
+        "role": "driver",
+        "lockValue": 0,
+        "hasLimits": true,
+        "lower": -1.7453292519943295,
+        "upper": 1.7453292519943295,
+        "enforceLimits": true
+      },
+      {
+        "id": "joint-22",
+        "name": "Elbow",
+        "type": "revolute",
+        "parentInstance": "inst-12",
+        "childInstance": "inst-13",
+        "parentToJoint": {
+          "translation": [
+            100,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 0.7071067811865476,
+            "x": -0.7071067811865476,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.5963678105290182,
+            "x": 0.5963678105290182,
+            "y": 0.37992819659091526,
+            "z": 0.37992819659091526
+          }
+        },
+        "reference": 0,
+        "role": "driver",
+        "lockValue": 0,
+        "hasLimits": true,
+        "lower": -1.9198621771937625,
+        "upper": 1.9198621771937625,
+        "enforceLimits": true
+      },
+      {
+        "id": "joint-23",
+        "name": "Wrist roll",
+        "type": "revolute",
+        "parentInstance": "inst-13",
+        "childInstance": "inst-14",
+        "parentToJoint": {
+          "translation": [
+            80,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 0.7071067811865476,
+            "x": 0.0,
+            "y": 0.7071067811865476,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.7010573846499779,
+            "x": 0.09229595564125725,
+            "y": -0.7010573846499779,
+            "z": 0.09229595564125725
+          }
+        },
+        "reference": 0,
+        "role": "driver",
+        "lockValue": 0,
+        "hasLimits": true,
+        "lower": -2.9670597283903604,
+        "upper": 2.9670597283903604,
+        "enforceLimits": true
+      },
+      {
+        "id": "joint-24",
+        "name": "Wrist pitch",
+        "type": "revolute",
+        "parentInstance": "inst-14",
+        "childInstance": "inst-15",
+        "parentToJoint": {
+          "translation": [
+            20,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 0.7071067811865476,
+            "x": -0.7071067811865476,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.696364240320019,
+            "x": 0.696364240320019,
+            "y": -0.12278780396897285,
+            "z": -0.12278780396897285
+          }
+        },
+        "reference": 0,
+        "role": "driver",
+        "lockValue": 0,
+        "hasLimits": true,
+        "lower": -1.7453292519943295,
+        "upper": 1.7453292519943295,
+        "enforceLimits": true
+      },
+      {
+        "id": "joint-25",
+        "name": "Tool roll",
+        "type": "revolute",
+        "parentInstance": "inst-15",
+        "childInstance": "inst-16",
+        "parentToJoint": {
+          "translation": [
+            20,
+            0,
+            0
+          ],
+          "rotation": {
+            "w": 0.7071067811865476,
+            "x": 0.0,
+            "y": 0.7071067811865476,
+            "z": 0.0
+          }
+        },
+        "jointToChild": {
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": {
+            "w": 0.6830127018922194,
+            "x": 0.18301270189221933,
+            "y": -0.6830127018922194,
+            "z": 0.18301270189221933
+          }
+        },
+        "reference": 0,
+        "role": "driver",
+        "lockValue": 0,
+        "hasLimits": true,
+        "lower": -2.9670597283903604,
+        "upper": 2.9670597283903604,
+        "enforceLimits": true
+      }
+    ],
+    "couplings": [],
+    "mappings": [
+      {
+        "jointId": "joint-20",
+        "signalId": "arm.base.angle",
+        "sourceQuantity": "angle",
+        "sourceUnit": "rad",
+        "scale": 1,
+        "offset": 0,
+        "initialCoordinate": 0
+      }
+    ],
+    "ikTasks": [
+      {
+        "id": "ik-40",
+        "name": "Reach position",
+        "adjustableJoints": [
+          "joint-20",
+          "joint-21",
+          "joint-22",
+          "joint-23",
+          "joint-24",
+          "joint-25"
+        ],
+        "positionToleranceMm": 0.01,
+        "angleToleranceRad": 0.0001,
+        "targets": [
+          {
+            "id": "target-50",
+            "name": "Tool endpoint",
+            "instance": "inst-16",
+            "referenceInstance": "",
+            "toolFrame": {
+              "translation": [
+                35,
+                0,
+                0
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "desired": {
+              "translation": [
+                193.67318157708408,
+                131.62374366723927,
+                15.242942202113605
+              ],
+              "rotation": {
+                "w": 0.8077627308496418,
+                "x": 0.508290692127676,
+                "y": 0.2592779793448686,
+                "z": 0.14810426183449077
+              }
+            },
+            "mode": "position",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "ik-41",
+        "name": "Match orientation",
+        "adjustableJoints": [
+          "joint-20",
+          "joint-21",
+          "joint-22",
+          "joint-23",
+          "joint-24",
+          "joint-25"
+        ],
+        "positionToleranceMm": 0.01,
+        "angleToleranceRad": 0.0001,
+        "targets": [
+          {
+            "id": "target-51",
+            "name": "Tool endpoint",
+            "instance": "inst-16",
+            "referenceInstance": "",
+            "toolFrame": {
+              "translation": [
+                35,
+                0,
+                0
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "desired": {
+              "translation": [
+                193.67318157708408,
+                131.62374366723927,
+                15.242942202113605
+              ],
+              "rotation": {
+                "w": 0.8077627308496418,
+                "x": 0.508290692127676,
+                "y": 0.2592779793448686,
+                "z": 0.14810426183449077
+              }
+            },
+            "mode": "orientation",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "id": "ik-42",
+        "name": "Reach full pose",
+        "adjustableJoints": [
+          "joint-20",
+          "joint-21",
+          "joint-22",
+          "joint-23",
+          "joint-24",
+          "joint-25"
+        ],
+        "positionToleranceMm": 0.01,
+        "angleToleranceRad": 0.0001,
+        "targets": [
+          {
+            "id": "target-52",
+            "name": "Tool endpoint",
+            "instance": "inst-16",
+            "referenceInstance": "",
+            "toolFrame": {
+              "translation": [
+                35,
+                0,
+                0
+              ],
+              "rotation": {
+                "w": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "desired": {
+              "translation": [
+                193.67318157708408,
+                131.62374366723927,
+                15.242942202113605
+              ],
+              "rotation": {
+                "w": 0.8077627308496418,
+                "x": 0.508290692127676,
+                "y": 0.2592779793448686,
+                "z": 0.14810426183449077
+              }
+            },
+            "mode": "pose",
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  }
+}

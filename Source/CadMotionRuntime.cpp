@@ -10,6 +10,7 @@ struct CadMotionRuntime::IkJob
     CadIkTask task;
     std::map<juce::String, double> prescribed, seed;
     int seedRank = -1;
+    double timeBudgetMs = 200.0;
     std::uint64_t generation = 0, documentInstance = 0, revision = 0;
     std::shared_ptr<std::atomic<bool>> cancel = std::make_shared<std::atomic<bool>>(false);
 };
@@ -54,7 +55,8 @@ private:
             }
             if (job == nullptr) { wake.wait(-1); continue; }
             kin::SolveOptions options;
-            options.timeBudgetMs = 200.0;
+            options.timeBudgetMs = job->timeBudgetMs;
+            options.maxSubsteps = job->timeBudgetMs > 200.0 ? 128 : 64;
             options.cancel = job->cancel.get();
             const auto result = kin::solveTask(job->model, job->task, job->prescribed, job->seed, job->seedRank, options);
             { const std::lock_guard<std::mutex> lock(mutex); activeCancel.reset(); }
@@ -79,6 +81,7 @@ CadMotionRuntime::CadMotionRuntime(std::shared_ptr<CadCommandService> s) : servi
 CadMotionRuntime::~CadMotionRuntime()
 {
     stopTimer();
+    lifeToken.reset();
     worker.reset();   // joins the IK thread; queued deliveries see the expired life token
 }
 
@@ -157,6 +160,7 @@ void CadMotionRuntime::timerCallback()
         return;
     }
     if (document.revision() == shownRevision) return;
+    invalidateIk();
     shownRevision = document.revision();
     solveNow(inputs);
 }
@@ -198,6 +202,7 @@ void CadMotionRuntime::invalidateIk()
 
 kin::SolveResult CadMotionRuntime::solveIk(const CadIkTask& task)
 {
+    timerCallback();   // use the current document and seed even before the next timer tick
     if (currentDriver == Driver::simulation)
     {
         kin::SolveResult refused; refused.inverse = true; refused.status = kin::Status::invalidInput;
@@ -216,9 +221,12 @@ kin::SolveResult CadMotionRuntime::solveIk(const CadIkTask& task)
     return result;
 }
 
-bool CadMotionRuntime::requestIkAsync(const CadIkTask& task, juce::String& error)
+bool CadMotionRuntime::requestIkAsync(const CadIkTask& task, juce::String& error, double timeBudgetMs)
 {
+    timerCallback();
     if (currentDriver == Driver::simulation) { error = "DEWB owns the mechanism pose while the motion link is bound; local IK is not available."; return false; }
+    // Supersede both active work and any result already queued for message-thread delivery.
+    invalidateIk();
     if (worker == nullptr)
     {
         worker = std::make_unique<IkWorker>();
@@ -233,6 +241,7 @@ bool CadMotionRuntime::requestIkAsync(const CadIkTask& task, juce::String& error
     auto job = std::make_unique<IkJob>();
     job->model = document.mechanicsData();
     job->task = task;
+    job->timeBudgetMs = juce::jlimit(1.0, 2000.0, timeBudgetMs);
     job->prescribed = inputs;
     job->seed = seedCoordinates();
     job->seedRank = hasValid ? valid.rank : -1;
@@ -258,9 +267,9 @@ void CadMotionRuntime::deliverIk(const IkJob& job, const kin::SolveResult& resul
 void CadMotionRuntime::acceptIk(const CadIkTask& task, const kin::SolveResult& result)
 {
     ikResult = result; ikResultValid = true; ikResultTask = task.id; ++ikResultSerial;
+    attempt = result; hasAttempt = true;
     if (!result.valid) return;   // rejected candidate: the last valid pose stays; its errors are diagnostics only
     valid = result; hasValid = true;
-    attempt = result; hasAttempt = true;
     // The adjusted drivers become the prescribed inputs from now on, so later solves keep this configuration.
     for (const auto& id : task.adjustableJoints)
         if (const auto found = result.coordinates.find(id); found != result.coordinates.end()) inputs[id] = found->second;
@@ -268,6 +277,11 @@ void CadMotionRuntime::acceptIk(const CadIkTask& task, const kin::SolveResult& r
 
 void CadMotionRuntime::setIkDisplay(const CadIkTask* task, const juce::String& targetId, const juce::String& plane)
 {
+    const bool changed = (task == nullptr) != (displayTask == nullptr)
+                      || (task != nullptr && displayTask != nullptr
+                          && juce::JSON::toString(mech::ikTaskToJson(*task)) != juce::JSON::toString(mech::ikTaskToJson(*displayTask)))
+                      || dragTargetId != (task != nullptr ? targetId : juce::String()) || dragPlane != plane;
+    if (changed) invalidateIk();
     displayTask = task != nullptr ? std::make_unique<CadIkTask>(*task) : nullptr;
     dragTargetId = task != nullptr ? targetId : juce::String();
     dragPlane = plane;

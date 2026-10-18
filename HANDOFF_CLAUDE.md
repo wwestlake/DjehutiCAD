@@ -34,6 +34,73 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Current inverse-kinematics closeout — October 17, 2026
+
+This section supersedes older statements that IK is future work. Claude left the feature implemented but
+not built; Codex completed it under Bill's temporary implementation authorization. This is still mechanical
+kinematics, not a force/contact/dynamics solver.
+
+Implemented:
+
+- OCAF-authored IK tasks with stable task/target IDs, multiple targets, adjustable driver IDs, explicit tool
+  and reference frames, position/orientation/full-pose modes, and position/angle tolerances. Task edits are
+  undoable. Engineering JSON remains format 5, mechanics schema 3; old mechanics schemas still load.
+- IK targets extend the existing constraint solver. Dependent coordinates, loop closure, couplings,
+  grounding, locks, and enforced hard limits remain constraints. Only selected eligible drivers are released;
+  saved roles and unselected prescribed inputs do not change. Orientation uses a 3-D rotation residual.
+- The contextual IK panel supports authored task selection/editing, capture-current, desired/achieved
+  markers, a target-plane drag handle, Solve, Reset Preview, and per-target candidate versus displayed-pose
+  errors. Preview affects the shared runtime pose, never the OCAF geometry, dirty flag, or undo history.
+- Interactive requests use one bounded worker, one replaceable pending request, cancellation, and request,
+  document-instance, revision, context, and authority guards. Closing/changing the task or editing a target
+  invalidates pending results. The worker sleeps while idle. Explicit Solve uses the worker with a 2 s budget;
+  dragging uses 200 ms. Local IK is refused while DEWB owns the runtime.
+- `CadIkCommands` backs seven agent tools, the `djehuti_cad_ik` FRust hook, and the CAD Inverse Kinematics
+  node. Agent descriptions and Help describe the schema. Synchronous automation receives an actual result;
+  its timeout path no longer reads an output concurrently with a late callback.
+
+Completion fixes: an unsaved task may be validated/solved without a persisted task ID; saved definitions
+still require one. New requests cancel/supersede active and queued older requests. Document changes cancel
+obsolete work. Failed IK attempts report that the last valid pose is shown. Numeric pose arrays reject
+non-numeric values instead of silently treating them as zero. Solve no longer blocks the panel or resets its
+scroll position while waiting.
+
+Focused checks actually performed:
+
+- One affected-target incremental Debug build using `cmake --build build --config Debug --target DjehutiCAD
+  --parallel 1` succeeded. Output is in `build/build-ik-completion.log`; no regression suite or Release build
+  was run. LLVM/OCCT installations were reused, not rebuilt.
+- The opt-in `--cad-ik-check` ran through the real document, runtime, solver, and shared command code in a
+  few seconds, under a 30 s process deadline. All 18 checks passed; result is
+  `build/cad-ik-check.result.json`.
+- `ik_arm.djc`: position-only and orientation-only targets solved with remaining freedom reported as
+  `underconstrained`; full-pose solved. Each mode met its applicable tolerance. Unsaved-task preview and
+  stored-task JSON solve succeeded. Preview preserved the authored mechanics, revision, and dirty state.
+- Creating a task, undoing it, redoing it, and saving/reopening the native OCAF document preserved the complete
+  task definitions. The generated native check file was removed after use.
+- `ik_slider_crank.djc`: inverse target solved at physical crank angle 90 degrees (60 degrees from its bent
+  reference) while satisfying the loop. The hard-limit target returned `limitRestricted`; the off-rail target
+  returned `targetNotReached`. Both retained every displayed instance transform of the previous valid pose.
+- The runtime's simulation-ownership guard rejected local IK without changing its published pose. This was
+  a direct runtime check, not a live DEWB connection or a new named-pipe acceptance run.
+- The rebuilt application launched. The desktop helper could read its accessibility tree, but screenshot
+  capture failed with `FrameArrived timed out` and `window capture timed out` after recovery; indexed mouse
+  input failed with `coordinate input geometry is unavailable`. The unchanged test instance was closed.
+  Actual visual markers, target dragging, camera interaction during drag, and visual coherence across all
+  views were NOT observed in this session. Do not report these as visually tested.
+- FRust/node/agent adapters were source-reviewed and build-verified. The shared JSON solve command was run;
+  an actual FRust program, node graph, and BYOK provider invocation were not run. Latest-request cancellation
+  is source-reviewed/build-verified; no claim of a visual drag stress test is made.
+
+Examples and reading:
+
+- `examples/mechanisms/ik_arm.djc` — six-axis spatial arm, three target modes.
+- `examples/mechanisms/ik_slider_crank.djc` — inverse slider target, hard-bound and off-rail failures.
+- `docs/INVERSE_KINEMATICS.md` — workflow, frames/units, persistence, automation, and limits.
+- File -> Open CAD Document, choose an example, then select its IK task in the Assembly tree or press IK.
+
+Executable: `D:\DjehutiCAD\bin\Debug\djehuti_cad.exe`.
+
 ## Architecture
 
 There is one authoritative editable CAD document. `CadDocument` owns Djehuti
@@ -310,7 +377,7 @@ The mechanical model is now a constraint graph (`mechanics.schemaVersion` 2,
   items Mechanisms and Simulation. These compile; they were not run
   interactively.
 - IK boundary: the solver assembles `Term`s (rows + Jacobian columns). IK
-  will add a pose-target term and reuse everything else. No IK exists.
+  now adds a pose-target term and reuses the same solver. See the current IK closeout below.
 
 Checked in the running Debug app (2026-10-17), with driver values entered in
 the joint panel's Preview, and dependent values read from each joint's
@@ -348,7 +415,7 @@ the joint panel's Preview, and dependent values read from each joint's
   classification, couplings other than gear, the locked role, hard-bound
   rejection from a preview, a DEWB-driven mechanism over the pipe, and the
   automation and FRust/node entry points (compiled only).
-- Inverse kinematics is future work. It is not implemented.
+- The forward-kinematics checks above predate the IK assignment. Its implementation and actual checks are recorded in the current IK closeout below.
 
 ## Rendering and views
 
@@ -450,7 +517,7 @@ Useful entry points:
 - New primitives are created at the origin, and their placement is edited
   afterwards in the body panel. The sketch Esc behavior, constraint group, and
   splitter persistence were checked only by source review and build.
-- Mechanisms are forward kinematics only: no inverse kinematics, dragging,
+- Mechanisms support forward and local inverse kinematics. There is no
   contact, cams, belts or force/feedback co-simulation, and v1 has no
   interpolation between states. `conflicting` is a numerical finding near the
   last pose, not a proof of impossibility.
@@ -504,7 +571,6 @@ Useful entry points:
 
 ## Transition
 
-This is the final Codex implementation closeout for this session. The
-architect will write future orders, and the human will relay them to Claude
-manually. No automatic Codex continuation, new coding chat, or cross-agent
-messaging is authorized for the incoming agent.
+Codex temporarily completed Claude's interrupted IK assignment at Bill's explicit request. The user controls
+which agent implements the next assignment; this handoff is context, not an automatic continuation order.
+Do not start another feature, create a coding chat, or send cross-chat messages without the user's direction.

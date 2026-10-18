@@ -19,7 +19,13 @@ bool vector3(const juce::var& value, double out[3])
 {
     const auto* list = value.getArray();
     if (list == nullptr || list->size() != 3) return false;
-    for (int k = 0; k < 3; ++k) { out[k] = (double) (*list)[k]; if (!std::isfinite(out[k])) return false; }
+    for (int k = 0; k < 3; ++k)
+    {
+        const auto& item = (*list)[k];
+        if (!item.isInt() && !item.isInt64() && !item.isDouble()) return false;
+        out[k] = (double) item;
+        if (!std::isfinite(out[k])) return false;
+    }
     return true;
 }
 

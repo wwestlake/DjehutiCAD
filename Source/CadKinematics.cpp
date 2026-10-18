@@ -841,7 +841,7 @@ SolveResult solveTask(const CadMechanics& model, const CadIkTask& task, const st
                       const std::map<juce::String, double>& seed, int seedRank, const SolveOptions& options)
 {
     juce::String error;
-    if (!mech::validateIkTask(model, task, error)) return invalidInput(error, true);
+    if (!mech::validateIkTask(model, task, error, false)) return invalidInput(error, true);
     SolveRequest request;
     request.seed = seed; request.seedRank = seedRank;
     request.adjustable = task.adjustableJoints;

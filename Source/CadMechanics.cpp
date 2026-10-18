@@ -181,10 +181,10 @@ bool frameUsable(const CadFrame& f)
 }
 }
 
-bool validateIkTask(const CadMechanics& model, const CadIkTask& task, juce::String& error)
+bool validateIkTask(const CadMechanics& model, const CadIkTask& task, juce::String& error, bool requireId)
 {
     const auto label = task.name.isNotEmpty() ? task.name : juce::String("IK task");
-    if (task.id.isEmpty()) { error = label + ": the task needs an id."; return false; }
+    if (requireId && task.id.isEmpty()) { error = label + ": the task needs an id."; return false; }
     if (!std::isfinite(task.positionToleranceMm) || task.positionToleranceMm <= 0.0) { error = label + ": the position tolerance must be a finite number greater than zero (mm)."; return false; }
     if (!std::isfinite(task.angleToleranceRad) || task.angleToleranceRad <= 0.0) { error = label + ": the angle tolerance must be a finite number greater than zero."; return false; }
     std::set<juce::String> joints;
