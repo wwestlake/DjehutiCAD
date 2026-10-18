@@ -173,5 +173,24 @@ private:
     juce::String pipeName;
     std::uint64_t shownRevision = 0;
     std::shared_ptr<StatusBoard> board = std::make_shared<StatusBoard>();
+    // Everything the status board JSON is built from; the board is rebuilt only when this changes.
+    struct BoardKey
+    {
+        std::uint64_t linkSerial = 0, mechanismSerial = 0, documentRevision = 0;
+        LinkState state = LinkState::stopped;
+        juce::String message, lastSequence, simTimePs, posedSequence, posedSimTimePs, solveProblem, lifecycle, commandText, pendingCommand, lifecycleUnavailableReason;
+        int acceptedProfileRevision = -1, timelineGeneration = 0, severity = 0;
+        bool lifecycleAvailable = false, commandPending = false, canRetry = false, valid = false;
+        bool operator== (const BoardKey& o) const
+        {
+            return valid == o.valid && linkSerial == o.linkSerial && mechanismSerial == o.mechanismSerial && documentRevision == o.documentRevision && state == o.state
+                && message == o.message && lastSequence == o.lastSequence && simTimePs == o.simTimePs && posedSequence == o.posedSequence && posedSimTimePs == o.posedSimTimePs
+                && solveProblem == o.solveProblem && lifecycle == o.lifecycle && commandText == o.commandText && pendingCommand == o.pendingCommand
+                && lifecycleUnavailableReason == o.lifecycleUnavailableReason && acceptedProfileRevision == o.acceptedProfileRevision
+                && timelineGeneration == o.timelineGeneration && severity == o.severity && lifecycleAvailable == o.lifecycleAvailable
+                && commandPending == o.commandPending && canRetry == o.canRetry;
+        }
+    };
+    BoardKey boardKey;
 };
 }

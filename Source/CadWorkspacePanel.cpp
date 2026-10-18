@@ -271,7 +271,7 @@ public:
     {
         g.fillAll(juce::Colour(0xff0b1014));
         const auto* sketch = owner.service->document().findSketch(sketchId);
-        const auto plane = sketch != nullptr ? sketch->plane : juce::String("XY");
+        const auto plane = sketch != nullptr ? (sketch->onFace() ? juce::String("UV") : sketch->plane) : juce::String("XY");
         const auto step = gridStep();
         const auto bottomLeft = fromPoint({ 0.0f, (float) getHeight() }), topRight = fromPoint({ (float) getWidth(), 0.0f });
         for (auto i = std::floor(bottomLeft.x / step); i * step <= topRight.x; i += 1.0)
@@ -432,7 +432,10 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
                               ToolSpec { &jointButton, "Connect two instances (or an instance and the world) with a fixed, revolute or prismatic joint." },
                               ToolSpec { &couplingButton, "Couple two joint coordinates: gear ratio, linear ratio, rack and pinion, or screw lead." },
                               ToolSpec { &linkButton, "Connect joints to DEWB simulation signals over the motion link." },
-                              ToolSpec { &ikButton, "Inverse kinematics: solve selected driver joints so an endpoint reaches a target pose." } })
+                              ToolSpec { &ikButton, "Inverse kinematics: solve selected driver joints so an endpoint reaches a target pose." },
+                              ToolSpec { &bodyModeButton, "Pick whole bodies in the model view (the default)." },
+                              ToolSpec { &faceModeButton, "Pick faces: hover highlights, click selects. A planar face can carry a sketch." },
+                              ToolSpec { &edgeModeButton, "Pick edges: hover highlights, click selects." } })
     {
         styleButton(*spec.button, spec.tip);
         addChildComponent(*spec.button);
@@ -452,6 +455,10 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     couplingButton.onClick = [this] { startTask(Task::newCoupling); };
     jointButton.onClick = [this] { startTask(Task::newJoint); };
     linkButton.onClick = [this] { startTask(Task::link); };
+    const auto setMode = [this](djehuti::cad::CadSelection::Mode mode) { if (selection != nullptr) selection->setMode(mode); updateToolbar(); };
+    bodyModeButton.onClick = [setMode] { setMode(djehuti::cad::CadSelection::Mode::body); };
+    faceModeButton.onClick = [setMode] { setMode(djehuti::cad::CadSelection::Mode::face); };
+    edgeModeButton.onClick = [setMode] { setMode(djehuti::cad::CadSelection::Mode::edge); };
     ikButton.onClick = [this] { loadIkDraft(isIkTask(selectedId) ? selectedId : juce::String()); startTask(Task::ik); };
     undoButton.onClick = [this] { juce::String e; if (!service->undo(e)) showError(e); else { refreshFromDocument(true); setMessage("Undone.", 0); } };
     redoButton.onClick = [this] { juce::String e; if (!service->redo(e)) showError(e); else { refreshFromDocument(true); setMessage("Redone.", 0); } };
@@ -474,6 +481,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     modelView.setTitle("Perspective  |  Model  (drag to orbit, Shift/right-drag to pan, wheel to zoom, click to select)");
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
     modelView.onFrameRequested = [this] { wakeFrames(); };
+    modelView.wantsBodyPick = [this] { return isCommandTask(); };
     modelView.onTargetDragged = [this](const juce::String& targetId, const std::array<float, 3>& point, bool finished) { ikTargetDragged(targetId, point, finished); };
 
     side.addAndMakeVisible(taskTitle); side.addAndMakeVisible(taskInstruction); side.addAndMakeVisible(taskViewport); side.addAndMakeVisible(messageLabel);
@@ -543,6 +551,7 @@ void CadWorkspacePanel::resized()
         place(row, extrudeButton); place(row, cutButton); row.removeFromLeft(14);
         place(row, subtractButton); place(row, unionButton); place(row, intersectButton); row.removeFromLeft(14);
         place(row, instanceButton); place(row, jointButton); place(row, couplingButton); place(row, linkButton); place(row, ikButton);
+        place(row, edgeModeButton, true); place(row, faceModeButton, true); place(row, bodyModeButton, true);
     }
     else
     {
@@ -703,10 +712,78 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
 }
 
 bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::cut || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+// "face <token> of <body>" for a face-attached sketch.
+juce::String CadWorkspacePanel::supportText(const djehuti::cad::CadSketch& sketch) const { return "face " + sketch.supportFace + " of " + featureName(sketch.supportFeature); }
 bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
 bool CadWorkspacePanel::isCoupling(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findCoupling(id) != nullptr; }
 bool CadWorkspacePanel::isInstance(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findInstance(id) != nullptr; }
 bool CadWorkspacePanel::isJoint(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findJoint(id) != nullptr; }
+
+void CadWorkspacePanel::setSelection(std::shared_ptr<djehuti::cad::CadSelection> shared)
+{
+    selection = std::move(shared);
+    modelView.setSelection(selection);
+    if (selection != nullptr) selection->addListener([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->selectionChanged(); });
+    updateToolbar();
+}
+
+// A face or edge picked in any view opens its inspector; clearing it returns to the model.
+void CadWorkspacePanel::selectionChanged()
+{
+    updateToolbar();
+    updateHighlights();
+    if (selection == nullptr) return;
+    const auto& picked = selection->selected();
+    if (picked.valid() && (picked.face >= 0 || picked.edge >= 0))
+    {
+        if (editingSketchId.isNotEmpty()) finishSketch();
+        task = Task::subshape; commandMessage.clear(); validationMessage.clear();
+        rebuildTaskPanel(false);
+    }
+    else if (task == Task::subshape) { task = Task::none; rebuildTaskPanel(false); }
+}
+
+bool CadWorkspacePanel::selectedSupport(djehuti::cad::CadFaceInfo& face, juce::String& reason) const
+{
+    if (selection == nullptr || !selection->selected().valid() || selection->selected().face < 0) { reason = "Select a planar face in Face mode first."; return false; }
+    const auto& picked = selection->selected();
+    if (!service->describeFace(picked.featureId, picked.face, face, reason)) return false;
+    if (!face.planar) { reason = "This face is curved. Sketches can be attached to planar faces only."; return false; }
+    if (face.token.isEmpty()) { reason = "This face has no persistent name in the model history, so a sketch cannot be attached to it."; return false; }
+    return true;
+}
+
+void CadWorkspacePanel::addSubshapePanel(juce::String& title, juce::String& instruction)
+{
+    const auto& picked = selection->selected();
+    const auto body = featureName(picked.featureId);
+    const auto instance = picked.drawId != picked.featureId ? featureName(picked.drawId) : juce::String();
+    form->addHeader(picked.face >= 0 ? "Face" : "Edge");
+    form->addNote({}, "Body: " + body + (instance.isNotEmpty() ? "\nInstance: " + instance : juce::String()), instance.isNotEmpty() ? 2 : 1);
+    juce::String error;
+    if (picked.face >= 0)
+    {
+        djehuti::cad::CadFaceInfo face;
+        title = "Face of " + body; instruction = "Hover highlights, click selects. A planar, persistently named face can carry a sketch.";
+        if (!service->describeFace(picked.featureId, picked.face, face, error)) { form->addNote({}, error, 2); return; }
+        form->addNote({}, "Persistent name: " + (face.token.isNotEmpty() ? face.token : juce::String("none (cannot support a sketch)"))
+                          + "\n" + (face.planar ? "Planar" : "Curved") + ", area " + juce::String(face.area, 2) + " mm2"
+                          + "\nNormal " + juce::String(face.normal.X(), 3) + ", " + juce::String(face.normal.Y(), 3) + ", " + juce::String(face.normal.Z(), 3), 3);
+        juce::String reason;
+        djehuti::cad::CadFaceInfo support;
+        if (selectedSupport(support, reason))
+            form->addButton("faceSketch", "Create Sketch on this face", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::createSketch); }); },
+                            "Start a sketch attached to this face; it follows the face when the body changes.");
+        else form->addNote({}, reason, 2);
+    }
+    else
+    {
+        juce::String text;
+        title = "Edge of " + body; instruction = "Hover highlights, click selects.";
+        form->addNote({}, service->describeEdge(picked.featureId, picked.edge, text, error) ? text : error, 2);
+    }
+    form->addButton("clearPick", "Clear selection", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr && safe->selection != nullptr) safe->selection->clear(); }); }, "Clear the face or edge selection.");
+}
 
 void CadWorkspacePanel::setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link)
 {
@@ -774,6 +851,7 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
     task = next; booleanKind = kind;
     commandMessage.clear(); validationMessage.clear();
     profileId.clear(); targetId.clear(); toolId.clear(); activeRole = 0; sketchPlane.clear();
+    if (next == Task::createSketch) { djehuti::cad::CadFaceInfo support; juce::String reason; if (selectedSupport(support, reason)) sketchPlane = "FACE"; }
     if (next == Task::extrude || next == Task::cut) { if (selected != nullptr && selected->type == "sketch") profileId = selectedId; }
     if (next == Task::boolean && isSolid(selectedId)) { targetId = selectedId; activeRole = 1; }
     instanceBodyId.clear(); jointParentId.clear(); jointChildId.clear();
@@ -811,7 +889,9 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     // Markers and target dragging exist only while the IK panel is open.
     if (task != Task::ik && ikMarkersShown && motionRuntime != nullptr) { motionRuntime->setIkDisplay(nullptr); ikMarkersShown = false; }
     modelView.setTargetDragEnabled(task == Task::ik && ikDragEnabled);
-    if (task == Task::ik) addIkPanel(title, instruction, accept, showAccept, showCancel);
+    if (task == Task::subshape && (selection == nullptr || !selection->selected().valid())) task = Task::none;
+    if (task == Task::subshape) { addSubshapePanel(title, instruction); showAccept = false; showCancel = false; }
+    else if (task == Task::ik) addIkPanel(title, instruction, accept, showAccept, showCancel);
     else if (task == Task::instance || task == Task::joint || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::coupling || task == Task::newCoupling)
         addMotionPanels(title, instruction, accept, showAccept, showCancel);
     else switch (task)
@@ -874,7 +954,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addHeader("Sketch");
             form->addText("name", "Name", f->name, "Friendly sketch name.");
             form->addButton("rename", "Rename", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe == nullptr || safe->form == nullptr) return; juce::String e; if (!safe->service->rename(safe->selectedId, safe->form->text("name"), e)) safe->showError(e); else { safe->refreshFromDocument(true); safe->rebuildTaskPanel(false); safe->setMessage("Sketch renamed.", 0); } }); }, "Apply the new sketch name.");
-            if (sketch != nullptr) form->addNote({}, sketch->plane + " plane  |  offset " + juce::String(sketch->offset) + " mm  |  " + juce::String((int) sketch->entities.size()) + " entities", 1);
+            if (sketch != nullptr) form->addNote({}, (sketch->onFace() ? "On " + supportText(*sketch) : sketch->plane + " plane  |  offset " + juce::String(sketch->offset) + " mm") + "  |  " + juce::String((int) sketch->entities.size()) + " entities", sketch->onFace() ? 2 : 1);
             form->addHeader("Use sketch");
             form->addButton("extrude", "Extrude...", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::extrude); }); }, "Extrude this sketch's closed profile.");
             form->addButton("cut", "Cut Sketch...", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::cut); }); }, "Cut this sketch's profile from a body.");
@@ -884,7 +964,16 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
         }
         case Task::createSketch:
         {
-            title = "Create Sketch"; instruction = "Choose the origin plane to sketch on, then press Create Sketch."; accept = "Create Sketch";
+            title = "Create Sketch"; instruction = "Choose the selected face or an origin plane to sketch on, then press Create Sketch."; accept = "Create Sketch";
+            {
+                djehuti::cad::CadFaceInfo support; juce::String reason;
+                form->addHeader("Face");
+                if (selectedSupport(support, reason))
+                    form->addSlot("planeFACE", "Selected face", sketchPlane == "FACE" ? "Selected" : "Choose", targetColour, sketchPlane == "FACE",
+                                  [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { safe->sketchPlane = "FACE"; safe->rebuildTaskPanel(true); } }); },
+                                  "Attach the sketch to " + support.token + " of " + featureName(support.featureId) + "; it follows that face when the body changes.");
+                else form->addNote({}, reason + " Switch to Face mode and click a planar face to sketch on it.", 2);
+            }
             form->addHeader("Plane");
             for (const auto& plane : { juce::String("XY"), juce::String("XZ"), juce::String("YZ") })
             {
@@ -899,13 +988,13 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
         case Task::sketchEntity:
         {
             const auto* sketch = document.findSketch(editingSketchId);
-            const auto plane = sketch != nullptr ? sketch->plane : juce::String("XY");
+            const auto plane = sketch != nullptr ? (sketch->onFace() ? juce::String("UV") : sketch->plane) : juce::String("XY");
             const djehuti::cad::CadSketchEntity* entity = nullptr;
             if (sketch != nullptr) for (const auto& e : sketch->entities) if (e.id == sketchEntityId) entity = &e;
             if (entity == nullptr)
             {
                 const auto tool = sketchCanvas->tool();
-                title = featureName(editingSketchId) + "  |  " + plane + " plane";
+                title = featureName(editingSketchId) + "  |  " + (sketch != nullptr && sketch->onFace() ? "on " + supportText(*sketch) : plane + " plane");
                 instruction = tool == "line" ? "Line: drag from start to end. Ends snap to existing line ends. Esc cancels the gesture."
                             : tool == "rectangle" ? "Rectangle: drag from one corner to the opposite corner. Esc cancels the gesture."
                             : tool == "circle" ? "Circle: drag from the centre outwards. Esc cancels the gesture."
@@ -1078,8 +1167,8 @@ void CadWorkspacePanel::validateTask()
             for (const auto* key : { "x", "y", "z" }) requireNumber(key, juce::String("Position ") + juce::String(key).toUpperCase());
             break;
         case Task::createSketch:
-            if (sketchPlane.isEmpty()) problem = "Choose the XY, XZ or YZ plane.";
-            requireNumber("offset", "Offset");
+            if (sketchPlane.isEmpty()) problem = "Choose the selected face or the XY, XZ or YZ plane.";
+            if (sketchPlane != "FACE") requireNumber("offset", "Offset");
             break;
         case Task::sketchEntity:
             requirePositive("dimension", "The dimension");
@@ -1153,6 +1242,17 @@ void CadWorkspacePanel::acceptTask()
         }
         case Task::sketch: enterSketch(selectedId); return;
         case Task::createSketch:
+            if (sketchPlane == "FACE")
+            {
+                djehuti::cad::CadFaceInfo support; juce::String reason;
+                if (!selectedSupport(support, reason)) { showError(reason); return; }
+                if (!service->createFaceSketch(support.featureId, support.token, id, e)) { showError(e); return; }
+                if (selection != nullptr) selection->clear();
+                refreshFromDocument(true);
+                enterSketch(id);
+                setMessage(featureName(id) + " created on face " + support.token + " of " + featureName(support.featureId) + ". Choose a drawing tool.", 0);
+                return;
+            }
             if (!service->createSketch(sketchPlane, form->number("offset"), id, e)) { showError(e); return; }
             refreshFromDocument(true);
             enterSketch(id);
@@ -1313,7 +1413,13 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what)
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
-    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton }) b->setVisible(!sketching);
+    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
+    {
+        const auto mode = selection != nullptr ? selection->mode() : djehuti::cad::CadSelection::Mode::body;
+        bodyModeButton.setToggleState(mode == djehuti::cad::CadSelection::Mode::body, juce::dontSendNotification);
+        faceModeButton.setToggleState(mode == djehuti::cad::CadSelection::Mode::face, juce::dontSendNotification);
+        edgeModeButton.setToggleState(mode == djehuti::cad::CadSelection::Mode::edge, juce::dontSendNotification);
+    }
     couplingButton.setToggleState(task == Task::newCoupling, juce::dontSendNotification);
     instanceButton.setToggleState(task == Task::newInstance, juce::dontSendNotification); jointButton.setToggleState(task == Task::newJoint, juce::dontSendNotification); linkButton.setToggleState(task == Task::link, juce::dontSendNotification); ikButton.setToggleState(task == Task::ik, juce::dontSendNotification);
     for (auto* b : { &selectToolButton, &lineButton, &rectangleButton, &circleButton, &constrainButton, &fitSketchButton, &finishSketchButton }) b->setVisible(sketching);
@@ -1327,7 +1433,7 @@ void CadWorkspacePanel::updateToolbar()
     extrudeButton.setToggleState(task == Task::extrude, juce::dontSendNotification); cutButton.setToggleState(task == Task::cut, juce::dontSendNotification);
     sketchButton.setToggleState(task == Task::createSketch, juce::dontSendNotification);
     boxButton.setToggleState(task == Task::newBox, juce::dontSendNotification); cylinderButton.setToggleState(task == Task::newCylinder, juce::dontSendNotification);
-    if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + sketch->plane + " plane", juce::dontSendNotification);
+    if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + (sketch->onFace() ? "on " + supportText(*sketch) : sketch->plane + " plane"), juce::dontSendNotification);
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
     resized(); repaint();
@@ -1337,7 +1443,9 @@ void CadWorkspacePanel::updateHighlights()
 {
     std::vector<std::pair<juce::String, juce::Colour>> highlights;
     const bool command = isCommandTask();
-    if (!command && selectedId.isNotEmpty()) highlights.push_back({ selectedId, selectedColour });
+    // While a face or edge is picked, the body is not highlighted, so the picked subshape stands out.
+    const bool subshapePicked = selection != nullptr && selection->selected().valid() && (selection->selected().face >= 0 || selection->selected().edge >= 0);
+    if (!command && !subshapePicked && selectedId.isNotEmpty()) highlights.push_back({ selectedId, selectedColour });
     if (!command && isJoint(selectedId)) if (const auto* joint = service->document().mechanicsData().findJoint(selectedId)) { if (joint->parentInstance.isNotEmpty()) highlights.push_back({ joint->parentInstance, targetColour }); highlights.push_back({ joint->childInstance, toolColour }); }
     if (command && targetId.isNotEmpty()) highlights.push_back({ targetId, targetColour });
     if (command && toolId.isNotEmpty()) highlights.push_back({ toolId, toolColour });

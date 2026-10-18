@@ -4,6 +4,7 @@
 #include "FrameResourceRing.h"
 #include "CadDocument.h"
 #include "CadMotionRuntime.h"
+#include "CadSelection.h"
 
 #include <atomic>
 
@@ -22,6 +23,12 @@ public:
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
+    // Shared body/face/edge selection: in Face and Edge mode, hover highlights and a click (not a drag) selects.
+    void setSelection(std::shared_ptr<djehuti::cad::CadSelection> next) { selection = std::move(next); markDirty(); }
+    // Visible geometry under a view position, using the drawn transforms (assembly instances at their pose).
+    djehuti::cad::CadPick pick(juce::Point<float> position, djehuti::cad::CadSelection::Mode mode) const;
     void resetCamera();
     // Publishes a frame and requests one render only when the camera, pose, geometry, highlights or visibility
     // changed; returns true if it did. Hidden and minimised views do nothing.
@@ -39,6 +46,8 @@ public:
     juce::String pickBody(juce::Point<float> position) const;
     void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); }
     std::function<void(const juce::String& featureId)> onBodyPicked;
+    // True while the owner needs whole bodies (a command choosing its target): clicks pick bodies in any mode.
+    std::function<bool()> wantsBodyPick;
     // IK target dragging. Only while enabled, and only when a press lands on the published drag handle, does a
     // drag move the target within its drag plane; every other press keeps orbit, pan and picking unchanged.
     void setTargetDragEnabled(bool enabled) { targetDragEnabled = enabled; if (!enabled) draggingTarget = false; }
@@ -90,7 +99,10 @@ private:
     float clipRadius = 1.0f;
     juce::SpinLock highlightLock;
     std::vector<std::pair<juce::String, juce::Colour>> highlights;
-    struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; };
+    struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; int faceIndex = -1; };
+    std::shared_ptr<djehuti::cad::CadSelection> selection;
+    std::uint64_t shownSelectionSerial = 0;
+    djehuti::cad::CadPick glHover, glSelected;   // guarded by highlightLock
     std::vector<MeshRange> meshRanges;
     std::atomic<bool> glReady { false };   // written on the GL thread
     juce::String glStatus = "Waiting for OpenGL context";
@@ -113,6 +125,7 @@ public:
     ~ThreeDViewsPanel() override;
     bool addView();
     void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source);
+    void setSelection(std::shared_ptr<djehuti::cad::CadSelection> next);
     void resized() override;
     void paint(juce::Graphics&) override;
 
@@ -134,6 +147,7 @@ private:
     std::shared_ptr<const djehuti::cad::CadRenderSnapshot> currentSnapshot;
     std::uint64_t shownRevision = 0;
     std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> poseSource;
+    std::shared_ptr<djehuti::cad::CadSelection> selection;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ThreeDViewsPanel)
 };

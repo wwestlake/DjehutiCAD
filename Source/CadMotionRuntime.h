@@ -77,6 +77,8 @@ public:
     bool showingLastValidPose() const { return hasAttempt && !attempt.valid; }
     juce::String evaluationError() const { return showingLastValidPose() ? attempt.message : juce::String(); }
     juce::String statusJson() const;
+    // Advances whenever statusJson() would change (a new solve or IK attempt), so readers can skip rebuilding it.
+    std::uint64_t statusSerial() const { return attemptSerial; }
     std::function<void()> onPoseChanged;
 
     // Local inverse kinematics. Every entry point uses kin::solveTask with the current prescribed drivers and
@@ -115,7 +117,7 @@ private:
     kin::SolveResult valid, attempt;
     bool hasValid = false, hasAttempt = false;
     Driver currentDriver = Driver::preview;
-    std::uint64_t shownRevision = 0, shownInstance = 0, serial = 0;
+    std::uint64_t shownRevision = 0, shownInstance = 0, serial = 0, attemptSerial = 0;
     std::map<juce::String, gp_Trsf> shownWorld;      // instance poses of the published snapshot
 
     // IK runtime state (never written to the document).

@@ -27,6 +27,13 @@
 #include <GeomLProp_SLProps.hxx>
 #include <TopLoc_Location.hxx>
 #include <Standard_Failure.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepBuilderAPI_MakeShape.hxx>
+#include <BRepGProp.hxx>
+#include <GCPnts_QuasiUniformDeflection.hxx>
+#include <GProp_GProps.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <algorithm>
 #include <cmath>
 
@@ -35,7 +42,7 @@ namespace djehuti::cad
 namespace
 {
 constexpr int kMetaTag = 1, kFeatureContainerTag = 2, kReferenceContainerTag = 3, kSketchContainerTag = 4, kMechanicsContainerTag = 5, kFeatureTagBase = 1000;
-constexpr int kShapeTag = 30, kReferenceShapeTag = 5;
+constexpr int kShapeTag = 30, kReferenceShapeTag = 5, kFaceReferenceTagBase = 1000;
 constexpr int kGeneratedHistoryTag = 31, kModifiedHistoryTag = 32, kDeletedHistoryTag = 33;
 double number(const juce::var& value, double fallback) { return value.isDouble() || value.isInt() || value.isInt64() ? value.toString().getDoubleValue() : fallback; }
 TDF_Label field(const TDF_Label& label, int tag) { return label.FindChild(tag, true); }
@@ -71,6 +78,37 @@ void collectBooleanHistory(BooleanBuilder& operation, const CadFeature& feature,
         }
     };
     collect(first); collect(second); if (!entry.generated.empty() || !entry.modified.empty() || !entry.deleted.empty()) history.push_back(std::move(entry));
+}
+// Face construction origins (see CadFaceOrigins).
+void addFaceOrigin(CadFaceOrigins& origins, const TopoDS_Shape& face, const juce::StringArray& tokens)
+{
+    for (auto& entry : origins) if (entry.first.IsSame(face)) { for (const auto& t : tokens) entry.second.addIfNotAlreadyThere(t); return; }
+    origins.push_back({ face, tokens });
+}
+void addFaceOrigin(CadFaceOrigins& origins, const TopoDS_Shape& face, const juce::String& token) { addFaceOrigin(origins, face, juce::StringArray { token }); }
+// Carries origins through an OCCT operation using its history: deleted faces drop out, modified faces pass their
+// tokens to every image, untouched faces keep them; only faces present in the result remain.
+CadFaceOrigins mapFaceOrigins(BRepBuilderAPI_MakeShape& operation, const CadFaceOrigins& in, const TopoDS_Shape& result)
+{
+    TopTools_IndexedMapOfShape present; TopExp::MapShapes(result, TopAbs_FACE, present);
+    CadFaceOrigins out;
+    for (const auto& [face, tokens] : in)
+    {
+        if (operation.IsDeleted(face)) continue;
+        const auto& images = operation.Modified(face);
+        if (images.IsEmpty()) { if (present.Contains(face)) addFaceOrigin(out, face, tokens); continue; }
+        for (TopTools_ListIteratorOfListOfShape it(images); it.More(); it.Next()) if (it.Value().ShapeType() == TopAbs_FACE && present.Contains(it.Value())) addFaceOrigin(out, it.Value(), tokens);
+    }
+    return out;
+}
+gp_Dir outwardNormal(const TopoDS_Face& face)
+{
+    BRepAdaptor_Surface surface(face, true);
+    gp_Dir normal(0, 0, 1);
+    if (surface.GetType() == GeomAbs_Plane) normal = surface.Plane().Axis().Direction();
+    else { const auto u = 0.5 * (surface.FirstUParameter() + surface.LastUParameter()), v = 0.5 * (surface.FirstVParameter() + surface.LastVParameter()); gp_Pnt p; gp_Vec du, dv; surface.D1(u, v, p, du, dv); const auto n = du.Crossed(dv); if (n.Magnitude() > 1.0e-12) normal = gp_Dir(n); }
+    if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
+    return normal;
 }
 void recordOperationHistory(const TDF_Label& label, const CadDocument::CadTopologyEvolution& entry)
 {
@@ -110,14 +148,14 @@ bool CadDocument::addSketchCircle(const juce::String& sketchId,double x,double y
 bool CadDocument::setSketchEntityDimension(const juce::String& sketchId,const juce::String& entityId,double value,juce::String& error) { return mutate([&](juce::String& e){auto* sketch=mutableSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(value<=0||!std::isfinite(value)){e="Sketch dimension must be finite and greater than zero.";return false;}for(auto& entity:sketch->entities)if(entity.id==entityId){bool found=false;for(auto& c:sketch->constraints)if((c.type=="distance"||c.type=="length"||c.type=="radius"||c.type=="diameter")&&c.firstEntity==entityId){c.value=value;found=true;}if(entity.type=="circle"){if(!found){CadSketchConstraint c;c.id=newId("constraint",nextNumber++);c.type="radius";c.firstEntity=entityId;c.value=value;sketch->constraints.push_back(c);}}else if(!found){CadSketchConstraint c;c.id=newId("constraint",nextNumber++);c.type="distance";c.firstEntity=entityId;c.value=value;sketch->constraints.push_back(c);}return solveSketch(*sketch,e);}e="Unknown sketch entity id: "+entityId;return false;},error); }
 bool CadDocument::setSketchEntityPosition(const juce::String& sketchId,const juce::String& entityId,double px,double py,juce::String& error) { return mutate([&](juce::String& e){auto* sketch=mutableSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(!std::isfinite(px)||!std::isfinite(py)){e="Sketch position must be finite.";return false;}for(auto& entity:sketch->entities)if(entity.id==entityId){const auto dx=entity.x2-entity.x1,dy=entity.y2-entity.y1;entity.x1=px;entity.y1=py;if(entity.type!="circle"){entity.x2=px+dx;entity.y2=py+dy;}return solveSketch(*sketch,e);}e="Unknown sketch entity id: "+entityId;return false;},error); }
 bool CadDocument::addSketchConstraint(const juce::String& sketchId,const juce::String& type,const juce::String& first,const juce::String& second,double value,juce::String& constraintId,juce::String& error) { return mutate([&](juce::String& e){auto* sketch=mutableSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}const auto supported=type=="coincident"||type=="horizontal"||type=="vertical"||type=="fixed"||type=="length"||type=="distance"||type=="radius"||type=="diameter";if(!supported){e="Unsupported sketch constraint: "+type;return false;}CadSketchConstraint c;c.id=newId("constraint",nextNumber++);c.type=type;c.firstEntity=first;c.secondEntity=second;c.value=value;sketch->constraints.push_back(c);constraintId=c.id;return solveSketch(*sketch,e);},error); }
-bool CadDocument::createExtrude(const juce::String& sketchId,double depth,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(depth<=0||!std::isfinite(depth)){e="Extrusion depth must be finite and greater than zero.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("extrude",nextNumber++);f.name="Extrude "+juce::String(nextNumber-1);f.type="extrude";f.sketchId=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.firstOperand=sketchId;items.push_back(f);id=f.id;return true;},error); }
-bool CadDocument::createCut(const juce::String& sketchId,const juce::String& target,double depth,bool throughAll,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);const auto* targetFeature=find(target);if(sketch==nullptr||targetFeature==nullptr||targetFeature->shape.IsNull()){e="Cut requires an existing sketch and solid target feature.";return false;}if(depth<=0&&!throughAll){e="Cut depth must be greater than zero unless through-all is selected.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("cut",nextNumber++);f.name="Cut "+juce::String(nextNumber-1);f.type="cut";f.sketchId=sketchId;f.targetFeatureId=target;f.firstOperand=target;f.secondOperand=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.throughAll=throughAll;for(auto& source:items)if(source.id==target)source.visible=false;items.push_back(f);id=f.id;return true;},error); }
+bool CadDocument::createExtrude(const juce::String& sketchId,double depth,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(depth<=0||!std::isfinite(depth)){e="Extrusion depth must be finite and greater than zero.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("extrude",nextNumber++);f.name="Extrude "+juce::String(nextNumber-1);f.type="extrude";f.sketchId=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.firstOperand=sketchId;for(auto& source:items)if(source.id==sketchId)source.visible=false;items.push_back(f);id=f.id;return true;},error); }
+bool CadDocument::createCut(const juce::String& sketchId,const juce::String& target,double depth,bool throughAll,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);const auto* targetFeature=find(target);if(sketch==nullptr||targetFeature==nullptr||targetFeature->shape.IsNull()){e="Cut requires an existing sketch and solid target feature.";return false;}if(depth<=0&&!throughAll){e="Cut depth must be greater than zero unless through-all is selected.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("cut",nextNumber++);f.name="Cut "+juce::String(nextNumber-1);f.type="cut";f.sketchId=sketchId;f.targetFeatureId=target;f.firstOperand=target;f.secondOperand=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.throughAll=throughAll;for(auto& source:items)if(source.id==target||source.id==sketchId)source.visible=false;items.push_back(f);id=f.id;return true;},error); }
 bool CadDocument::setPlacement(const juce::String& id,double x,double y,double z,double rx,double ry,double rz,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){f.x=x;f.y=y;f.z=z;f.rx=rx;f.ry=ry;f.rz=rz;return true;}e="Unknown feature id: "+id;return false;},error); }
 bool CadDocument::setDimensions(const juce::String& id,double w,double d,double h,double r,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){if(f.type=="box"&&(w<=0||d<=0||h<=0)){e="Box dimensions must be greater than zero.";return false;}if(f.type=="cylinder"&&(r<=0||h<=0)){e="Cylinder radius and height must be greater than zero.";return false;}if((f.type=="extrude"||f.type=="cut")&&h<=0){e="Feature depth must be greater than zero.";return false;}f.width=w;f.depth=d;f.height=h;f.radius=r;if(f.type=="extrude"||f.type=="cut")f.depth=h;return true;}e="Unknown feature id: "+id;return false;},error); }
 bool CadDocument::booleanOp(const juce::String& kind,const juce::String& first,const juce::String& second,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){if((kind!="union"&&kind!="subtract"&&kind!="intersect")||find(first)==nullptr||find(second)==nullptr||first==second){e="Boolean operation requires two distinct existing features.";return false;}for(const auto* operand:{find(first),find(second)})if(operand->type=="sketch"||operand->shape.IsNull()){e=operand->name+" is not a solid body; Boolean operations need two solid bodies.";return false;}CadFeature f;f.id=newId(kind.toRawUTF8(),nextNumber++);f.name=kind.substring(0,1).toUpperCase()+kind.substring(1)+" "+juce::String(nextNumber-1);f.type=kind;f.firstOperand=first;f.secondOperand=second;for(auto& source:items)if(source.id==first||source.id==second)source.visible=false;items.push_back(f);juce::StringArray active;const auto result=evaluate(f.id,e,active);if(result.IsNull())return false;if(!TopExp_Explorer(result,TopAbs_SOLID).More()){e=f.name+" would produce no solid: the bodies do not overlap.";return false;}id=f.id;return true;},error); }
 bool CadDocument::rename(const juce::String& id,const juce::String& name,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){if(name.trim().isEmpty()){e="Name cannot be empty.";return false;}f.name=name.trim();return true;}e="Unknown feature id: "+id;return false;},error); }
 bool CadDocument::setVisible(const juce::String& id,bool visible,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){f.visible=visible;return true;}e="Unknown feature id: "+id;return false;},error); }
-bool CadDocument::remove(const juce::String& id,juce::String& error) { return mutate([&](juce::String& e){for(const auto& instance:mechanics.instances)if(instance.featureId==id){e="Cannot delete a body used by assembly instance "+instance.name+"; delete the instance first.";return false;}for(const auto& f:items)if(f.firstOperand==id||f.secondOperand==id){e="Cannot delete a feature used by a Boolean result.";return false;}const auto old=items.size();items.erase(std::remove_if(items.begin(),items.end(),[&](const CadFeature& f){return f.id==id;}),items.end());if(items.size()==old){e="Unknown feature id: "+id;return false;}return true;},error); }
+bool CadDocument::remove(const juce::String& id,juce::String& error) { return mutate([&](juce::String& e){for(const auto& sketch:sketches)if(sketch.supportFeature==id){e="Cannot delete a body that supports "+(find(sketch.id)!=nullptr?find(sketch.id)->name:sketch.id)+"; delete that sketch first.";return false;}for(const auto& instance:mechanics.instances)if(instance.featureId==id){e="Cannot delete a body used by assembly instance "+instance.name+"; delete the instance first.";return false;}for(const auto& f:items)if(f.firstOperand==id||f.secondOperand==id){e="Cannot delete a feature used by a Boolean result.";return false;}const auto old=items.size();items.erase(std::remove_if(items.begin(),items.end(),[&](const CadFeature& f){return f.id==id;}),items.end());if(items.size()==old){e="Unknown feature id: "+id;return false;}return true;},error); }
 bool CadDocument::restoreMechanicsFromOCAF(juce::String& error)
 {
     const auto text = readString(ocafDocument->Main().FindChild(kMechanicsContainerTag, false), 1);
@@ -480,13 +518,315 @@ bool CadDocument::solveSketch(CadSketch& sketch,juce::String& error) const
     for (const auto& e : sketch.entities) if (e.type == "line" && std::hypot(e.x2 - e.x1, e.y2 - e.y1) < 1.0e-8) { error = "Sketch contains a zero-length line."; return false; }
     return true;
 }
-bool CadDocument::validateSketch(const CadSketch& sketch,juce::String& error) const {if(sketch.entities.empty()){error="Sketch has no geometry.";return false;}CadSketch copy=sketch;if(!solveSketch(copy,error))return false;std::vector<TopoDS_Face> faces;if(!sketchProfiles(copy,faces,error))return false;if(faces.empty()){error="Sketch has no closed profile.";return false;}return true;}
-bool CadDocument::sketchProfiles(const CadSketch& sketch,std::vector<TopoDS_Face>& faces,juce::String& error) const {const auto point=[&](double u,double v){if(sketch.plane=="XZ")return gp_Pnt(u,sketch.offset,v);if(sketch.plane=="YZ")return gp_Pnt(sketch.offset,u,v);return gp_Pnt(u,v,sketch.offset);};const auto normal=[&](){if(sketch.plane=="XZ")return gp_Dir(0,1,0);if(sketch.plane=="YZ")return gp_Dir(1,0,0);return gp_Dir(0,0,1);};std::vector<bool> used(sketch.entities.size(),false);for(size_t i=0;i<sketch.entities.size();++i){const auto& entity=sketch.entities[i];if(entity.type=="circle"){try{const gp_Circ circle(gp_Ax2(point(entity.x1,entity.y1),normal()),entity.radius);const auto edge=BRepBuilderAPI_MakeEdge(circle).Edge();const auto wire=BRepBuilderAPI_MakeWire(edge).Wire();faces.push_back(BRepBuilderAPI_MakeFace(wire).Face());}catch(const Standard_Failure&){error="Unable to build circle profile.";return false;}continue;}if(entity.type!="line"||used[i])continue;std::vector<size_t> loop;loop.push_back(i);used[i]=true;double startX=entity.x1,startY=entity.y1,currentX=entity.x2,currentY=entity.y2;for(size_t count=1;count<=sketch.entities.size();++count){if(std::hypot(currentX-startX,currentY-startY)<1.0e-7)break;size_t next=sketch.entities.size();bool reverse=false;for(size_t j=0;j<sketch.entities.size();++j)if(!used[j]&&sketch.entities[j].type=="line"){const auto& candidate=sketch.entities[j];if(std::hypot(candidate.x1-currentX,candidate.y1-currentY)<1.0e-7){next=j;break;}if(std::hypot(candidate.x2-currentX,candidate.y2-currentY)<1.0e-7){next=j;reverse=true;break;}}if(next==sketch.entities.size())break;used[next]=true;loop.push_back(next);const auto& candidate=sketch.entities[next];currentX=reverse?candidate.x1:candidate.x2;currentY=reverse?candidate.y1:candidate.y2;}if(std::hypot(currentX-startX,currentY-startY)>=1.0e-7){error="Sketch line profile is open; connect all endpoints before creating a solid.";return false;}try{BRepBuilderAPI_MakeWire wire;for(const auto index:loop){const auto& line=sketch.entities[index];const auto p1=point(line.x1,line.y1),p2=point(line.x2,line.y2);wire.Add(BRepBuilderAPI_MakeEdge(p1,p2).Edge());}if(!wire.IsDone()){error="Unable to build sketch wire.";return false;}faces.push_back(BRepBuilderAPI_MakeFace(wire.Wire()).Face());}catch(const Standard_Failure&){error="Unable to build closed sketch profile.";return false;}}return true;}
-TopoDS_Shape CadDocument::extrudeSketch(const CadSketch& sketch,double depth,bool reverse,juce::String& error) const {std::vector<TopoDS_Face> faces;if(!sketchProfiles(sketch,faces,error))return{};if(depth<=0){error="Extrusion depth must be greater than zero.";return{};}gp_Vec vector;if(sketch.plane=="XZ")vector=gp_Vec(0,depth,0);else if(sketch.plane=="YZ")vector=gp_Vec(depth,0,0);else vector=gp_Vec(0,0,depth);if(reverse)vector.Reverse();TopoDS_Shape result;for(const auto& face:faces){const auto solid=BRepPrimAPI_MakePrism(face,vector).Shape();if(result.IsNull())result=solid;else result=BRepAlgoAPI_Fuse(result,solid).Shape();}return result;}
+bool CadDocument::validateSketch(const CadSketch& sketch,juce::String& error) const {if(sketch.entities.empty()){error="Sketch has no geometry.";return false;}CadSketch copy=sketch;if(!solveSketch(copy,error))return false;std::vector<TopoDS_Face> faces;if(!sketchProfiles(copy,originPlaneFrame(copy),faces,error))return false;if(faces.empty()){error="Sketch has no closed profile.";return false;}return true;}
 
-TopoDS_Shape CadDocument::place(const TopoDS_Shape& source,const CadFeature& f) const { gp_Trsf t;t.SetTranslation(gp_Vec(f.x,f.y,f.z));TopoDS_Shape result=BRepBuilderAPI_Transform(source,t,true).Shape();if(f.rx!=0){gp_Trsf r;r.SetRotation(gp_Ax1(gp_Pnt(f.x,f.y,f.z),gp::DX()),f.rx*M_PI/180.0);result=BRepBuilderAPI_Transform(result,r,true).Shape();}if(f.ry!=0){gp_Trsf r;r.SetRotation(gp_Ax1(gp_Pnt(f.x,f.y,f.z),gp::DY()),f.ry*M_PI/180.0);result=BRepBuilderAPI_Transform(result,r,true).Shape();}if(f.rz!=0){gp_Trsf r;r.SetRotation(gp_Ax1(gp_Pnt(f.x,f.y,f.z),gp::DZ()),f.rz*M_PI/180.0);result=BRepBuilderAPI_Transform(result,r,true).Shape();}return result; }
-TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,juce::StringArray& active) { if(active.contains(id)){error="Circular feature dependency detected at "+id;return{};}active.add(id);const auto* f=find(id);if(!f){error="Missing feature dependency: "+id;return{};}try{TopoDS_Shape result;if(f->type=="sketch")result={};else if(f->type=="box")result=BRepPrimAPI_MakeBox(f->width,f->depth,f->height).Shape();else if(f->type=="cylinder")result=BRepPrimAPI_MakeCylinder(f->radius,f->height).Shape();else if(f->type=="extrude"){const auto* sketch=findSketch(f->sketchId.isEmpty()?f->firstOperand:f->sketchId);if(sketch==nullptr){error="Extrusion references a missing sketch.";return{};}result=extrudeSketch(*sketch,f->depth,f->reverse,error);}else if(f->type=="cut"){const auto* sketch=findSketch(f->sketchId.isEmpty()?f->secondOperand:f->sketchId);if(sketch==nullptr){error="Cut references a missing sketch.";return{};}auto target=evaluate(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,error,active);if(target.IsNull())return{};const bool throughAll=f->throughAll||f->depth<=0;double cutDepth=throughAll?0.0:f->depth;if(throughAll){Bnd_Box bounds;BRepBndLib::Add(target,bounds);Standard_Real xmin,ymin,zmin,xmax,ymax,zmax;bounds.Get(xmin,ymin,zmin,xmax,ymax,zmax);cutDepth=std::sqrt((xmax-xmin)*(xmax-xmin)+(ymax-ymin)*(ymax-ymin)+(zmax-zmin)*(zmax-zmin))+2.0;}auto tool=extrudeSketch(*sketch,cutDepth,f->reverse,error);if(tool.IsNull())return{};BRepAlgoAPI_Cut operation(target,tool);operation.Build();if(!operation.IsDone()||operation.HasErrors()){error=f->name+": OCCT Boolean operation failed.";return{};}result=operation.Shape();collectBooleanHistory(operation,*f,target,tool,operationHistory);}else{auto a=evaluate(f->firstOperand,error,active);auto b=evaluate(f->secondOperand,error,active);if(a.IsNull()||b.IsNull())return{};if(f->type=="union"){BRepAlgoAPI_Fuse operation(a,b);operation.Build();if(!operation.IsDone()||operation.HasErrors()){error=f->name+": OCCT Boolean operation failed.";return{};}result=operation.Shape();collectBooleanHistory(operation,*f,a,b,operationHistory);}else if(f->type=="subtract"){BRepAlgoAPI_Cut operation(a,b);operation.Build();if(!operation.IsDone()||operation.HasErrors()){error=f->name+": OCCT Boolean operation failed.";return{};}result=operation.Shape();collectBooleanHistory(operation,*f,a,b,operationHistory);}else if(f->type=="intersect"){BRepAlgoAPI_Common operation(a,b);operation.Build();if(!operation.IsDone()||operation.HasErrors()){error=f->name+": OCCT Boolean operation failed.";return{};}result=operation.Shape();collectBooleanHistory(operation,*f,a,b,operationHistory);}else{error="Unsupported feature type: "+f->type;return{};}}active.removeString(id);return f->type=="sketch"?result:place(result,*f);}catch(const Standard_Failure& ex){error="OCCT failed evaluating "+f->name+": "+juce::String(ex.GetMessageString());return{};} }
-bool CadDocument::rebuild(juce::String& error) { operationHistory.clear(); for(auto& f:items){juce::StringArray active;f.shape=evaluate(f.id,error,active);if(f.type!="sketch"&&f.shape.IsNull())return false;}return true; }
+// Origin-plane sketches keep their historical axes and extrusion normal (XZ extrudes along +Y).
+CadSketchFrame CadDocument::originPlaneFrame(const CadSketch& sketch)
+{
+    CadSketchFrame f;
+    if (sketch.plane == "XZ") { f.origin = gp_Pnt(0, sketch.offset, 0); f.u = gp_Dir(1, 0, 0); f.v = gp_Dir(0, 0, 1); f.normal = gp_Dir(0, 1, 0); }
+    else if (sketch.plane == "YZ") { f.origin = gp_Pnt(sketch.offset, 0, 0); f.u = gp_Dir(0, 1, 0); f.v = gp_Dir(0, 0, 1); f.normal = gp_Dir(1, 0, 0); }
+    else { f.origin = gp_Pnt(0, 0, sketch.offset); f.u = gp_Dir(1, 0, 0); f.v = gp_Dir(0, 1, 0); f.normal = gp_Dir(0, 0, 1); }
+    return f;
+}
+
+bool CadDocument::sketchProfiles(const CadSketch& sketch,const CadSketchFrame& frame,std::vector<TopoDS_Face>& faces,juce::String& error,std::vector<std::pair<TopoDS_Shape,juce::String>>* edgeEntities) const
+{
+    const auto point=[&](double u,double v){return frame.origin.Translated(gp_Vec(frame.u)*u+gp_Vec(frame.v)*v);};
+    // Profile edges are named by the sketch entity they come from, so extruded side faces get stable names.
+    const auto nameEdges=[&](const TopoDS_Face& face)
+    {
+        if(edgeEntities==nullptr)return;
+        for(TopExp_Explorer ex(face,TopAbs_EDGE);ex.More();ex.Next())
+        {
+            BRepAdaptor_Curve curve(TopoDS::Edge(ex.Current()));
+            const auto mid=curve.Value(0.5*(curve.FirstParameter()+curve.LastParameter()));
+            for(const auto& entity:sketch.entities)
+            {
+                bool on=false;
+                if(entity.type=="circle")on=std::abs(mid.Distance(point(entity.x1,entity.y1))-entity.radius)<1.0e-6;
+                else{const auto a=point(entity.x1,entity.y1),b=point(entity.x2,entity.y2);const gp_Vec ab(a,b),am(a,mid);const auto t=juce::jlimit(0.0,1.0,ab.SquareMagnitude()>0?am.Dot(ab)/ab.SquareMagnitude():0.0);on=mid.Distance(a.Translated(ab*t))<1.0e-6;}
+                if(on){edgeEntities->push_back({ex.Current(),entity.id});break;}
+            }
+        }
+    };
+    std::vector<bool> used(sketch.entities.size(),false);
+    for(size_t i=0;i<sketch.entities.size();++i)
+    {
+        const auto& entity=sketch.entities[i];
+        if(entity.type=="circle")
+        {
+            try{const gp_Circ circle(gp_Ax2(point(entity.x1,entity.y1),frame.normal,frame.u),entity.radius);const auto edge=BRepBuilderAPI_MakeEdge(circle).Edge();const auto wire=BRepBuilderAPI_MakeWire(edge).Wire();faces.push_back(BRepBuilderAPI_MakeFace(wire).Face());nameEdges(faces.back());}
+            catch(const Standard_Failure&){error="Unable to build circle profile.";return false;}
+            continue;
+        }
+        if(entity.type!="line"||used[i])continue;
+        std::vector<size_t> loop;loop.push_back(i);used[i]=true;
+        double startX=entity.x1,startY=entity.y1,currentX=entity.x2,currentY=entity.y2;
+        for(size_t count=1;count<=sketch.entities.size();++count)
+        {
+            if(std::hypot(currentX-startX,currentY-startY)<1.0e-7)break;
+            size_t next=sketch.entities.size();bool reverse=false;
+            for(size_t j=0;j<sketch.entities.size();++j)if(!used[j]&&sketch.entities[j].type=="line"){const auto& candidate=sketch.entities[j];if(std::hypot(candidate.x1-currentX,candidate.y1-currentY)<1.0e-7){next=j;break;}if(std::hypot(candidate.x2-currentX,candidate.y2-currentY)<1.0e-7){next=j;reverse=true;break;}}
+            if(next==sketch.entities.size())break;
+            used[next]=true;loop.push_back(next);const auto& candidate=sketch.entities[next];currentX=reverse?candidate.x1:candidate.x2;currentY=reverse?candidate.y1:candidate.y2;
+        }
+        if(std::hypot(currentX-startX,currentY-startY)>=1.0e-7){error="Sketch line profile is open; connect all endpoints before creating a solid.";return false;}
+        try{BRepBuilderAPI_MakeWire wire;for(const auto index:loop){const auto& line=sketch.entities[index];wire.Add(BRepBuilderAPI_MakeEdge(point(line.x1,line.y1),point(line.x2,line.y2)).Edge());}if(!wire.IsDone()){error="Unable to build sketch wire.";return false;}faces.push_back(BRepBuilderAPI_MakeFace(wire.Wire()).Face());nameEdges(faces.back());}
+        catch(const Standard_Failure&){error="Unable to build closed sketch profile.";return false;}
+    }
+    return true;
+}
+
+TopoDS_Shape CadDocument::extrudeSketch(const CadSketch& sketch,const CadSketchFrame& frame,double depth,bool reverse,juce::String& error,CadFaceOrigins* origins,const juce::String& owner) const
+{
+    std::vector<TopoDS_Face> faces;std::vector<std::pair<TopoDS_Shape,juce::String>> edgeEntities;
+    if(!sketchProfiles(sketch,frame,faces,error,origins!=nullptr?&edgeEntities:nullptr))return{};
+    if(depth<=0){error="Extrusion depth must be greater than zero.";return{};}
+    gp_Vec vector=gp_Vec(frame.normal)*depth;if(reverse)vector.Reverse();
+    TopoDS_Shape result;CadFaceOrigins resultOrigins;
+    for(const auto& face:faces)
+    {
+        BRepPrimAPI_MakePrism prism(face,vector);const auto solid=prism.Shape();
+        CadFaceOrigins local;
+        if(origins!=nullptr)
+        {
+            addFaceOrigin(local,prism.FirstShape(),owner+"/start");addFaceOrigin(local,prism.LastShape(),owner+"/end");
+            for(TopExp_Explorer ex(face,TopAbs_EDGE);ex.More();ex.Next())
+                for(const auto& [edge,entityId]:edgeEntities)
+                    if(edge.IsSame(ex.Current()))
+                        for(TopTools_ListIteratorOfListOfShape it(prism.Generated(ex.Current()));it.More();it.Next())if(it.Value().ShapeType()==TopAbs_FACE)addFaceOrigin(local,it.Value(),owner+"/side:"+entityId);
+        }
+        if(result.IsNull()){result=solid;resultOrigins=local;continue;}
+        BRepAlgoAPI_Fuse fuse(result,solid);fuse.Build();if(!fuse.IsDone()){error="Unable to combine sketch profiles.";return{};}
+        const auto fused=fuse.Shape();
+        if(origins!=nullptr){CadFaceOrigins both=resultOrigins;for(const auto& o:local)addFaceOrigin(both,o.first,o.second);resultOrigins=mapFaceOrigins(fuse,both,fused);}
+        result=fused;
+    }
+    if(origins!=nullptr)*origins=resultOrigins;
+    return result;
+}
+
+gp_Trsf CadDocument::placement(const CadFeature& f) const
+{
+    gp_Trsf t;t.SetTranslation(gp_Vec(f.x,f.y,f.z));
+    const gp_Pnt p(f.x,f.y,f.z);
+    gp_Trsf rx,ry,rz;rx.SetRotation(gp_Ax1(p,gp::DX()),f.rx*M_PI/180.0);ry.SetRotation(gp_Ax1(p,gp::DY()),f.ry*M_PI/180.0);rz.SetRotation(gp_Ax1(p,gp::DZ()),f.rz*M_PI/180.0);
+    return rz.Multiplied(ry).Multiplied(rx).Multiplied(t);
+}
+
+TopoDS_Shape CadDocument::place(const TopoDS_Shape& source,const CadFeature& f,CadFaceOrigins* origins) const
+{
+    const auto apply=[&](const TopoDS_Shape& shape,const gp_Trsf& transform)
+    {
+        BRepBuilderAPI_Transform operation(shape,transform,true);const auto out=operation.Shape();
+        if(origins!=nullptr){CadFaceOrigins mapped;for(const auto& [face,tokens]:*origins){const auto image=operation.ModifiedShape(face);if(!image.IsNull())addFaceOrigin(mapped,image,tokens);}*origins=mapped;}
+        return out;
+    };
+    gp_Trsf t;t.SetTranslation(gp_Vec(f.x,f.y,f.z));TopoDS_Shape result=apply(source,t);
+    if(f.rx!=0){gp_Trsf r;r.SetRotation(gp_Ax1(gp_Pnt(f.x,f.y,f.z),gp::DX()),f.rx*M_PI/180.0);result=apply(result,r);}
+    if(f.ry!=0){gp_Trsf r;r.SetRotation(gp_Ax1(gp_Pnt(f.x,f.y,f.z),gp::DY()),f.ry*M_PI/180.0);result=apply(result,r);}
+    if(f.rz!=0){gp_Trsf r;r.SetRotation(gp_Ax1(gp_Pnt(f.x,f.y,f.z),gp::DZ()),f.rz*M_PI/180.0);result=apply(result,r);}
+    return result;
+}
+
+// Exactly one current face must carry the token; a missing, split or curved support is an error, never a guess.
+bool CadDocument::supportFace(const CadFeature& feature,const juce::String& token,TopoDS_Face& face,juce::String& error) const
+{
+    std::vector<TopoDS_Shape> matches;
+    for(const auto& [candidate,tokens]:feature.faceOrigins)if(tokens.contains(token))matches.push_back(candidate);
+    if(matches.empty()){error="face "+token+" of "+feature.name+" no longer exists";return false;}
+    if(matches.size()>1){error="face "+token+" of "+feature.name+" is now split into "+juce::String((int)matches.size())+" faces, so the attachment is ambiguous";return false;}
+    face=TopoDS::Face(matches.front());
+    if(BRepAdaptor_Surface(face,true).GetType()!=GeomAbs_Plane){error="face "+token+" of "+feature.name+" is not planar";return false;}
+    return true;
+}
+
+// The frame of a face sketch: outward face normal; U is the first axis of the face's generating feature (X, then
+// Y, then Z of its placed frame) that is not nearly normal to the face, projected into the plane; V = N x U;
+// origin is that feature's placement origin projected onto the plane. Parameter edits move the plane with the
+// face without flipping or sliding the in-plane axes.
+bool CadDocument::resolveSketchFrame(const CadSketch& sketch,CadSketchFrame& frame,juce::String& error,juce::StringArray& active)
+{
+    if(!sketch.onFace()){frame=originPlaneFrame(sketch);return true;}
+    const auto label=find(sketch.id)!=nullptr?find(sketch.id)->name:sketch.id;
+    const auto* support=find(sketch.supportFeature);
+    if(support==nullptr){error=label+" is attached to "+sketch.supportFeature+", which no longer exists. The attachment was not moved to another face.";return false;}
+    CadFeature evaluated=*support;juce::String inner;
+    evaluated.shape=evaluate(sketch.supportFeature,inner,active,&evaluated.faceOrigins);
+    if(evaluated.shape.IsNull()){error=inner.isNotEmpty()?inner:label+": its supporting body could not be evaluated.";return false;}
+    TopoDS_Face face;
+    if(!supportFace(evaluated,sketch.supportFace,face,inner)){error=label+": its support "+inner+". The attachment was not moved to another face; undo the change or reattach the sketch.";return false;}
+    const auto plane=BRepAdaptor_Surface(face,true).Plane();
+    gp_Dir normal=plane.Axis().Direction();if(face.Orientation()==TopAbs_REVERSED)normal.Reverse();
+    const auto* generator=find(sketch.supportFace.upToFirstOccurrenceOf("/",false,false));
+    const auto trsf=generator!=nullptr?placement(*generator):gp_Trsf();
+    gp_Dir u(1,0,0);bool found=false;
+    for(const auto& axis:{gp_Dir(1,0,0),gp_Dir(0,1,0),gp_Dir(0,0,1)})
+    {
+        const auto a=gp_Vec(axis.Transformed(trsf));
+        const auto projected=a-gp_Vec(normal)*a.Dot(gp_Vec(normal));
+        if(std::abs(a.Dot(gp_Vec(normal)))<0.9&&projected.Magnitude()>1.0e-9){u=gp_Dir(projected);found=true;break;}
+    }
+    if(!found){error=label+": no stable in-plane axis for its support face.";return false;}
+    const auto anchor=gp_Pnt(0,0,0).Transformed(trsf);
+    const auto distance=gp_Vec(plane.Location(),anchor).Dot(gp_Vec(normal));
+    frame.origin=anchor.Translated(gp_Vec(normal)*-distance);frame.normal=normal;frame.u=u;frame.v=normal.Crossed(u);
+    return true;
+}
+
+TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,juce::StringArray& active,CadFaceOrigins* origins)
+{
+    if(active.contains(id)){error="Circular feature dependency detected at "+id+(findSketch(id)!=nullptr?" (a sketch is attached to a face of a feature that uses it)":"");return{};}
+    active.add(id);
+    const auto* f=find(id);if(!f){error="Missing feature dependency: "+id;return{};}
+    CadFaceOrigins local;CadFaceOrigins* trace=origins!=nullptr?&local:nullptr;
+    const auto sketchFor=[&](const juce::String& sketchId,CadSketchFrame& frame)->const CadSketch*
+    {
+        const auto* sketch=findSketch(sketchId);if(sketch==nullptr)return nullptr;
+        if(!resolveSketchFrame(*sketch,frame,error,active))return nullptr;
+        sketchFrames[sketch->id]=frame;return sketch;
+    };
+    try
+    {
+        TopoDS_Shape result;
+        if(f->type=="sketch"){active.removeString(id);return{};}   // sketch frames are resolved by rebuild()
+        else if(f->type=="box")
+        {
+            BRepPrimAPI_MakeBox maker(f->width,f->depth,f->height);result=maker.Shape();
+            if(trace!=nullptr)for(TopExp_Explorer ex(result,TopAbs_FACE);ex.More();ex.Next()){const auto n=outwardNormal(TopoDS::Face(ex.Current()));const auto role=n.Z()>0.5?"top":n.Z()<-0.5?"bottom":n.X()>0.5?"right":n.X()<-0.5?"left":n.Y()>0.5?"back":"front";addFaceOrigin(local,ex.Current(),f->id+"/"+role);}
+        }
+        else if(f->type=="cylinder")
+        {
+            result=BRepPrimAPI_MakeCylinder(f->radius,f->height).Shape();
+            if(trace!=nullptr)for(TopExp_Explorer ex(result,TopAbs_FACE);ex.More();ex.Next()){const auto face=TopoDS::Face(ex.Current());const bool planar=BRepAdaptor_Surface(face,true).GetType()==GeomAbs_Plane;addFaceOrigin(local,face,f->id+"/"+(planar?(outwardNormal(face).Z()>0?"top":"bottom"):"side"));}
+        }
+        else if(f->type=="extrude")
+        {
+            CadSketchFrame frame;const auto* sketch=sketchFor(f->sketchId.isEmpty()?f->firstOperand:f->sketchId,frame);
+            if(sketch==nullptr){if(error.isEmpty())error="Extrusion references a missing sketch.";return{};}
+            result=extrudeSketch(*sketch,frame,f->depth,f->reverse,error,trace,f->id);
+        }
+        else if(f->type=="cut")
+        {
+            CadFaceOrigins targetOrigins,toolOrigins;
+            auto target=evaluate(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,error,active,trace!=nullptr?&targetOrigins:nullptr);if(target.IsNull())return{};
+            CadSketchFrame frame;const auto* sketch=sketchFor(f->sketchId.isEmpty()?f->secondOperand:f->sketchId,frame);
+            if(sketch==nullptr){if(error.isEmpty())error="Cut references a missing sketch.";return{};}
+            const bool throughAll=f->throughAll||f->depth<=0;double cutDepth=throughAll?0.0:f->depth;
+            if(throughAll){Bnd_Box bounds;BRepBndLib::Add(target,bounds);Standard_Real xmin,ymin,zmin,xmax,ymax,zmax;bounds.Get(xmin,ymin,zmin,xmax,ymax,zmax);cutDepth=std::sqrt((xmax-xmin)*(xmax-xmin)+(ymax-ymin)*(ymax-ymin)+(zmax-zmin)*(zmax-zmin))+2.0;}
+            // A sketch on a face cuts into its support (against the outward normal) unless reversed.
+            auto tool=extrudeSketch(*sketch,frame,cutDepth,f->reverse!=sketch->onFace(),error,trace!=nullptr?&toolOrigins:nullptr,f->id);if(tool.IsNull())return{};
+            BRepAlgoAPI_Cut operation(target,tool);operation.Build();
+            if(!operation.IsDone()||operation.HasErrors()){error=f->name+": OCCT Boolean operation failed.";return{};}
+            result=operation.Shape();collectBooleanHistory(operation,*f,target,tool,operationHistory);
+            if(trace!=nullptr){for(const auto& o:toolOrigins)addFaceOrigin(targetOrigins,o.first,o.second);local=mapFaceOrigins(operation,targetOrigins,result);}
+        }
+        else
+        {
+            CadFaceOrigins aOrigins,bOrigins;
+            auto a=evaluate(f->firstOperand,error,active,trace!=nullptr?&aOrigins:nullptr);auto b=evaluate(f->secondOperand,error,active,trace!=nullptr?&bOrigins:nullptr);
+            if(a.IsNull()||b.IsNull())return{};
+            for(const auto& o:bOrigins)addFaceOrigin(aOrigins,o.first,o.second);
+            const auto run=[&](auto& operation){operation.Build();if(!operation.IsDone()||operation.HasErrors()){error=f->name+": OCCT Boolean operation failed.";return false;}result=operation.Shape();collectBooleanHistory(operation,*f,a,b,operationHistory);if(trace!=nullptr)local=mapFaceOrigins(operation,aOrigins,result);return true;};
+            if(f->type=="union"){BRepAlgoAPI_Fuse operation(a,b);if(!run(operation))return{};}
+            else if(f->type=="subtract"){BRepAlgoAPI_Cut operation(a,b);if(!run(operation))return{};}
+            else if(f->type=="intersect"){BRepAlgoAPI_Common operation(a,b);if(!run(operation))return{};}
+            else{error="Unsupported feature type: "+f->type;return{};}
+        }
+        active.removeString(id);
+        const auto placed=place(result,*f,trace);
+        if(origins!=nullptr)*origins=local;
+        return placed;
+    }
+    catch(const Standard_Failure& ex){error="OCCT failed evaluating "+f->name+": "+juce::String(ex.GetMessageString());return{};}
+}
+
+// Every sketch frame is resolved on rebuild, so a sketch whose support face disappeared fails the edit even when
+// nothing consumes the sketch yet.
+bool CadDocument::rebuild(juce::String& error)
+{
+    operationHistory.clear(); sketchFrames.clear();
+    for(auto& f:items)
+    {
+        juce::StringArray active;f.faceOrigins.clear();
+        if(f.type=="sketch")
+        {
+            f.shape={};
+            if(const auto* sketch=findSketch(f.id)){CadSketchFrame frame;active.add(f.id);if(!resolveSketchFrame(*sketch,frame,error,active))return false;sketchFrames[sketch->id]=frame;}
+            continue;
+        }
+        f.shape=evaluate(f.id,error,active,&f.faceOrigins);
+        if(f.shape.IsNull())return false;
+    }
+    return true;
+}
+
+bool CadDocument::describeFace(const juce::String& featureId,int faceIndex,CadFaceInfo& info,juce::String& error) const
+{
+    const auto* f=find(featureId);
+    if(f==nullptr||f->shape.IsNull()){error="Unknown solid feature: "+featureId;return false;}
+    int index=-1;
+    for(TopExp_Explorer ex(f->shape,TopAbs_FACE);ex.More();ex.Next())
+    {
+        if(++index!=faceIndex)continue;
+        const auto face=TopoDS::Face(ex.Current());
+        info={};info.featureId=featureId;info.faceIndex=faceIndex;
+        BRepAdaptor_Surface surface(face,true);info.planar=surface.GetType()==GeomAbs_Plane;info.normal=outwardNormal(face);
+        GProp_GProps props;BRepGProp::SurfaceProperties(face,props);info.area=props.Mass();info.centre=props.CentreOfMass();
+        for(const auto& [candidate,tokens]:f->faceOrigins)if(candidate.IsSame(face)&&!tokens.isEmpty()){info.token=tokens[0];break;}
+        return true;
+    }
+    error="Face "+juce::String(faceIndex)+" does not exist on "+f->name+".";
+    return false;
+}
+
+bool CadDocument::listFaces(const juce::String& featureId,std::vector<CadFaceInfo>& faces,juce::String& error) const
+{
+    const auto* f=find(featureId);
+    if(f==nullptr||f->shape.IsNull()){error="Unknown solid feature: "+featureId;return false;}
+    int count=0;for(TopExp_Explorer ex(f->shape,TopAbs_FACE);ex.More();ex.Next())++count;
+    faces.clear();
+    for(int i=0;i<count;++i){CadFaceInfo info;if(describeFace(featureId,i,info,error))faces.push_back(info);}
+    return true;
+}
+
+bool CadDocument::describeEdge(const juce::String& featureId,int edgeIndex,juce::String& description,juce::String& error) const
+{
+    const auto* f=find(featureId);
+    if(f==nullptr||f->shape.IsNull()){error="Unknown solid feature: "+featureId;return false;}
+    TopTools_IndexedMapOfShape edges;TopExp::MapShapes(f->shape,TopAbs_EDGE,edges);
+    if(edgeIndex<0||edgeIndex>=edges.Extent()){error="Edge "+juce::String(edgeIndex)+" does not exist on "+f->name+".";return false;}
+    BRepAdaptor_Curve curve(TopoDS::Edge(edges(edgeIndex+1)));
+    GProp_GProps props;BRepGProp::LinearProperties(edges(edgeIndex+1),props);
+    const auto kind=curve.GetType()==GeomAbs_Line?"line":curve.GetType()==GeomAbs_Circle?"circle":"curve";
+    description=juce::String(kind)+" edge "+juce::String(edgeIndex)+", length "+juce::String(props.Mass(),3)+" mm";
+    if(curve.GetType()==GeomAbs_Circle)description<<", radius "<<juce::String(curve.Circle().Radius(),3)<<" mm";
+    return true;
+}
+
+bool CadDocument::sketchFrame(const juce::String& sketchId,CadSketchFrame& frame) const
+{
+    const auto found=sketchFrames.find(sketchId);
+    if(found==sketchFrames.end())return false;
+    frame=found->second;return true;
+}
+
+bool CadDocument::createFaceSketch(const juce::String& featureId,const juce::String& faceToken,juce::String& id,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        const auto* f=find(featureId);
+        if(f==nullptr||f->shape.IsNull()||f->type=="sketch"){e="Choose a solid body for the sketch support.";return false;}
+        if(faceToken.isEmpty()){e="This face has no persistent name, so a sketch cannot be attached to it.";return false;}
+        TopoDS_Face face;juce::String reason;
+        if(!supportFace(*f,faceToken,face,reason)){e="Cannot attach a sketch: "+reason+".";return false;}
+        CadSketch sketch;sketch.id=newId("sketch",nextNumber++);sketch.plane="FACE";sketch.supportFeature=featureId;sketch.supportFace=faceToken;
+        sketches.push_back(sketch);
+        CadFeature feature;feature.id=sketch.id;feature.name="Sketch "+juce::String(nextNumber-1);feature.type="sketch";feature.sketchId=sketch.id;feature.visible=true;
+        items.push_back(feature);id=feature.id;return true;
+    },error);
+}
 
 std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
 {
@@ -498,8 +838,10 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
         if (f.visible && !f.shape.IsNull())
         {
             BRepMesh_IncrementalMesh mesh(f.shape, 0.1, false, 0.5, true);
+            int faceIndex = -1;
             for (TopExp_Explorer ex(f.shape, TopAbs_FACE); ex.More(); ex.Next())
             {
+                ++faceIndex;
                 const auto face = TopoDS::Face(ex.Current());
                 TopLoc_Location triangulationLocation, surfaceLocation;
                 const auto tri = BRep_Tool::Triangulation(face, triangulationLocation);
@@ -508,6 +850,7 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
 
                 CadMesh out;
                 out.featureId = f.id;
+                out.faceIndex = faceIndex;
                 std::vector<gp_Pnt> points;
                 std::vector<gp_Dir> normals;
                 std::vector<bool> normalValid;
@@ -571,19 +914,65 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
                 }
                 next->meshes.push_back(std::move(out));
             }
+            // Model edges in the feature's unique-edge order (the same order describeEdge uses).
+            TopTools_IndexedMapOfShape edges; TopExp::MapShapes(f.shape, TopAbs_EDGE, edges);
+            for (int e = 1; e <= edges.Extent(); ++e)
+            {
+                CadPolyline line; line.featureId = f.id; line.edgeIndex = e - 1;
+                try
+                {
+                    BRepAdaptor_Curve curve(TopoDS::Edge(edges(e)));
+                    GCPnts_QuasiUniformDeflection sampler(curve, 0.05);
+                    if (!sampler.IsDone()) continue;
+                    for (int i = 1; i <= sampler.NbPoints(); ++i) { const auto q = sampler.Value(i); line.points.insert(line.points.end(), { (float) q.X(), (float) q.Y(), (float) q.Z() }); }
+                }
+                catch (const Standard_Failure&) { continue; }
+                if (line.points.size() >= 6) next->edges.push_back(std::move(line));
+            }
         }
+    // Visible sketches in their resolved plane, so a face attachment can be seen in the model.
+    for (const auto& f : items)
+    {
+        if (f.type != "sketch" || !f.visible) continue;
+        const auto* sketch = findSketch(f.id); const auto frame = sketchFrames.find(f.id);
+        if (sketch == nullptr || frame == sketchFrames.end()) continue;
+        const auto& fr = frame->second;
+        const auto at = [&](double u, double v) { return fr.origin.Translated(gp_Vec(fr.u) * u + gp_Vec(fr.v) * v); };
+        CadPolyline outline; outline.featureId = f.id;
+        const auto segment = [&](const gp_Pnt& a, const gp_Pnt& b) { outline.points.insert(outline.points.end(), { (float) a.X(), (float) a.Y(), (float) a.Z(), (float) b.X(), (float) b.Y(), (float) b.Z() }); };
+        for (const auto& entity : sketch->entities)
+        {
+            if (entity.type == "circle") for (int k = 0; k < 48; ++k) { const auto a0 = k * 2.0 * M_PI / 48.0, a1 = (k + 1) * 2.0 * M_PI / 48.0; segment(at(entity.x1 + entity.radius * std::cos(a0), entity.y1 + entity.radius * std::sin(a0)), at(entity.x1 + entity.radius * std::cos(a1), entity.y1 + entity.radius * std::sin(a1))); }
+            else segment(at(entity.x1, entity.y1), at(entity.x2, entity.y2));
+        }
+        if (sketch->onFace())   // small U/V axis marks at the sketch origin
+        { const auto size = 6.0; segment(fr.origin, at(size, 0)); segment(fr.origin, at(0, size)); }
+        if (!outline.points.empty()) next->sketchOutlines.push_back(std::move(outline));
+    }
     cachedSnapshot = next;
     cachedRevision = documentRevision;
     return cachedSnapshot;
 }
 
-juce::String CadDocument::serializeSketches() const {juce::Array<juce::var> list;for(const auto& sketch:sketches){auto object=std::make_unique<juce::DynamicObject>();object->setProperty("id",sketch.id);object->setProperty("plane",sketch.plane);object->setProperty("offset",sketch.offset);juce::Array<juce::var> entities;for(const auto& entity:sketch.entities){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",entity.id);value->setProperty("type",entity.type);value->setProperty("groupId",entity.groupId);value->setProperty("x1",entity.x1);value->setProperty("y1",entity.y1);value->setProperty("x2",entity.x2);value->setProperty("y2",entity.y2);value->setProperty("radius",entity.radius);entities.add(juce::var(value.release()));}object->setProperty("entities",juce::var(entities));juce::Array<juce::var> constraints;for(const auto& constraint:sketch.constraints){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",constraint.id);value->setProperty("type",constraint.type);value->setProperty("firstEntity",constraint.firstEntity);value->setProperty("secondEntity",constraint.secondEntity);value->setProperty("value",constraint.value);constraints.add(juce::var(value.release()));}object->setProperty("constraints",juce::var(constraints));list.add(juce::var(object.release()));}return juce::JSON::toString(juce::var(list));}
-bool CadDocument::deserializeSketches(const juce::String& json,juce::String& error) {const auto parsed=juce::JSON::parse(json);auto* list=parsed.getArray();if(!list){error="Stored sketch data is invalid.";return false;}std::vector<CadSketch> loaded;for(const auto& value:*list){auto* object=value.getDynamicObject();if(!object){error="Stored sketch entry is invalid.";return false;}CadSketch sketch;sketch.id=object->getProperty("id").toString();sketch.plane=object->getProperty("plane").toString();sketch.offset=number(object->getProperty("offset"),0);if(auto* entities=object->getProperty("entities").getArray())for(const auto& entityValue:*entities){auto* entityObject=entityValue.getDynamicObject();if(!entityObject)continue;CadSketchEntity entity;entity.id=entityObject->getProperty("id").toString();entity.type=entityObject->getProperty("type").toString();entity.groupId=entityObject->getProperty("groupId").toString();entity.x1=number(entityObject->getProperty("x1"),0);entity.y1=number(entityObject->getProperty("y1"),0);entity.x2=number(entityObject->getProperty("x2"),0);entity.y2=number(entityObject->getProperty("y2"),0);entity.radius=number(entityObject->getProperty("radius"),1);sketch.entities.push_back(entity);}if(auto* constraints=object->getProperty("constraints").getArray())for(const auto& constraintValue:*constraints){auto* constraintObject=constraintValue.getDynamicObject();if(!constraintObject)continue;CadSketchConstraint constraint;constraint.id=constraintObject->getProperty("id").toString();constraint.type=constraintObject->getProperty("type").toString();constraint.firstEntity=constraintObject->getProperty("firstEntity").toString();constraint.secondEntity=constraintObject->getProperty("secondEntity").toString();constraint.value=number(constraintObject->getProperty("value"),0);sketch.constraints.push_back(constraint);}loaded.push_back(std::move(sketch));}sketches=std::move(loaded);return true;}
+juce::String CadDocument::serializeSketches() const {juce::Array<juce::var> list;for(const auto& sketch:sketches){auto object=std::make_unique<juce::DynamicObject>();object->setProperty("id",sketch.id);object->setProperty("plane",sketch.plane);object->setProperty("offset",sketch.offset);if(sketch.onFace()){object->setProperty("supportFeature",sketch.supportFeature);object->setProperty("supportFace",sketch.supportFace);}juce::Array<juce::var> entities;for(const auto& entity:sketch.entities){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",entity.id);value->setProperty("type",entity.type);value->setProperty("groupId",entity.groupId);value->setProperty("x1",entity.x1);value->setProperty("y1",entity.y1);value->setProperty("x2",entity.x2);value->setProperty("y2",entity.y2);value->setProperty("radius",entity.radius);entities.add(juce::var(value.release()));}object->setProperty("entities",juce::var(entities));juce::Array<juce::var> constraints;for(const auto& constraint:sketch.constraints){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",constraint.id);value->setProperty("type",constraint.type);value->setProperty("firstEntity",constraint.firstEntity);value->setProperty("secondEntity",constraint.secondEntity);value->setProperty("value",constraint.value);constraints.add(juce::var(value.release()));}object->setProperty("constraints",juce::var(constraints));list.add(juce::var(object.release()));}return juce::JSON::toString(juce::var(list));}
+bool CadDocument::deserializeSketches(const juce::String& json,juce::String& error) {const auto parsed=juce::JSON::parse(json);auto* list=parsed.getArray();if(!list){error="Stored sketch data is invalid.";return false;}std::vector<CadSketch> loaded;for(const auto& value:*list){auto* object=value.getDynamicObject();if(!object){error="Stored sketch entry is invalid.";return false;}CadSketch sketch;sketch.id=object->getProperty("id").toString();sketch.plane=object->getProperty("plane").toString();sketch.offset=number(object->getProperty("offset"),0);sketch.supportFeature=object->getProperty("supportFeature").toString();sketch.supportFace=object->getProperty("supportFace").toString();if(sketch.onFace())sketch.plane="FACE";if(auto* entities=object->getProperty("entities").getArray())for(const auto& entityValue:*entities){auto* entityObject=entityValue.getDynamicObject();if(!entityObject)continue;CadSketchEntity entity;entity.id=entityObject->getProperty("id").toString();entity.type=entityObject->getProperty("type").toString();entity.groupId=entityObject->getProperty("groupId").toString();entity.x1=number(entityObject->getProperty("x1"),0);entity.y1=number(entityObject->getProperty("y1"),0);entity.x2=number(entityObject->getProperty("x2"),0);entity.y2=number(entityObject->getProperty("y2"),0);entity.radius=number(entityObject->getProperty("radius"),1);sketch.entities.push_back(entity);}if(auto* constraints=object->getProperty("constraints").getArray())for(const auto& constraintValue:*constraints){auto* constraintObject=constraintValue.getDynamicObject();if(!constraintObject)continue;CadSketchConstraint constraint;constraint.id=constraintObject->getProperty("id").toString();constraint.type=constraintObject->getProperty("type").toString();constraint.firstEntity=constraintObject->getProperty("firstEntity").toString();constraint.secondEntity=constraintObject->getProperty("secondEntity").toString();constraint.value=number(constraintObject->getProperty("value"),0);sketch.constraints.push_back(constraint);}loaded.push_back(std::move(sketch));}sketches=std::move(loaded);return true;}
 
-bool CadDocument::syncOCAFFromItems(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();writeInteger(root.FindChild(kMetaTag,true),1,nextNumber);const auto features=root.FindChild(kFeatureContainerTag,true);for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)!=0){const auto oldId=readString(label,2);bool stillPresent=false;for(const auto& f:items)if(f.id==oldId){stillPresent=true;break;}if(!stillPresent)recordDeleted(label);}writeInteger(label,1,0);}for(const auto& f:items){if(f.shape.IsNull()&&f.type!="sketch"){error="Cannot record a null shape for feature: "+f.id;return false;}const auto label=features.FindChild(kFeatureTagBase+featureNumber(f.id),true);writeInteger(label,1,1);writeString(label,2,f.id);writeString(label,3,f.name);writeString(label,4,f.type);writeString(label,5,f.firstOperand);writeString(label,6,f.secondOperand);writeString(label,7,f.sketchId);writeString(label,8,f.targetFeatureId);writeReal(label,10,f.width);writeReal(label,11,f.depth);writeReal(label,12,f.height);writeReal(label,13,f.radius);writeReal(label,14,f.x);writeReal(label,15,f.y);writeReal(label,16,f.z);writeReal(label,17,f.rx);writeReal(label,18,f.ry);writeReal(label,19,f.rz);writeInteger(label,20,f.visible?1:0);writeInteger(label,21,f.reverse?1:0);writeInteger(label,22,f.throughAll?1:0);recordGeneratedOrModified(label,f.shape);}for(const auto& entry:operationHistory){for(TDF_ChildIterator it(features);it.More();it.Next())if(readString(it.Value(),2)==entry.featureId){recordOperationHistory(it.Value(),entry);break;}}const auto refs=root.FindChild(kReferenceContainerTag,true);for(TDF_ChildIterator it(refs);it.More();it.Next())writeInteger(it.Value(),1,0);for(size_t i=0;i<references.size();++i){const auto label=refs.FindChild((int)i+1,true);writeInteger(label,1,1);writeString(label,2,references[i].ownerFeatureId);writeString(label,3,references[i].topologyKind);writeString(label,4,references[i].semanticRole);const auto* owner=find(references[i].ownerFeatureId);if(owner==nullptr)continue;if(references[i].topologyKind=="edge"&&references[i].semanticRole=="box-bottom-x-edge"){TopoDS_Shape edge;if(!representativeBoxEdge(*owner,edge)){error="The supported persistent reference could not be mapped to current document geometry.";return false;}recordGeneratedOrModifiedAt(label.FindChild(kReferenceShapeTag,true).FindChild(kShapeTag,true),edge);}}return true; }
-bool CadDocument::syncItemsFromOCAF(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();const auto meta=root.FindChild(kMetaTag,false);const auto features=root.FindChild(kFeatureContainerTag,false);if(features.IsNull()){error="Native CAD document has no feature container.";return false;}nextNumber=readInteger(meta,1,1);items.clear();bool allShapesNamed=true;for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)==0)continue;CadFeature f;f.id=readString(label,2);f.name=readString(label,3);f.type=readString(label,4);f.firstOperand=readString(label,5);f.secondOperand=readString(label,6);f.sketchId=readString(label,7);f.targetFeatureId=readString(label,8);f.width=readReal(label,10,f.width);f.depth=readReal(label,11,f.depth);f.height=readReal(label,12,f.height);f.radius=readReal(label,13,f.radius);f.x=readReal(label,14,0);f.y=readReal(label,15,0);f.z=readReal(label,16,0);f.rx=readReal(label,17,0);f.ry=readReal(label,18,0);f.rz=readReal(label,19,0);f.visible=readInteger(label,20,1)!=0;f.reverse=readInteger(label,21,0)!=0;f.throughAll=readInteger(label,22,0)!=0;if(f.id.isEmpty()||f.type.isEmpty()){error="Native CAD document contains an invalid feature.";return false;}const auto stored=namedShape(label.FindChild(kShapeTag,false));if((stored.IsNull()||stored->IsEmpty())&&f.type!="sketch"){allShapesNamed=false;}else if(!stored.IsNull()&&!stored->IsEmpty())f.shape=TNaming_Tool::CurrentShape(stored);items.push_back(std::move(f));}references.clear();const auto refs=root.FindChild(kReferenceContainerTag,false);if(!refs.IsNull())for(TDF_ChildIterator it(refs);it.More();it.Next())if(readInteger(it.Value(),1,0)!=0)references.push_back({readString(it.Value(),2),readString(it.Value(),3),readString(it.Value(),4)});if(allShapesNamed)return true;return rebuild(error); }
+bool CadDocument::syncOCAFFromItems(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();writeInteger(root.FindChild(kMetaTag,true),1,nextNumber);const auto features=root.FindChild(kFeatureContainerTag,true);for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)!=0){const auto oldId=readString(label,2);bool stillPresent=false;for(const auto& f:items)if(f.id==oldId){stillPresent=true;break;}if(!stillPresent)recordDeleted(label);}writeInteger(label,1,0);}for(const auto& f:items){if(f.shape.IsNull()&&f.type!="sketch"){error="Cannot record a null shape for feature: "+f.id;return false;}const auto label=features.FindChild(kFeatureTagBase+featureNumber(f.id),true);writeInteger(label,1,1);writeString(label,2,f.id);writeString(label,3,f.name);writeString(label,4,f.type);writeString(label,5,f.firstOperand);writeString(label,6,f.secondOperand);writeString(label,7,f.sketchId);writeString(label,8,f.targetFeatureId);writeReal(label,10,f.width);writeReal(label,11,f.depth);writeReal(label,12,f.height);writeReal(label,13,f.radius);writeReal(label,14,f.x);writeReal(label,15,f.y);writeReal(label,16,f.z);writeReal(label,17,f.rx);writeReal(label,18,f.ry);writeReal(label,19,f.rz);writeInteger(label,20,f.visible?1:0);writeInteger(label,21,f.reverse?1:0);writeInteger(label,22,f.throughAll?1:0);recordGeneratedOrModified(label,f.shape);}for(const auto& entry:operationHistory){for(TDF_ChildIterator it(features);it.More();it.Next())if(readString(it.Value(),2)==entry.featureId){recordOperationHistory(it.Value(),entry);break;}}const auto refs=root.FindChild(kReferenceContainerTag,true);for(TDF_ChildIterator it(refs);it.More();it.Next())writeInteger(it.Value(),1,0);for(size_t i=0;i<references.size();++i){const auto label=refs.FindChild((int)i+1,true);writeInteger(label,1,1);writeString(label,2,references[i].ownerFeatureId);writeString(label,3,references[i].topologyKind);writeString(label,4,references[i].semanticRole);const auto* owner=find(references[i].ownerFeatureId);if(owner==nullptr)continue;if(references[i].topologyKind=="edge"&&references[i].semanticRole=="box-bottom-x-edge"){TopoDS_Shape edge;if(!representativeBoxEdge(*owner,edge)){error="The supported persistent reference could not be mapped to current document geometry.";return false;}recordGeneratedOrModifiedAt(label.FindChild(kReferenceShapeTag,true).FindChild(kShapeTag,true),edge);}}
+    // Face supports of sketches: one label per sketch holds the support feature, the face token and the current
+    // face as a TNaming named shape (modified across rebuilds), so the attachment is real document topology.
+    for(const auto& sketch:sketches)
+    {
+        if(!sketch.onFace())continue;
+        const auto label=refs.FindChild(kFaceReferenceTagBase+featureNumber(sketch.id),true);
+        writeInteger(label,1,1);writeString(label,2,sketch.supportFeature);writeString(label,3,"face");writeString(label,4,sketch.supportFace);writeString(label,5,sketch.id);
+        const auto* owner=find(sketch.supportFeature);TopoDS_Face face;juce::String reason;
+        if(owner==nullptr||!supportFace(*owner,sketch.supportFace,face,reason)){error="The support of "+sketch.id+" could not be mapped to current geometry: "+reason+".";return false;}
+        recordGeneratedOrModifiedAt(label.FindChild(kReferenceShapeTag,true).FindChild(kShapeTag,true),face);
+    }
+    return true; }
+bool CadDocument::syncItemsFromOCAF(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();const auto meta=root.FindChild(kMetaTag,false);const auto features=root.FindChild(kFeatureContainerTag,false);if(features.IsNull()){error="Native CAD document has no feature container.";return false;}nextNumber=readInteger(meta,1,1);items.clear();bool allShapesNamed=true;for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)==0)continue;CadFeature f;f.id=readString(label,2);f.name=readString(label,3);f.type=readString(label,4);f.firstOperand=readString(label,5);f.secondOperand=readString(label,6);f.sketchId=readString(label,7);f.targetFeatureId=readString(label,8);f.width=readReal(label,10,f.width);f.depth=readReal(label,11,f.depth);f.height=readReal(label,12,f.height);f.radius=readReal(label,13,f.radius);f.x=readReal(label,14,0);f.y=readReal(label,15,0);f.z=readReal(label,16,0);f.rx=readReal(label,17,0);f.ry=readReal(label,18,0);f.rz=readReal(label,19,0);f.visible=readInteger(label,20,1)!=0;f.reverse=readInteger(label,21,0)!=0;f.throughAll=readInteger(label,22,0)!=0;if(f.id.isEmpty()||f.type.isEmpty()){error="Native CAD document contains an invalid feature.";return false;}const auto stored=namedShape(label.FindChild(kShapeTag,false));if((stored.IsNull()||stored->IsEmpty())&&f.type!="sketch"){allShapesNamed=false;}else if(!stored.IsNull()&&!stored->IsEmpty())f.shape=TNaming_Tool::CurrentShape(stored);items.push_back(std::move(f));}references.clear();const auto refs=root.FindChild(kReferenceContainerTag,false);if(!refs.IsNull())for(TDF_ChildIterator it(refs);it.More();it.Next())if(readInteger(it.Value(),1,0)!=0&&readString(it.Value(),3)!="face")references.push_back({readString(it.Value(),2),readString(it.Value(),3),readString(it.Value(),4)});juce::ignoreUnused(allShapesNamed);return rebuild(error); }   // rebuild derives face names and sketch frames
 
-juce::String CadDocument::serialize() const { auto root=std::make_unique<juce::DynamicObject>();root->setProperty("formatVersion",5);root->setProperty("units","mm");root->setProperty("nextNumber",nextNumber);juce::Array<juce::var> list;for(const auto& f:items){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("id",f.id);o->setProperty("name",f.name);o->setProperty("type",f.type);o->setProperty("firstOperand",f.firstOperand);o->setProperty("secondOperand",f.secondOperand);o->setProperty("sketchId",f.sketchId);o->setProperty("targetFeatureId",f.targetFeatureId);o->setProperty("width",f.width);o->setProperty("depth",f.depth);o->setProperty("height",f.height);o->setProperty("radius",f.radius);o->setProperty("reverse",f.reverse);o->setProperty("throughAll",f.throughAll);o->setProperty("x",f.x);o->setProperty("y",f.y);o->setProperty("z",f.z);o->setProperty("rx",f.rx);o->setProperty("ry",f.ry);o->setProperty("rz",f.rz);o->setProperty("visible",f.visible);list.add(juce::var(o.release()));}root->setProperty("features",juce::var(list));juce::Array<juce::var> refs;for(const auto& r:references){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("ownerFeatureId",r.ownerFeatureId);o->setProperty("topologyKind",r.topologyKind);o->setProperty("semanticRole",r.semanticRole);refs.add(juce::var(o.release()));}root->setProperty("references",juce::var(refs));root->setProperty("sketches",juce::JSON::parse(serializeSketches()));root->setProperty("mechanics",mech::toJson(mechanics));return juce::JSON::toString(juce::var(root.release())); }
+juce::String CadDocument::serialize() const { auto root=std::make_unique<juce::DynamicObject>();root->setProperty("formatVersion",6);root->setProperty("units","mm");root->setProperty("nextNumber",nextNumber);juce::Array<juce::var> list;for(const auto& f:items){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("id",f.id);o->setProperty("name",f.name);o->setProperty("type",f.type);o->setProperty("firstOperand",f.firstOperand);o->setProperty("secondOperand",f.secondOperand);o->setProperty("sketchId",f.sketchId);o->setProperty("targetFeatureId",f.targetFeatureId);o->setProperty("width",f.width);o->setProperty("depth",f.depth);o->setProperty("height",f.height);o->setProperty("radius",f.radius);o->setProperty("reverse",f.reverse);o->setProperty("throughAll",f.throughAll);o->setProperty("x",f.x);o->setProperty("y",f.y);o->setProperty("z",f.z);o->setProperty("rx",f.rx);o->setProperty("ry",f.ry);o->setProperty("rz",f.rz);o->setProperty("visible",f.visible);list.add(juce::var(o.release()));}root->setProperty("features",juce::var(list));juce::Array<juce::var> refs;for(const auto& r:references){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("ownerFeatureId",r.ownerFeatureId);o->setProperty("topologyKind",r.topologyKind);o->setProperty("semanticRole",r.semanticRole);refs.add(juce::var(o.release()));}root->setProperty("references",juce::var(refs));root->setProperty("sketches",juce::JSON::parse(serializeSketches()));root->setProperty("mechanics",mech::toJson(mechanics));return juce::JSON::toString(juce::var(root.release())); }
 bool CadDocument::deserialize(const juce::String& json,juce::String& error) { const auto parsed=juce::JSON::parse(json);auto* root=parsed.getDynamicObject();if(!root){error="CAD document is not valid JSON.";return false;}if(root->getProperty("units").toString()!="mm"){error="Only millimeter CAD documents are supported.";return false;}std::vector<CadFeature> loaded;if(auto* array=root->getProperty("features").getArray())for(const auto& value:*array){auto* o=value.getDynamicObject();if(!o){error="CAD feature entry is invalid.";return false;}CadFeature f;f.id=o->getProperty("id").toString();f.name=o->getProperty("name").toString();f.type=o->getProperty("type").toString();f.firstOperand=o->getProperty("firstOperand").toString();f.secondOperand=o->getProperty("secondOperand").toString();f.sketchId=o->getProperty("sketchId").toString();f.targetFeatureId=o->getProperty("targetFeatureId").toString();f.width=number(o->getProperty("width"),f.width);f.depth=number(o->getProperty("depth"),f.depth);f.height=number(o->getProperty("height"),f.height);f.radius=number(o->getProperty("radius"),f.radius);f.reverse=static_cast<bool>(o->getProperty("reverse"));f.throughAll=static_cast<bool>(o->getProperty("throughAll"));f.x=number(o->getProperty("x"),0);f.y=number(o->getProperty("y"),0);f.z=number(o->getProperty("z"),0);f.rx=number(o->getProperty("rx"),0);f.ry=number(o->getProperty("ry"),0);f.rz=number(o->getProperty("rz"),0);f.visible=static_cast<bool>(o->getProperty("visible"));loaded.push_back(std::move(f));}const auto old=items;const auto oldSketches=sketches;const auto oldMechanicsJson=mechanics;const auto oldRefs=references;const auto oldNext=nextNumber;items=std::move(loaded);references.clear();nextNumber=(int)root->getProperty("nextNumber");if(nextNumber<1)nextNumber=(int)items.size()+1;if(auto* array=root->getProperty("references").getArray())for(const auto& value:*array)if(auto* o=value.getDynamicObject())references.push_back({o->getProperty("ownerFeatureId").toString(),o->getProperty("topologyKind").toString(),o->getProperty("semanticRole").toString()});if(root->hasProperty("mechanics")&&!mech::fromJson(root->getProperty("mechanics"),mechanics,error)){items=old;sketches=oldSketches;mechanics=oldMechanicsJson;references=oldRefs;nextNumber=oldNext;return false;}if(!root->hasProperty("mechanics")){mechanics={};mechanics.modelId=juce::Uuid().toDashedString();}if(root->hasProperty("sketches")&&!deserializeSketches(juce::JSON::toString(root->getProperty("sketches")),error)){mechanics=oldMechanicsJson;items=old;sketches=oldSketches;references=oldRefs;nextNumber=oldNext;return false;}if(!rebuild(error)||!syncOCAFFromItems(error)){items=old;sketches=oldSketches;mechanics=oldMechanicsJson;references=oldRefs;nextNumber=oldNext;rebuild(error);return false;}writeString(ocafDocument->Main().FindChild(kSketchContainerTag,true),1,serializeSketches());writeString(ocafDocument->Main().FindChild(kMechanicsContainerTag,true),1,juce::JSON::toString(mech::toJson(mechanics),true));return true; }
 bool CadDocument::saveNative(const juce::File& file,juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto encoded=juce::File(file.getFullPathName()+".cbf");encoded.deleteFile();const auto status=ocafApplication->SaveAs(ocafDocument,pathString(encoded));if(status!=PCDM_SS_OK||!encoded.existsAsFile()){error="Unable to write native CAD document: "+file.getFullPathName();return false;}file.deleteFile();if(!encoded.moveFileTo(file)){encoded.deleteFile();error="Unable to finalize native CAD document: "+file.getFullPathName();return false;}return true; }
 // The file is staged under a unique name: a document saved in this session stays registered with OCAF under its
@@ -598,6 +987,22 @@ bool CadDocument::redo(juce::String& error) { if(!ocafDocument->Redo()){error="N
 bool CadDocument::makeRepresentativeReference(const juce::String& featureId,CadPersistentReference& reference,juce::String& error) { const auto* f=find(featureId);if(f==nullptr||f->type!="box"){error="Representative persistent reference currently supports box edges only.";return false;}reference={featureId,"edge","box-bottom-x-edge"};ocafDocument->NewCommand();references.push_back(reference);if(!syncOCAFFromItems(error)){references.pop_back();ocafDocument->AbortCommand();return false;}ocafDocument->CommitCommand();dirty=true;invalidate();return true; }
 bool CadDocument::resolveReference(const CadPersistentReference& reference,juce::String& error) const { const auto* f=find(reference.ownerFeatureId);if(f==nullptr){error="Persistent reference owner is missing.";return false;}if(reference.topologyKind!="edge"||reference.semanticRole!="box-bottom-x-edge"||f->type!="box"){error="Persistent reference role is unsupported or ambiguous.";return false;}const auto refs=ocafDocument->Main().FindChild(kReferenceContainerTag,false);if(refs.IsNull()){error="Persistent reference container is missing.";return false;}for(TDF_ChildIterator it(refs);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)==0||readString(label,2)!=reference.ownerFeatureId||readString(label,3)!=reference.topologyKind||readString(label,4)!=reference.semanticRole)continue;const auto shapeLabel=label.FindChild(kReferenceShapeTag,false).FindChild(kShapeTag,false);const auto stored=namedShape(shapeLabel);if(stored.IsNull()||stored->IsEmpty()){error="Persistent reference has no named topology in the current document.";return false;}const auto edge=TNaming_Tool::CurrentShape(stored);if(edge.IsNull()||edge.ShapeType()!=TopAbs_EDGE){error="Persistent reference resolved to deleted or ambiguous topology.";return false;}for(TopExp_Explorer ex(f->shape,TopAbs_EDGE);ex.More();ex.Next())if(ex.Current().IsSame(edge))return true;error="Persistent reference topology is not present in the current owner shape.";return false;}error="Persistent reference role is not present in the document.";return false; }
 bool CadCommandService::newDocument(){model.clear();return true;}
+bool CadCommandService::listFacesJson(const juce::String& featureId,juce::String& json,juce::String& error) const
+{
+    std::vector<CadFaceInfo> faces;
+    if(!model.listFaces(featureId,faces,error))return false;
+    juce::Array<juce::var> list;
+    for(const auto& face:faces)
+    {
+        auto o=std::make_unique<juce::DynamicObject>();
+        o->setProperty("index",face.faceIndex);o->setProperty("name",face.token);o->setProperty("planar",face.planar);o->setProperty("canSupportSketch",face.planar&&face.token.isNotEmpty());
+        o->setProperty("normal",juce::Array<juce::var>{face.normal.X(),face.normal.Y(),face.normal.Z()});
+        o->setProperty("centre",juce::Array<juce::var>{face.centre.X(),face.centre.Y(),face.centre.Z()});o->setProperty("areaMm2",face.area);
+        list.add(juce::var(o.release()));
+    }
+    json=juce::JSON::toString(juce::var(list));
+    return true;
+}
 bool CadCommandService::createBox(double w,double d,double h,juce::String& id,juce::String& error){return model.createBox(w,d,h,id,error);}
 bool CadCommandService::createCylinder(double r,double h,juce::String& id,juce::String& error){return model.createCylinder(r,h,id,error);}
 bool CadCommandService::setPlacement(const juce::String& id,double x,double y,double z,double rx,double ry,double rz,juce::String& error){return model.setPlacement(id,x,y,z,rx,ry,rz,error);}

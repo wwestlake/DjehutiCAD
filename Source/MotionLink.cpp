@@ -409,8 +409,22 @@ void MotionLink::handleAsyncUpdate()
         notify = statusDirty; statusDirty = false;
     }
     runtime->setDriver(simulationOwns ? cad::CadMotionRuntime::Driver::simulation : cad::CadMotionRuntime::Driver::preview);
+    // The board (read by the agent and FRust) is rebuilt only when the link, mechanism or document state it is
+    // built from changed; comparing this key is cheap, building the JSON is not.
+    const auto current = snapshot();
+    BoardKey key;
+    key.valid = true;
+    key.linkSerial = current.serial; key.mechanismSerial = runtime->statusSerial(); key.documentRevision = service->document().revision();
+    key.state = current.state; key.message = current.message; key.lastSequence = current.lastSequence; key.simTimePs = current.simTimePs;
+    key.posedSequence = current.posedSequence; key.posedSimTimePs = current.posedSimTimePs; key.solveProblem = current.solveProblem;
+    key.lifecycle = current.lifecycle; key.commandText = current.commandText; key.pendingCommand = current.pendingCommand;
+    key.lifecycleUnavailableReason = current.lifecycleUnavailableReason; key.acceptedProfileRevision = current.acceptedProfileRevision;
+    key.timelineGeneration = current.timelineGeneration; key.severity = current.severity; key.lifecycleAvailable = current.lifecycleAvailable;
+    key.commandPending = current.commandPending; key.canRetry = current.canRetry;
+    if (!(key == boardKey))
     {
-        auto json = juce::JSON::parse(snapshot().toJson());
+        boardKey = key;
+        auto json = juce::JSON::parse(current.toJson());
         if (auto* object = json.getDynamicObject()) object->setProperty("mechanism", juce::JSON::parse(runtime->statusJson()));
         board->set(juce::JSON::toString(json, true));
     }
