@@ -78,9 +78,32 @@ struct CadSignalMapping
     double scale = 1.0, offset = 0.0, initialCoordinate = 0.0;
 };
 
+// Inverse-kinematics endpoint target. The tool frame is an engineering frame attached to the instance
+// (millimetres, in the instance frame), not the body's centre or mesh origin. desired is the tool frame's
+// required pose expressed in the reference frame: the world (referenceInstance empty) or another instance,
+// evaluated in the same candidate configuration as the endpoint.
+struct CadIkTarget
+{
+    juce::String id, name, instanceId, referenceInstance;
+    CadFrame toolFrame, desired;
+    juce::String mode = "pose";       // "position" | "orientation" | "pose"
+    bool enabled = true;
+};
+
+// An authored IK task: the driver joints a local solve may adjust, the targets, and their tolerances.
+// Solving it never changes saved joint roles; the selected drivers are released only for that solve.
+struct CadIkTask
+{
+    juce::String id, name;
+    juce::StringArray adjustableJoints;
+    std::vector<CadIkTarget> targets;
+    double positionToleranceMm = 0.01;
+    double angleToleranceRad = 1.0e-4;
+};
+
 struct CadMechanics
 {
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;
     juce::String modelId;
     int interfaceRevision = 0;   // advances when anything DEWB validates against changes (not on renames)
     int profileRevision = 0;     // advances when the interface or any mapping changes
@@ -88,13 +111,15 @@ struct CadMechanics
     std::vector<CadJoint> joints;
     std::vector<CadCoupling> couplings;
     std::vector<CadSignalMapping> mappings;
+    std::vector<CadIkTask> ikTasks;
 
     const CadMechanicalInstance* findInstance(const juce::String& id) const;
     const CadJoint* findJoint(const juce::String& id) const;
     const CadCoupling* findCoupling(const juce::String& id) const;
     const CadSignalMapping* mappingForJoint(const juce::String& jointId) const;
+    const CadIkTask* findIkTask(const juce::String& id) const;
     bool instanceHasJoints(const juce::String& instanceId) const;
-    bool empty() const { return instances.empty() && joints.empty() && couplings.empty() && mappings.empty(); }
+    bool empty() const { return instances.empty() && joints.empty() && couplings.empty() && mappings.empty() && ikTasks.empty(); }
 };
 
 namespace mech
@@ -113,6 +138,11 @@ double couplingFactor(const CadCoupling& coupling);
 bool validateModel(const CadMechanics& model, juce::String& error);
 bool validateCoupling(const CadMechanics& model, const CadCoupling& coupling, juce::String& error);
 bool validateMapping(const CadMechanics& model, const CadSignalMapping& mapping, juce::String& error);
+// Structure of an IK task (references, modes, finite frames, tolerances). Joint eligibility (driver role)
+// is checked when a solve is requested, so roles stay editable while tasks exist.
+bool validateIkTask(const CadMechanics& model, const CadIkTask& task, juce::String& error);
+juce::var ikTaskToJson(const CadIkTask& task);
+bool ikTaskFromJson(const juce::var& json, CadIkTask& task, juce::String& error);
 juce::var toJson(const CadMechanics& model);
 bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error);
 juce::var frameToJson(const CadFrame& frame, double lengthScale);

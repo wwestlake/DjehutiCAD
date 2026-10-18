@@ -108,6 +108,8 @@ void setTickHandler(TickHandler handler);
 // programs. The application owns the command service and clears it on close.
 void setCadCommandService(std::shared_ptr<djehuti::cad::CadCommandService> service);
 void setCadMotionHooks(std::function<std::string()> status, std::function<void(const std::string&, double)> preview, std::function<void(const std::string&, double)> lifecycle);
+// Runs a shared IK command synchronously on the message thread and returns its JSON result.
+void setCadIkHook(std::function<std::string(const std::string&, const std::string&)> hook);
 std::string cadPrelude();
 const std::vector<std::string>& cadHostFunctions();
 }

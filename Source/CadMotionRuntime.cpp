@@ -2,6 +2,72 @@
 
 namespace djehuti::cad
 {
+// A local IK solve snapshot: the model, task and inputs are copied, so the worker never reads live document
+// data. The identity fields decide on the message thread whether the result may still be published.
+struct CadMotionRuntime::IkJob
+{
+    CadMechanics model;
+    CadIkTask task;
+    std::map<juce::String, double> prescribed, seed;
+    int seedRank = -1;
+    std::uint64_t generation = 0, documentInstance = 0, revision = 0;
+    std::shared_ptr<std::atomic<bool>> cancel = std::make_shared<std::atomic<bool>>(false);
+};
+
+// One worker thread for interactive IK: at most one active job and one pending request that newer requests
+// replace. It sleeps while there is no work, so nothing is solved while idle.
+class CadMotionRuntime::IkWorker final : public juce::Thread
+{
+public:
+    std::function<void(const IkJob&, const kin::SolveResult&)> deliver;
+
+    IkWorker() : juce::Thread("DjehutiCAD IK") { startThread(); }
+    ~IkWorker() override
+    {
+        signalThreadShouldExit();
+        cancelAll();
+        wake.signal();
+        stopThread(4000);
+    }
+    void submit(std::unique_ptr<IkJob> job)
+    {
+        { const std::lock_guard<std::mutex> lock(mutex); pending = std::move(job); }   // supersedes an older pending request
+        wake.signal();
+    }
+    void cancelAll()
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        pending.reset();
+        if (activeCancel != nullptr) activeCancel->store(true);
+    }
+
+private:
+    void run() override
+    {
+        while (!threadShouldExit())
+        {
+            std::unique_ptr<IkJob> job;
+            {
+                const std::lock_guard<std::mutex> lock(mutex);
+                job = std::move(pending);
+                if (job != nullptr) activeCancel = job->cancel;
+            }
+            if (job == nullptr) { wake.wait(-1); continue; }
+            kin::SolveOptions options;
+            options.timeBudgetMs = 200.0;
+            options.cancel = job->cancel.get();
+            const auto result = kin::solveTask(job->model, job->task, job->prescribed, job->seed, job->seedRank, options);
+            { const std::lock_guard<std::mutex> lock(mutex); activeCancel.reset(); }
+            if (!threadShouldExit() && !job->cancel->load() && deliver) deliver(*job, result);
+        }
+    }
+
+    std::mutex mutex;
+    std::unique_ptr<IkJob> pending;
+    std::shared_ptr<std::atomic<bool>> activeCancel;
+    juce::WaitableEvent wake;
+};
+
 CadMotionRuntime::CadMotionRuntime(std::shared_ptr<CadCommandService> s) : service(std::move(s))
 {
     shownRevision = service->document().revision();
@@ -10,7 +76,11 @@ CadMotionRuntime::CadMotionRuntime(std::shared_ptr<CadCommandService> s) : servi
     startTimerHz(30);
 }
 
-CadMotionRuntime::~CadMotionRuntime() { stopTimer(); }
+CadMotionRuntime::~CadMotionRuntime()
+{
+    stopTimer();
+    worker.reset();   // joins the IK thread; queued deliveries see the expired life token
+}
 
 std::shared_ptr<const CadPoseSnapshot> CadMotionRuntime::pose() const
 {
@@ -18,7 +88,12 @@ std::shared_ptr<const CadPoseSnapshot> CadMotionRuntime::pose() const
     return current;
 }
 
-void CadMotionRuntime::setDriver(Driver next) { currentDriver = next; }
+void CadMotionRuntime::setDriver(Driver next)
+{
+    // DEWB taking control makes every pending local IK request obsolete; it never runs against DEWB inputs.
+    if (next == Driver::simulation && currentDriver != Driver::simulation) invalidateIk();
+    currentDriver = next;
+}
 
 bool CadMotionRuntime::setPreviewCoordinate(const juce::String& jointId, double value, juce::String& error)
 {
@@ -28,6 +103,7 @@ bool CadMotionRuntime::setPreviewCoordinate(const juce::String& jointId, double 
     if (joint->type == "fixed") { error = joint->name + " is fixed and has no coordinate."; return false; }
     if (joint->role != "driver") { error = joint->name + " is a " + joint->role + " coordinate; preview one of the mechanism's drivers instead."; return false; }
     if (!std::isfinite(value)) { error = "Preview value must be finite."; return false; }
+    invalidateIk();
     auto next = inputs;
     next[jointId] = value;
     if (!solveNow(next)) { error = attempt.message + (attempt.problems.isEmpty() ? juce::String() : " " + attempt.problems.joinIntoString("; ")) + " The view keeps the last valid pose."; return false; }
@@ -36,6 +112,7 @@ bool CadMotionRuntime::setPreviewCoordinate(const juce::String& jointId, double 
 
 void CadMotionRuntime::resetToReference()
 {
+    invalidateIk();
     inputs.clear();
     hasValid = false;      // seed from the authored reference configuration again
     solveNow({});
@@ -69,10 +146,14 @@ void CadMotionRuntime::timerCallback()
     const auto& document = service->document();
     if (document.documentInstance() != shownInstance)
     {
-        // New or Open replaced the document: ids may repeat across files, so nothing carries over.
+        // New or Open replaced the document: ids may repeat across files, so nothing carries over
+        // (driver values, poses, IK requests, results or markers).
         shownInstance = document.documentInstance();
         shownRevision = document.revision();
+        displayTask.reset(); dragTargetId.clear();
+        ikResult = {}; ikResultValid = false; ikResultTask.clear(); ++ikResultSerial;
         resetToReference();
+        if (onIkChanged) onIkChanged();
         return;
     }
     if (document.revision() == shownRevision) return;
@@ -86,11 +167,8 @@ bool CadMotionRuntime::solveNow(const std::map<juce::String, double>& prescribed
     kin::SolveRequest request;
     for (const auto& [id, value] : prescribed)
         if (const auto* joint = model.findJoint(id); joint != nullptr && joint->type != "fixed" && joint->role == "driver") request.prescribed[id] = value;
-    if (hasValid)
-    {
-        for (const auto& [id, value] : valid.coordinates) if (model.findJoint(id) != nullptr) request.seed[id] = value;
-        request.seedRank = valid.rank;
-    }
+    request.seed = seedCoordinates();
+    if (hasValid) request.seedRank = valid.rank;
     attempt = kin::solve(model, request);
     hasAttempt = true;
     if (attempt.valid)
@@ -101,6 +179,154 @@ bool CadMotionRuntime::solveNow(const std::map<juce::String, double>& prescribed
     }
     publish();
     return attempt.valid;
+}
+
+std::map<juce::String, double> CadMotionRuntime::seedCoordinates() const
+{
+    std::map<juce::String, double> seed;
+    if (!hasValid) return seed;
+    const auto& model = service->document().mechanicsData();
+    for (const auto& [id, value] : valid.coordinates) if (model.findJoint(id) != nullptr) seed[id] = value;
+    return seed;
+}
+
+void CadMotionRuntime::invalidateIk()
+{
+    ++ikGeneration;
+    if (worker != nullptr) worker->cancelAll();
+}
+
+kin::SolveResult CadMotionRuntime::solveIk(const CadIkTask& task)
+{
+    if (currentDriver == Driver::simulation)
+    {
+        kin::SolveResult refused; refused.inverse = true; refused.status = kin::Status::invalidInput;
+        refused.message = "DEWB owns the mechanism pose while the motion link is bound; its driver coordinates stay prescribed, so local IK is not available until the link is disconnected.";
+        return refused;
+    }
+    invalidateIk();   // a direct solve supersedes any drag request in flight
+    kin::SolveOptions options;
+    options.timeBudgetMs = 2000.0;
+    options.maxSubsteps = 128;
+    const auto result = kin::solveTask(service->document().mechanicsData(), task, inputs, seedCoordinates(), hasValid ? valid.rank : -1, options);
+    acceptIk(task, result);
+    displayTask = std::make_unique<CadIkTask>(task);
+    publish();
+    if (onIkChanged) onIkChanged();
+    return result;
+}
+
+bool CadMotionRuntime::requestIkAsync(const CadIkTask& task, juce::String& error)
+{
+    if (currentDriver == Driver::simulation) { error = "DEWB owns the mechanism pose while the motion link is bound; local IK is not available."; return false; }
+    if (worker == nullptr)
+    {
+        worker = std::make_unique<IkWorker>();
+        std::weak_ptr<int> life = lifeToken;
+        worker->deliver = [this, life](const IkJob& job, const kin::SolveResult& result)
+        {
+            auto copy = std::make_shared<IkJob>(job);
+            juce::MessageManager::callAsync([this, life, copy, result] { if (!life.expired()) deliverIk(*copy, result); });
+        };
+    }
+    const auto& document = service->document();
+    auto job = std::make_unique<IkJob>();
+    job->model = document.mechanicsData();
+    job->task = task;
+    job->prescribed = inputs;
+    job->seed = seedCoordinates();
+    job->seedRank = hasValid ? valid.rank : -1;
+    job->generation = ikGeneration;
+    job->documentInstance = document.documentInstance();
+    job->revision = document.revision();
+    worker->submit(std::move(job));
+    return true;
+}
+
+// Message thread. A worker result is published only if nothing it depended on has changed since it was queued.
+void CadMotionRuntime::deliverIk(const IkJob& job, const kin::SolveResult& result)
+{
+    const auto& document = service->document();
+    const bool current = job.generation == ikGeneration && job.documentInstance == document.documentInstance() && job.revision == document.revision()
+                      && currentDriver == Driver::preview && displayTask != nullptr && displayTask->id == job.task.id;
+    if (!current) return;
+    acceptIk(job.task, result);
+    publish();
+    if (onIkChanged) onIkChanged();
+}
+
+void CadMotionRuntime::acceptIk(const CadIkTask& task, const kin::SolveResult& result)
+{
+    ikResult = result; ikResultValid = true; ikResultTask = task.id; ++ikResultSerial;
+    if (!result.valid) return;   // rejected candidate: the last valid pose stays; its errors are diagnostics only
+    valid = result; hasValid = true;
+    attempt = result; hasAttempt = true;
+    // The adjusted drivers become the prescribed inputs from now on, so later solves keep this configuration.
+    for (const auto& id : task.adjustableJoints)
+        if (const auto found = result.coordinates.find(id); found != result.coordinates.end()) inputs[id] = found->second;
+}
+
+void CadMotionRuntime::setIkDisplay(const CadIkTask* task, const juce::String& targetId, const juce::String& plane)
+{
+    displayTask = task != nullptr ? std::make_unique<CadIkTask>(*task) : nullptr;
+    dragTargetId = task != nullptr ? targetId : juce::String();
+    dragPlane = plane;
+    publish();
+}
+
+bool CadMotionRuntime::captureTarget(CadIkTarget& target, juce::String& error) const
+{
+    if (service->document().mechanicsData().findInstance(target.instanceId) == nullptr) { error = "Choose the instance that carries the endpoint before capturing its pose."; return false; }
+    if (target.referenceInstance.isNotEmpty() && shownWorld.count(target.referenceInstance) == 0) { error = "The reference instance does not exist."; return false; }
+    target.desired = kin::achievedInReference(target, shownWorld);
+    return true;
+}
+
+std::vector<kin::TargetReport> CadMotionRuntime::shownTargetReports() const
+{
+    std::vector<kin::TargetReport> reports;
+    if (displayTask == nullptr) return reports;
+    for (const auto& t : displayTask->targets)
+        if (t.enabled && shownWorld.count(t.instanceId) != 0)
+            reports.push_back(kin::evaluateTarget(t, shownWorld, displayTask->positionToleranceMm, displayTask->angleToleranceRad));
+    return reports;
+}
+
+juce::var CadMotionRuntime::ikStatus(const CadIkTask* task) const
+{
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty("authority", currentDriver == Driver::simulation ? "simulation" : "preview");
+    if (task != nullptr) o->setProperty("task", mech::ikTaskToJson(*task));
+    if (ikResultValid && (task == nullptr || task->id == ikResultTask))
+    {
+        o->setProperty("lastSolve", ikResult.toJson());
+        o->setProperty("lastSolvePublished", ikResult.valid);
+    }
+    // Errors of the pose actually shown, which differ from a rejected candidate's errors.
+    juce::Array<juce::var> shown;
+    if (task != nullptr)
+        for (const auto& t : task->targets)
+            if (t.enabled && shownWorld.count(t.instanceId) != 0) shown.add(kin::evaluateTarget(t, shownWorld, task->positionToleranceMm, task->angleToleranceRad).toJson());
+    o->setProperty("shownPoseTargets", shown);
+    o->setProperty("showingLastValidPose", showingLastValidPose());
+    return juce::var(o.release());
+}
+
+namespace
+{
+std::array<float, 3> point3(const gp_XYZ& p) { return { (float) p.X(), (float) p.Y(), (float) p.Z() }; }
+void addLine(std::vector<CadOverlayLine>& lines, const gp_XYZ& a, const gp_XYZ& b, juce::uint32 argb) { lines.push_back({ point3(a), point3(b), argb }); }
+// A frame triad: X, Y, Z axes of length size, tinted toward the marker colour.
+void addTriad(std::vector<CadOverlayLine>& lines, const gp_Trsf& frame, double size, juce::Colour tint)
+{
+    const auto o = frame.TranslationPart();
+    const juce::Colour axes[3] { juce::Colour(0xffff6b6b), juce::Colour(0xff6bff8f), juce::Colour(0xff6ba6ff) };
+    for (int k = 0; k < 3; ++k)
+    {
+        const gp_Dir d = gp_Dir(k == 0 ? 1 : 0, k == 1 ? 1 : 0, k == 2 ? 1 : 0).Transformed(frame);
+        addLine(lines, o, o + d.XYZ() * size, axes[k].interpolatedWith(tint, 0.45f).getARGB());
+    }
+}
 }
 
 // Poses come from the last valid solve; when an attempt fails the previous valid pose stays on screen.
@@ -149,6 +375,46 @@ void CadMotionRuntime::publish()
         extent = juce::jmax(extent, origin.Modulus());
     }
     next->axisLength = (float) juce::jlimit(5.0, 200.0, extent * 0.25 + 10.0);
+
+    // IK markers, computed from the same instance poses that are drawn: desired (green triad), achieved
+    // (magenta triad), the gap between them, and the drag plane of the selected target.
+    if (displayTask != nullptr)
+    {
+        const double size = next->axisLength * 0.6;
+        for (const auto& t : displayTask->targets)
+        {
+            if (!t.enabled || world.count(t.instanceId) == 0 || (t.referenceInstance.isNotEmpty() && world.count(t.referenceInstance) == 0)) continue;
+            const auto report = kin::evaluateTarget(t, world, displayTask->positionToleranceMm, displayTask->angleToleranceRad);
+            addTriad(next->overlay, report.desiredWorld, size, juce::Colour(0xff7dff9a));
+            addTriad(next->overlay, report.achievedWorld, size * 0.75, juce::Colour(0xffff7ae0));
+            const auto d = report.desiredWorld.TranslationPart(), a = report.achievedWorld.TranslationPart();
+            if ((d - a).Modulus() > 1.0e-6) addLine(next->overlay, a, d, report.reached ? 0xff7dff9a : 0xffffd36b);
+            if (t.id == dragTargetId && t.mode != "orientation")
+            {
+                // The drag plane: a plane of the target's reference frame through the desired point.
+                const auto reference = t.referenceInstance.isEmpty() ? gp_Trsf() : world[t.referenceInstance];
+                const int normalAxis = dragPlane == "YZ" ? 0 : dragPlane == "XZ" ? 1 : 2;
+                const gp_Dir u = gp_Dir(normalAxis == 0 ? 0 : 1, normalAxis == 0 ? 1 : 0, 0).Transformed(reference);
+                const gp_Dir v = gp_Dir(0, normalAxis == 2 ? 1 : 0, normalAxis == 2 ? 0 : 1).Transformed(reference);
+                const gp_Dir normal = gp_Dir(normalAxis == 0 ? 1 : 0, normalAxis == 1 ? 1 : 0, normalAxis == 2 ? 1 : 0).Transformed(reference);
+                const double half = size * 2.0;
+                const juce::uint32 planeColour = 0xff5fc8ff;
+                const gp_XYZ corners[4] { d + (u.XYZ() + v.XYZ()) * half, d + (u.XYZ() - v.XYZ()) * half, d - (u.XYZ() + v.XYZ()) * half, d - (u.XYZ() - v.XYZ()) * half };
+                for (int k = 0; k < 4; ++k) addLine(next->overlay, corners[k], corners[(k + 1) % 4], planeColour);
+                addLine(next->overlay, d - u.XYZ() * half, d + u.XYZ() * half, 0xff3c7fa3);
+                addLine(next->overlay, d - v.XYZ() * half, d + v.XYZ() * half, 0xff3c7fa3);
+                // The handle itself: a yellow diamond in the plane at the desired point.
+                const double h = size * 0.35;
+                const gp_XYZ diamond[4] { d + u.XYZ() * h, d + v.XYZ() * h, d - u.XYZ() * h, d - v.XYZ() * h };
+                for (int k = 0; k < 4; ++k) addLine(next->overlay, diamond[k], diamond[(k + 1) % 4], 0xffffe066);
+                next->dragHandle.active = true;
+                next->dragHandle.targetId = t.id;
+                next->dragHandle.point = point3(d);
+                next->dragHandle.normal = point3(normal.XYZ());
+            }
+        }
+    }
+    shownWorld = world;
     {
         const std::lock_guard<std::mutex> lock(poseLock);
         current = std::move(next);

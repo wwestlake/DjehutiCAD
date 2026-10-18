@@ -431,7 +431,8 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
                               ToolSpec { &instanceButton, "Create an assembly instance of a solid body so it can move." },
                               ToolSpec { &jointButton, "Connect two instances (or an instance and the world) with a fixed, revolute or prismatic joint." },
                               ToolSpec { &couplingButton, "Couple two joint coordinates: gear ratio, linear ratio, rack and pinion, or screw lead." },
-                              ToolSpec { &linkButton, "Connect joints to DEWB simulation signals over the motion link." } })
+                              ToolSpec { &linkButton, "Connect joints to DEWB simulation signals over the motion link." },
+                              ToolSpec { &ikButton, "Inverse kinematics: solve selected driver joints so an endpoint reaches a target pose." } })
     {
         styleButton(*spec.button, spec.tip);
         addChildComponent(*spec.button);
@@ -451,6 +452,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     couplingButton.onClick = [this] { startTask(Task::newCoupling); };
     jointButton.onClick = [this] { startTask(Task::newJoint); };
     linkButton.onClick = [this] { startTask(Task::link); };
+    ikButton.onClick = [this] { loadIkDraft(isIkTask(selectedId) ? selectedId : juce::String()); startTask(Task::ik); };
     undoButton.onClick = [this] { juce::String e; if (!service->undo(e)) showError(e); else { refreshFromDocument(true); setMessage("Undone.", 0); } };
     redoButton.onClick = [this] { juce::String e; if (!service->redo(e)) showError(e); else { refreshFromDocument(true); setMessage("Redone.", 0); } };
     fitButton.onClick = [this] { modelView.fitAll(); };
@@ -471,6 +473,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     centre.addAndMakeVisible(modelView); centre.addChildComponent(*sketchCanvas);
     modelView.setTitle("Perspective  |  Model  (drag to orbit, Shift/right-drag to pan, wheel to zoom, click to select)");
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
+    modelView.onTargetDragged = [this](const juce::String& targetId, const std::array<float, 3>& point, bool finished) { ikTargetDragged(targetId, point, finished); };
 
     side.addAndMakeVisible(taskTitle); side.addAndMakeVisible(taskInstruction); side.addAndMakeVisible(taskViewport); side.addAndMakeVisible(messageLabel);
     side.addAndMakeVisible(acceptButton); side.addAndMakeVisible(cancelButton);
@@ -538,7 +541,7 @@ void CadWorkspacePanel::resized()
         place(row, sketchButton); place(row, boxButton); place(row, cylinderButton); row.removeFromLeft(14);
         place(row, extrudeButton); place(row, cutButton); row.removeFromLeft(14);
         place(row, subtractButton); place(row, unionButton); place(row, intersectButton); row.removeFromLeft(14);
-        place(row, instanceButton); place(row, jointButton); place(row, couplingButton); place(row, linkButton);
+        place(row, instanceButton); place(row, jointButton); place(row, couplingButton); place(row, linkButton); place(row, ikButton);
     }
     else
     {
@@ -588,7 +591,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
     if (!force && document.revision() == shownRevision) return;
     shownRevision = document.revision();
     modelView.setSnapshot(service->snapshot());
-    auto missing = [&](const juce::String& id) { return id.isNotEmpty() && document.find(id) == nullptr && document.mechanicsData().findInstance(id) == nullptr && document.mechanicsData().findJoint(id) == nullptr && document.mechanicsData().findCoupling(id) == nullptr; };
+    auto missing = [&](const juce::String& id) { return id.isNotEmpty() && document.find(id) == nullptr && document.mechanicsData().findInstance(id) == nullptr && document.mechanicsData().findJoint(id) == nullptr && document.mechanicsData().findCoupling(id) == nullptr && document.mechanicsData().findIkTask(id) == nullptr; };
     if (missing(selectedId)) selectedId.clear();
     if (missing(targetId)) targetId.clear();
     if (missing(toolId)) toolId.clear();
@@ -605,6 +608,12 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
     if (task == Task::sketch && selectedId.isEmpty()) task = Task::none;
     if ((task == Task::instance || task == Task::joint || task == Task::coupling) && selectedId.isEmpty()) task = Task::none;
     if (task == Task::sketchEntity && sketchEntityId.isEmpty()) task = Task::sketchEdit;
+    if (ikDraft != nullptr && ikDocument != document.documentInstance()) { ikDraft.reset(); ikDirty = false; if (task == Task::ik) task = Task::none; }
+    if (task == Task::ik && ikDraft != nullptr && ikDraft->id.isNotEmpty())
+    {
+        if (const auto* stored = document.mechanicsData().findIkTask(ikDraft->id)) { if (!ikDirty) { *ikDraft = *stored; ikTargetIndex = juce::jlimit(0, juce::jmax(0, (int) ikDraft->targets.size() - 1), ikTargetIndex); } }
+        else { ikDraft->id.clear(); ikDirty = true; }   // e.g. its creation was undone: keep the values as an unsaved task
+    }
     refreshTree();
     updateHighlights();
     updateToolbar();
@@ -625,6 +634,7 @@ void CadWorkspacePanel::refreshTree()
     for (const auto& instance : model.instances) assembly->addSubItem(new FeatureItem(*this, instance.id, instance.name, instance.grounded ? "grounded" : "instance"));
     for (const auto& joint : model.joints) assembly->addSubItem(new FeatureItem(*this, joint.id, joint.name, joint.type + (model.mappingForJoint(joint.id) != nullptr ? " *" : "")));
     for (const auto& coupling : model.couplings) assembly->addSubItem(new FeatureItem(*this, coupling.id, coupling.name, coupling.type == "rackPinion" ? "rack" : coupling.type));
+    for (const auto& ikTask : model.ikTasks) assembly->addSubItem(new FeatureItem(*this, ikTask.id, ikTask.name, "IK task"));
     for (const auto& f : service->document().features())
     {
         auto* item = new FeatureItem(*this, f);
@@ -659,11 +669,20 @@ void CadWorkspacePanel::featureClicked(const juce::String& id)
 
 void CadWorkspacePanel::bodyPicked(const juce::String& id)
 {
+    if (task == Task::ik && ikDraft != nullptr && isInstance(id) && juce::isPositiveAndBelow(ikTargetIndex, (int) ikDraft->targets.size()))
+    {
+        readIkForm();
+        ikDraft->targets[(size_t) ikTargetIndex].instanceId = id; ikDirty = true; ikFormStale = true;
+        rebuildTaskPanel(false); showIkMarkers();
+        setMessage("Endpoint instance set to " + featureName(id) + ".", 0);
+        return;
+    }
     if (isCommandTask() && task != Task::link) { if (id.isNotEmpty()) assignRole(id); return; }
     selectFeature(id);
 }
 
 bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::cut || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
 bool CadWorkspacePanel::isCoupling(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findCoupling(id) != nullptr; }
 bool CadWorkspacePanel::isInstance(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findInstance(id) != nullptr; }
 bool CadWorkspacePanel::isJoint(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findJoint(id) != nullptr; }
@@ -672,7 +691,7 @@ void CadWorkspacePanel::setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime
 {
     motionRuntime = std::move(runtime);
     motionLink = link;
-    if (motionRuntime != nullptr) { auto source = motionRuntime; modelView.setPoseSource([source] { return source->pose(); }); motionRuntime->onPoseChanged = [this] { mechanismChanged(); }; }
+    if (motionRuntime != nullptr) { auto source = motionRuntime; modelView.setPoseSource([source] { return source->pose(); }); motionRuntime->onPoseChanged = [this] { mechanismChanged(); }; motionRuntime->onIkChanged = [this] { if (task == Task::ik) requestRebuild(true); }; }
     if (motionLink != nullptr) motionLink->onStatusChanged = [this] { linkChanged(); };
     linkChanged();
 }
@@ -698,6 +717,7 @@ void CadWorkspacePanel::selectFeature(const juce::String& id)
     if (isInstance(id)) task = Task::instance;
     else if (isJoint(id)) task = Task::joint;
     else if (isCoupling(id)) task = Task::coupling;
+    else if (isIkTask(id)) { task = Task::ik; loadIkDraft(id); }
     else if (f == nullptr) selectedId.clear();
     syncTreeSelection(); updateHighlights(); updateToolbar();
     rebuildTaskPanel(false);
@@ -738,6 +758,7 @@ void CadWorkspacePanel::handleAsyncUpdate() { const auto keep = pendingKeepValue
 void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
 {
     cancelPendingUpdate(); pendingKeepValues = true;
+    if (task == Task::ik) readIkForm();   // the IK draft holds the edited values; the form is rebuilt from it
     const auto context = juce::String((int) task) + "|" + booleanKind + "|" + selectedId + "|" + editingSketchId + "|" + sketchEntityId;
     juce::NamedValueSet previous;
     int previousScroll = 0;
@@ -754,7 +775,11 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     bool showAccept = true, showCancel = true;
     const auto slotText = [&](const juce::String& id, const juce::String& empty) { return id.isEmpty() ? empty : featureName(id); };
 
-    if (task == Task::instance || task == Task::joint || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::coupling || task == Task::newCoupling)
+    // Markers and target dragging exist only while the IK panel is open.
+    if (task != Task::ik && ikMarkersShown && motionRuntime != nullptr) { motionRuntime->setIkDisplay(nullptr); ikMarkersShown = false; }
+    modelView.setTargetDragEnabled(task == Task::ik && ikDragEnabled);
+    if (task == Task::ik) addIkPanel(title, instruction, accept, showAccept, showCancel);
+    else if (task == Task::instance || task == Task::joint || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::coupling || task == Task::newCoupling)
         addMotionPanels(title, instruction, accept, showAccept, showCancel);
     else switch (task)
     {
@@ -936,7 +961,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
         }
     }
 
-    if (!previous.isEmpty()) form->restore(previous);
+    if (!previous.isEmpty() && task != Task::ik) form->restore(previous);
     taskTitle.setText(title, juce::dontSendNotification);
     taskInstruction.setText(instruction, juce::dontSendNotification);
     acceptButton.setButtonText(accept); cancelButton.setButtonText(cancel);
@@ -1175,6 +1200,7 @@ void CadWorkspacePanel::cancelTask()
         case Task::sketchEntity: selectSketchEntity({}, false); return;
         case Task::sketchEdit: case Task::sketch: case Task::none: return;
         case Task::instance: case Task::joint: case Task::coupling: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;
+        case Task::ik: ikDraft.reset(); ikDirty = false; selectFeature({}); setMessage("IK panel closed. The pose shown stays until you reset the preview.", 0); return;
         default: break;
     }
     selectFeature(selectedId);
@@ -1254,9 +1280,9 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what)
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
-    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton }) b->setVisible(!sketching);
+    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton }) b->setVisible(!sketching);
     couplingButton.setToggleState(task == Task::newCoupling, juce::dontSendNotification);
-    instanceButton.setToggleState(task == Task::newInstance, juce::dontSendNotification); jointButton.setToggleState(task == Task::newJoint, juce::dontSendNotification); linkButton.setToggleState(task == Task::link, juce::dontSendNotification);
+    instanceButton.setToggleState(task == Task::newInstance, juce::dontSendNotification); jointButton.setToggleState(task == Task::newJoint, juce::dontSendNotification); linkButton.setToggleState(task == Task::link, juce::dontSendNotification); ikButton.setToggleState(task == Task::ik, juce::dontSendNotification);
     for (auto* b : { &selectToolButton, &lineButton, &rectangleButton, &circleButton, &constrainButton, &fitSketchButton, &finishSketchButton }) b->setVisible(sketching);
     undoButton.setVisible(true); redoButton.setVisible(true);
     const auto tool = sketchCanvas->tool();
@@ -1593,6 +1619,7 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
 
 void CadWorkspacePanel::validateMotionTask(juce::String& problem, int& severity)
 {
+    if (task == Task::ik) { validateIkPanel(problem, severity); return; }
     auto requireNumber = [&](const juce::String& key, const juce::String& label) { if (problem.isEmpty() && form->rowVisible(key) && !form->numberValid(key)) { problem = label + " must be a number."; severity = 2; } };
     if (task == Task::instance)
     {
@@ -1621,6 +1648,7 @@ void CadWorkspacePanel::validateMotionTask(juce::String& problem, int& severity)
 bool CadWorkspacePanel::acceptMotionTask()
 {
     using namespace djehuti::cad;
+    if (task == Task::ik) return saveIkDraft();
     juce::String e, id;
     const auto& model = service->document().mechanicsData();
     if (task == Task::newInstance)
@@ -1869,3 +1897,359 @@ void CadWorkspacePanel::newDocument()
 void CadWorkspacePanel::openDocument(){fileChooser=std::make_unique<juce::FileChooser>("Open CAD document",juce::File(),"*.djo;*.djc");fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[this](const juce::FileChooser& chooser){if(auto file=chooser.getResult();file.existsAsFile()){juce::String e;if(!service->load(file,e))showError(e);else{if(editingSketchId.isNotEmpty()){editingSketchId.clear();sketchCanvas->setVisible(false);modelView.setVisible(true);}refreshFromDocument(true);selectFeature({});modelView.fitAll();}}fileChooser.reset();});}
 void CadWorkspacePanel::saveDocument(){auto file=service->document().file();if(file==juce::File())saveDocumentAs();else{juce::String e;if(!service->save(file,e))showError(e);else service->document().markSaved();}}
 void CadWorkspacePanel::saveDocumentAs(){fileChooser=std::make_unique<juce::FileChooser>("Save native CAD document",juce::File(),"*.djo");fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[this](const juce::FileChooser& chooser){auto file=chooser.getResult().withFileExtension("djo");if(file!=juce::File()){juce::String e;if(!service->save(file,e))showError(e);else{service->document().setFile(file);service->document().markSaved();}}fileChooser.reset();});}
+
+
+//==============================================================================
+// Inverse kinematics task panel. The draft is the edited task; the form is rebuilt from it, and every edit is
+// read back into it. Solving and dragging only change the runtime pose; Save stores the definition (undoable).
+namespace
+{
+const double kRadToDegUi = 180.0 / juce::MathConstants<double>::pi;
+juce::String formatError(const djehuti::cad::kin::TargetReport& r)
+{
+    juce::StringArray parts;
+    if (r.mode != "orientation") parts.add(juce::String(r.positionErrorMm, 4) + " mm");
+    if (r.mode != "position") parts.add(juce::String(r.angleErrorRad * kRadToDegUi, 4) + " deg");
+    return parts.joinIntoString(", ");
+}
+}
+
+void CadWorkspacePanel::loadIkDraft(const juce::String& taskId)
+{
+    using namespace djehuti::cad;
+    const auto& model = service->document().mechanicsData();
+    const auto* stored = model.findIkTask(taskId);
+    ikDraft = std::make_unique<CadIkTask>(stored != nullptr ? *stored : CadIkTask {});
+    ikDocument = service->document().documentInstance();
+    ikTargetIndex = 0; ikFormStale = true; ikDirty = stored == nullptr;
+    if (stored != nullptr) return;
+    // A new task starts with one pose target on the last instance at its current pose, so nothing moves until
+    // the desired pose is changed.
+    ikDraft->name = "IK task";
+    if (!model.instances.empty())
+    {
+        CadIkTarget target;
+        target.id = "draft-" + juce::Uuid().toDashedString().substring(0, 8);
+        target.name = "Target 1";
+        target.instanceId = model.instances.back().id;
+        juce::String ignored;
+        if (motionRuntime != nullptr) motionRuntime->captureTarget(target, ignored);
+        ikDraft->targets.push_back(target);
+    }
+}
+
+void CadWorkspacePanel::readIkForm()
+{
+    using namespace djehuti::cad;
+    if (form == nullptr || task != Task::ik || ikDraft == nullptr || ikFormStale || form->control("ikName") == nullptr) return;
+    const auto before = juce::JSON::toString(mech::ikTaskToJson(*ikDraft));
+    auto& draft = *ikDraft;
+    const auto& model = service->document().mechanicsData();
+    draft.name = form->text("ikName");
+    if (form->numberValid("ikPosTol")) draft.positionToleranceMm = form->number("ikPosTol");
+    if (form->numberValid("ikAngTol")) draft.angleToleranceRad = form->number("ikAngTol") / kRadToDegUi;
+    for (const auto& joint : model.joints)
+    {
+        if (form->control("adj:" + joint.id) == nullptr) continue;
+        const bool on = form->toggle("adj:" + joint.id);
+        if (on && !draft.adjustableJoints.contains(joint.id)) draft.adjustableJoints.add(joint.id);
+        if (!on) draft.adjustableJoints.removeString(joint.id);
+    }
+    if (juce::isPositiveAndBelow(ikTargetIndex, (int) draft.targets.size()) && form->control("tName") != nullptr)
+    {
+        auto& t = draft.targets[(size_t) ikTargetIndex];
+        t.name = form->text("tName");
+        t.enabled = form->toggle("tEnabled");
+        if (const auto i = form->choice("tInstance"); juce::isPositiveAndBelow(i, (int) model.instances.size())) t.instanceId = model.instances[(size_t) i].id;
+        if (const auto i = form->choice("tReference"); i == 0) t.referenceInstance.clear(); else if (juce::isPositiveAndBelow(i - 1, (int) model.instances.size())) t.referenceInstance = model.instances[(size_t) i - 1].id;
+        const juce::StringArray modes { "pose", "position", "orientation" };
+        if (const auto i = form->choice("tMode"); juce::isPositiveAndBelow(i, 3)) t.mode = modes[i];
+        auto readFrame = [&](const char* x, const char* y, const char* z, const char* rx, const char* ry, const char* rz, CadFrame& frame)
+        {
+            double ox = frame.x, oy = frame.y, oz = frame.z, ax = 0, ay = 0, az = 0;
+            mech::eulerDegreesFromFrame(frame, ax, ay, az);
+            const bool positionShown = form->rowVisible(x), rotationShown = form->rowVisible(rx);
+            for (const auto* key : { x, y, z }) if (positionShown && !form->numberValid(key)) return;
+            for (const auto* key : { rx, ry, rz }) if (rotationShown && !form->numberValid(key)) return;
+            if (positionShown) { ox = form->number(x); oy = form->number(y); oz = form->number(z); }
+            if (rotationShown) { ax = form->number(rx); ay = form->number(ry); az = form->number(rz); }
+            if (!positionShown && !rotationShown) return;
+            frame = mech::frameFromEulerDegrees(ox, oy, oz, ax, ay, az);
+        };
+        readFrame("tox", "toy", "toz", "trx", "try", "trz", t.toolFrame);
+        // Only rewrite the desired frame when its shown numbers changed, so hidden components keep full precision.
+        CadFrame edited = t.desired;
+        readFrame("dx", "dy", "dz", "drx", "dry", "drz", edited);
+        double ex = 0, ey = 0, ez = 0, cx = 0, cy = 0, cz = 0;
+        mech::eulerDegreesFromFrame(edited, ex, ey, ez); mech::eulerDegreesFromFrame(t.desired, cx, cy, cz);
+        auto shown = [](double v) { return juce::String(v, 4).trimCharactersAtEnd("0").trimCharactersAtEnd(".").getDoubleValue(); };
+        const bool changed = shown(edited.x) != shown(t.desired.x) || shown(edited.y) != shown(t.desired.y) || shown(edited.z) != shown(t.desired.z)
+                          || shown(ex) != shown(cx) || shown(ey) != shown(cy) || shown(ez) != shown(cz);
+        if (changed) t.desired = edited;
+    }
+    ikDragEnabled = form->toggle("ikDrag");
+    const juce::StringArray planes { "XY", "XZ", "YZ" };
+    if (const auto i = form->choice("ikPlane"); juce::isPositiveAndBelow(i, 3)) ikDragPlane = planes[i];
+    if (juce::JSON::toString(mech::ikTaskToJson(draft)) != before) ikDirty = true;
+    showIkMarkers();
+}
+
+// Markers follow the draft; the drag handle is the edited target's desired point.
+void CadWorkspacePanel::showIkMarkers()
+{
+    const bool simulationOwns = motionRuntime != nullptr && motionRuntime->driver() == djehuti::cad::CadMotionRuntime::Driver::simulation;
+    modelView.setTargetDragEnabled(task == Task::ik && ikDragEnabled && !simulationOwns);
+    if (motionRuntime == nullptr || task != Task::ik || ikDraft == nullptr) return;
+    const auto dragTarget = ikDragEnabled && juce::isPositiveAndBelow(ikTargetIndex, (int) ikDraft->targets.size()) ? ikDraft->targets[(size_t) ikTargetIndex].id : juce::String();
+    motionRuntime->setIkDisplay(ikDraft.get(), dragTarget, ikDragPlane);
+    ikMarkersShown = true;
+}
+
+void CadWorkspacePanel::addIkPanel(juce::String& title, juce::String& instruction, juce::String& accept, bool& showAccept, bool& showCancel)
+{
+    using namespace djehuti;
+    if (ikDraft == nullptr) loadIkDraft({});
+    auto& draft = *ikDraft;
+    const auto& model = service->document().mechanicsData();
+    const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
+    const bool simulationOwns = motionRuntime != nullptr && motionRuntime->driver() == cad::CadMotionRuntime::Driver::simulation;
+    title = "Inverse Kinematics";
+    instruction = "Choose the driver joints the solve may move and the endpoint targets, then Solve. A pose is shown only if the mechanism and every target hold.";
+    accept = draft.id.isEmpty() ? "Save Task" : "Save Changes"; showAccept = true; showCancel = true;
+
+    form->addHeader("Task");
+    juce::StringArray taskNames { "New task" };
+    int selectedTask = 0;
+    for (size_t i = 0; i < model.ikTasks.size(); ++i) { taskNames.add(model.ikTasks[i].name); if (model.ikTasks[i].id == draft.id) selectedTask = (int) i + 1; }
+    auto& taskBox = form->addChoice("ikTask", "Task", taskNames, selectedTask, "Saved IK tasks of this document, or a new task.");
+    taskBox.onChange = [this]
+    {
+        const auto index = form->choice("ikTask");
+        const auto& tasks = service->document().mechanicsData().ikTasks;
+        loadIkDraft(index > 0 && index <= (int) tasks.size() ? tasks[(size_t) index - 1].id : juce::String());
+        rebuildTaskPanel(false); showIkMarkers();
+    };
+    form->addText("ikName", "Name", draft.name, "Task name shown in the Assembly tree.");
+    form->addNote({}, draft.id.isEmpty() ? juce::String("Not saved yet.") : "id " + draft.id + (ikDirty ? "  |  unsaved changes" : "  |  saved"), 1);
+    if (simulationOwns)
+        form->addNote({}, "DEWB drives the mechanism through the motion link. Its driver coordinates stay prescribed, so local solving and dragging are off; the task can still be edited and saved.", 3);
+
+    form->addHeader("Adjustable joints");
+    juce::StringArray others;
+    for (const auto& joint : model.joints)
+    {
+        if (joint.type == "fixed") continue;
+        const bool listed = draft.adjustableJoints.contains(joint.id);
+        if (joint.role == "driver" || listed)
+            form->addToggle("adj:" + joint.id, joint.name + "  (" + joint.type + (joint.role != "driver" ? ", " + joint.role + " - not adjustable" : juce::String()) + (joint.enforceLimits ? ", hard bounds" : juce::String()) + ")", listed,
+                            "Let this solve move this driver. Unselected drivers keep their current value; saved roles never change.");
+        else others.add(joint.name + " (" + joint.role + ")");
+    }
+    if (!others.isEmpty()) form->addNote({}, "Follow the mechanism or stay locked: " + others.joinIntoString(", "), 2);
+
+    form->addHeader("Tolerances");
+    form->addNumber("ikPosTol", "Position", draft.positionToleranceMm, "mm", "Largest accepted distance between the endpoint and its desired position.");
+    form->addNumber("ikAngTol", "Angle", draft.angleToleranceRad * kRadToDegUi, "deg", "Largest accepted rotation between the endpoint frame and its desired orientation.");
+
+    form->addHeader("Targets");
+    if (!draft.targets.empty())
+    {
+        juce::StringArray names;
+        for (const auto& t : draft.targets) names.add(t.name + (t.enabled ? juce::String() : juce::String(" (off)")));
+        ikTargetIndex = juce::jlimit(0, (int) draft.targets.size() - 1, ikTargetIndex);
+        auto& targetBox = form->addChoice("ikTarget", "Edit target", names, ikTargetIndex, "Target whose fields are shown below.");
+        targetBox.onChange = [this] { readIkForm(); ikTargetIndex = form->choice("ikTarget"); ikFormStale = true; rebuildTaskPanel(false); showIkMarkers(); };
+    }
+    form->addButton("ikAddTarget", "Add target", async([](CadWorkspacePanel& p)
+    {
+        p.readIkForm();
+        cad::CadIkTarget t;
+        t.id = "draft-" + juce::Uuid().toDashedString().substring(0, 8);
+        t.name = "Target " + juce::String((int) p.ikDraft->targets.size() + 1);
+        const auto& instances = p.service->document().mechanicsData().instances;
+        if (!instances.empty()) t.instanceId = instances.back().id;
+        juce::String ignored;
+        if (p.motionRuntime != nullptr) p.motionRuntime->captureTarget(t, ignored);
+        p.ikDraft->targets.push_back(t);
+        p.ikTargetIndex = (int) p.ikDraft->targets.size() - 1; p.ikDirty = true; p.ikFormStale = true;
+        p.rebuildTaskPanel(false); p.showIkMarkers();
+    }), "Add an endpoint target at the endpoint's current pose.");
+    if (juce::isPositiveAndBelow(ikTargetIndex, (int) draft.targets.size()))
+    {
+        const auto& t = draft.targets[(size_t) ikTargetIndex];
+        juce::StringArray instanceNames, referenceNames { "World" };
+        int instanceIndex = -1, referenceIndex = 0;
+        for (size_t i = 0; i < model.instances.size(); ++i)
+        {
+            instanceNames.add(model.instances[i].name); referenceNames.add(model.instances[i].name);
+            if (model.instances[i].id == t.instanceId) instanceIndex = (int) i;
+            if (model.instances[i].id == t.referenceInstance) referenceIndex = (int) i + 1;
+        }
+        form->addText("tName", "Name", t.name, "Target name.");
+        form->addToggle("tEnabled", "Enabled", t.enabled, "Disabled targets are kept but not solved.");
+        auto& instanceBox = form->addChoice("tInstance", "Endpoint on", instanceNames, instanceIndex, "Instance that carries the endpoint (you can also click it in the model view).");
+        auto& referenceBox = form->addChoice("tReference", "Reference", referenceNames, referenceIndex, "Frame the desired pose is expressed in: the world or another instance (evaluated in the same configuration).");
+        auto& modeBox = form->addChoice("tMode", "Mode", { "Full pose", "Position only", "Orientation only" }, t.mode == "position" ? 1 : t.mode == "orientation" ? 2 : 0, "Which part of the endpoint pose must match.");
+        for (auto* box : { &instanceBox, &referenceBox, &modeBox }) box->onChange = [this] { readIkForm(); rebuildTaskPanel(false); showIkMarkers(); };
+        double rx = 0, ry = 0, rz = 0;
+        cad::mech::eulerDegreesFromFrame(t.toolFrame, rx, ry, rz);
+        form->addHeader("Tool frame on the endpoint instance");
+        form->addNumber("tox", "Origin X", t.toolFrame.x, "mm", "Endpoint origin in the instance frame (an engineering frame, not the body centre).");
+        form->addNumber("toy", "Origin Y", t.toolFrame.y, "mm", "Endpoint origin in the instance frame.");
+        form->addNumber("toz", "Origin Z", t.toolFrame.z, "mm", "Endpoint origin in the instance frame.");
+        form->addNumber("trx", "Rotate X", rx, "deg", "Endpoint orientation in the instance frame (extrinsic X, Y, Z).");
+        form->addNumber("try", "Rotate Y", ry, "deg", "Endpoint orientation in the instance frame.");
+        form->addNumber("trz", "Rotate Z", rz, "deg", "Endpoint orientation in the instance frame.");
+        cad::mech::eulerDegreesFromFrame(t.desired, rx, ry, rz);
+        form->addHeader("Desired pose in " + referenceNames[referenceIndex]);
+        form->addNumber("dx", "X", t.desired.x, "mm", "Desired endpoint position in the reference frame.");
+        form->addNumber("dy", "Y", t.desired.y, "mm", "Desired endpoint position in the reference frame.");
+        form->addNumber("dz", "Z", t.desired.z, "mm", "Desired endpoint position in the reference frame.");
+        form->addNumber("drx", "Rotate X", rx, "deg", "Desired endpoint orientation in the reference frame (extrinsic X, Y, Z).");
+        form->addNumber("dry", "Rotate Y", ry, "deg", "Desired endpoint orientation in the reference frame.");
+        form->addNumber("drz", "Rotate Z", rz, "deg", "Desired endpoint orientation in the reference frame.");
+        for (const auto* key : { "dx", "dy", "dz" }) form->setRowVisible(key, t.mode != "orientation");
+        for (const auto* key : { "drx", "dry", "drz" }) form->setRowVisible(key, t.mode != "position");
+        form->addButton("ikCapture", "Capture Current Pose", async([](CadWorkspacePanel& p) { p.captureIkTarget(); }), "Set the desired pose to where the endpoint is now. Nothing moves.");
+        form->addButton("ikRemoveTarget", "Remove this target", async([](CadWorkspacePanel& p)
+        {
+            p.readIkForm();
+            p.ikDraft->targets.erase(p.ikDraft->targets.begin() + p.ikTargetIndex);
+            p.ikTargetIndex = juce::jmax(0, p.ikTargetIndex - 1); p.ikDirty = true; p.ikFormStale = true;
+            p.rebuildTaskPanel(false); p.showIkMarkers();
+        }), "Remove this target from the task.");
+    }
+
+    form->addHeader("Drag target");
+    form->addToggle("ikDrag", "Drag the target handle in the model view", ikDragEnabled, "When on, pressing the yellow diamond drags the desired position on the blue plane; elsewhere the view orbits as usual.");
+    form->addChoice("ikPlane", "Drag plane", { "XY", "XZ", "YZ" }, ikDragPlane == "XZ" ? 1 : ikDragPlane == "YZ" ? 2 : 0, "Plane of the target's reference frame, through the desired point, that the handle moves in.");
+
+    form->addHeader("Solve");
+    form->addButton("ikSolve", simulationOwns ? "Solve (DEWB is driving)" : "Solve", async([](CadWorkspacePanel& p) { p.solveIkDraft(); }), "Solve the selected drivers from the current pose. The document is not changed.");
+    form->addButton("ikReset", "Reset Preview", async([](CadWorkspacePanel& p) { p.previewJoint(true); }), "Return every driver to its reference coordinate (runtime only).");
+    if (draft.id.isNotEmpty())
+    {
+        const auto id = draft.id;
+        form->addButton("ikDelete", "Delete task", async([id](CadWorkspacePanel& p)
+        {
+            juce::String e;
+            if (!p.service->removeIkTask(id, e)) { p.showError(e); return; }
+            p.ikDraft.reset(); p.ikDirty = false;
+            p.refreshFromDocument(true); p.selectFeature({});
+            p.setMessage("IK task deleted. Undo restores it.", 0);
+        }), "Delete this saved task (undoable).");
+    }
+
+    // Result: the last solve (accepted, or a rejected candidate) and the errors of the pose actually shown.
+    form->addHeader("Result");
+    juce::String text;
+    int lines = 1;
+    if (motionRuntime != nullptr && motionRuntime->hasIkResult() && motionRuntime->lastIkTaskId() == draft.id)
+    {
+        const auto& r = motionRuntime->lastIkResult();
+        text << (r.valid ? "Solved and shown: " : "Not applied: ") << cad::kin::statusName(r.status) << ". " << r.message;
+        lines += 3;
+        if (!r.valid && !r.targets.empty())
+        {
+            text << "\n" << (r.candidateConsistent ? "Rejected candidate (closest consistent configuration found):" : "Rejected candidate:");
+            for (const auto& t : r.targets) { text << "\n  " << t.name << ": " << formatError(t) << (t.reached ? "  (within tolerance)" : "  (outside tolerance)"); ++lines; }
+            ++lines;
+        }
+        if (!r.limitedJoints.isEmpty()) { text << "\nAt hard bounds: " << r.limitedJoints.joinIntoString(", "); ++lines; }
+        if (r.valid && r.freeCoordinates > 0) { text << "\nRemaining freedom: " << r.freeJoints.joinIntoString(", "); ++lines; }
+    }
+    else text << "Not solved in this session yet.";
+    const auto shown = motionRuntime != nullptr ? motionRuntime->shownTargetReports() : std::vector<cad::kin::TargetReport> {};
+    if (!shown.empty())
+    {
+        text << "\nShown pose:";
+        for (const auto& t : shown) { text << "\n  " << t.name << ": " << formatError(t) << (t.reached ? "  reached" : "  not reached"); ++lines; }
+        ++lines;
+    }
+    form->addNote("ikResult", text, juce::jlimit(2, 14, lines + 1));
+    ikFormStale = false;
+    showIkMarkers();
+}
+
+void CadWorkspacePanel::validateIkPanel(juce::String& problem, int& severity)
+{
+    readIkForm();
+    if (ikDraft == nullptr) return;
+    for (const auto* key : { "ikPosTol", "ikAngTol", "tox", "toy", "toz", "trx", "try", "trz", "dx", "dy", "dz", "drx", "dry", "drz" })
+        if (problem.isEmpty() && form->control(key) != nullptr && form->rowVisible(key) && !form->numberValid(key)) { problem = "IK values must be numbers."; severity = 2; }
+    if (problem.isEmpty() && ikDraft->name.trim().isEmpty()) { problem = "Name the task."; severity = 2; }
+    juce::String error;
+    if (problem.isEmpty() && !djehuti::cad::mech::validateIkTask(service->document().mechanicsData(), *ikDraft, error)) { problem = error; severity = 2; }
+    if (problem.isEmpty() && ikDraft->adjustableJoints.isEmpty()) problem = "Select the driver joints the solve may adjust.";
+    if (problem.isEmpty() && ikDraft->targets.empty()) problem = "Add a target.";
+}
+
+void CadWorkspacePanel::captureIkTarget()
+{
+    readIkForm();
+    if (ikDraft == nullptr || motionRuntime == nullptr || !juce::isPositiveAndBelow(ikTargetIndex, (int) ikDraft->targets.size())) return;
+    juce::String e;
+    if (!motionRuntime->captureTarget(ikDraft->targets[(size_t) ikTargetIndex], e)) { showError(e); return; }
+    ikDirty = true; ikFormStale = true;
+    rebuildTaskPanel(false);
+    setMessage("Desired pose set to the current endpoint pose. Nothing moved.", 0);
+}
+
+void CadWorkspacePanel::solveIkDraft()
+{
+    readIkForm();
+    if (ikDraft == nullptr || motionRuntime == nullptr) return;
+    const auto result = motionRuntime->solveIk(*ikDraft);
+    rebuildTaskPanel(false);
+    if (result.valid) setMessage("Targets reached: " + djehuti::cad::kin::statusName(result.status) + ". The document is unchanged.", 0);
+    else setMessage(djehuti::cad::kin::statusName(result.status) + ": " + result.message + " The last valid pose stays.", result.status == djehuti::cad::kin::Status::invalidInput ? 2 : 1);
+}
+
+bool CadWorkspacePanel::saveIkDraft()
+{
+    readIkForm();
+    if (ikDraft == nullptr) return false;
+    auto toSave = *ikDraft;
+    for (auto& t : toSave.targets) if (t.id.startsWith("draft-")) t.id.clear();   // the document assigns stable ids
+    juce::String e, id;
+    const bool creating = toSave.id.isEmpty();
+    if (!(creating ? service->createIkTask(toSave, id, e) : service->updateIkTask(toSave.id, toSave, e))) { showError(e); return false; }
+    const auto savedId = creating ? id : toSave.id;
+    ikDirty = false;
+    refreshFromDocument(true);
+    selectedId = savedId;
+    loadIkDraft(savedId);
+    syncTreeSelection();
+    rebuildTaskPanel(false);
+    setMessage(creating ? "IK task saved. Undo removes it." : "IK task updated. Undo restores the previous definition.", 0);
+    return true;
+}
+
+// Dragging the handle moves the edited target's desired position within the drag plane and queues a solve;
+// the worker keeps at most one active and one pending request.
+void CadWorkspacePanel::ikTargetDragged(const juce::String& targetId, const std::array<float, 3>& point, bool finished)
+{
+    if (task != Task::ik || ikDraft == nullptr || motionRuntime == nullptr) return;
+    for (auto& t : ikDraft->targets)
+    {
+        if (t.id != targetId) continue;
+        gp_Trsf reference;
+        if (t.referenceInstance.isNotEmpty())
+        {
+            // The reference frame of the shown pose: the same transforms the markers were drawn with.
+            const auto reports = motionRuntime->shownTargetReports();
+            for (const auto& r : reports) if (r.id == t.id) reference = r.desiredWorld.Multiplied(t.desired.toTrsf().Inverted());
+        }
+        const auto local = gp_Pnt(point[0], point[1], point[2]).Transformed(reference.Inverted());
+        t.desired.x = local.X(); t.desired.y = local.Y(); t.desired.z = local.Z();
+        ikDirty = true;
+        if (form != nullptr)
+            for (const auto& [key, value] : { std::pair<const char*, double> { "dx", local.X() }, { "dy", local.Y() }, { "dz", local.Z() } })
+                if (auto* editor = dynamic_cast<juce::TextEditor*>(form->control(key))) editor->setText(juce::String(value, 4).trimCharactersAtEnd("0").trimCharactersAtEnd("."), false);
+        showIkMarkers();
+        juce::String e;
+        if (!motionRuntime->requestIkAsync(*ikDraft, e)) showError(e);
+        else if (finished) setMessage("Target moved to " + juce::String(local.X(), 2) + ", " + juce::String(local.Y(), 2) + ", " + juce::String(local.Z(), 2) + " mm. Solving; the document is unchanged.", 0);
+        return;
+    }
+}

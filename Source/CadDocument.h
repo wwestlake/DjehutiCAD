@@ -132,6 +132,10 @@ public:
     bool createCoupling(const CadCoupling& coupling, juce::String& id, juce::String& error);
     bool updateCoupling(const juce::String& id, const CadCoupling& coupling, juce::String& error);
     bool removeCoupling(const juce::String& id, juce::String& error);
+    // IK task definitions are authored data: one undoable transaction each. Targets without an id get one.
+    bool createIkTask(const CadIkTask& task, juce::String& id, juce::String& error);
+    bool updateIkTask(const juce::String& id, const CadIkTask& task, juce::String& error);
+    bool removeIkTask(const juce::String& id, juce::String& error);
     bool undo(juce::String& error);
     bool redo(juce::String& error);
     bool save(const juce::File& file, juce::String& error);
@@ -242,6 +246,9 @@ public:
     bool createCoupling(const CadCoupling& coupling, juce::String& id, juce::String& error) { return model.createCoupling(coupling, id, error); }
     bool updateCoupling(const juce::String& id, const CadCoupling& coupling, juce::String& error) { return model.updateCoupling(id, coupling, error); }
     bool removeCoupling(const juce::String& id, juce::String& error) { return model.removeCoupling(id, error); }
+    bool createIkTask(const CadIkTask& task, juce::String& id, juce::String& error) { return model.createIkTask(task, id, error); }
+    bool updateIkTask(const juce::String& id, const CadIkTask& task, juce::String& error) { return model.updateIkTask(id, task, error); }
+    bool removeIkTask(const juce::String& id, juce::String& error) { return model.removeIkTask(id, error); }
     bool undo(juce::String& error) { return model.undo(error); }
     bool redo(juce::String& error) { return model.redo(error); }
     bool makeRepresentativeReference(const juce::String& id, CadPersistentReference& reference, juce::String& error) { return model.makeRepresentativeReference(id, reference, error); }

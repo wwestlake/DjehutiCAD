@@ -2150,6 +2150,10 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
           { in("joint", "string"), in("role", "string"), in("lock value", "f64"), in("hard bounds", "i64") }, { out("ok", "i64") } },
         { "cad_create_coupling", "CAD Coupling", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
           { in("type", "string"), in("joint A", "string"), in("joint B", "string"), in("factor", "f64"), in("offset", "f64") }, { out("coupling", "string") } },
+        // Inverse kinematics through the shared IK command service: command create, update, remove, inspect,
+        // solve, status or resetPreview; args is the JSON task description; the result is the JSON outcome.
+        { "cad_ik", "CAD Inverse Kinematics", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
+          { in("command", "string"), in("args json", "string") }, { out("result", "string") } },
         // A FRust programmable component's electrical interface (Workbench):
         // values are f64 volts, amps, seconds; each names a pin, parameter
         // or state variable of the component.

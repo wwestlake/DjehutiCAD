@@ -6,6 +6,7 @@
 #include "Viewport3D.h"
 #include "CadWorkspacePanel.h"
 #include "FrustEngine.h"
+#include "CadIkCommands.h"
 
 namespace
 {
@@ -19,6 +20,38 @@ constexpr int kNewCadDocument = 106;
 constexpr int kOpenCadDocument = 107;
 constexpr int kSaveCadDocument = 108;
 constexpr int kSaveCadDocumentAs = 109;
+
+// Agent tool name -> shared IK command.
+juce::String ikCommandForTool(const std::string& name)
+{
+    if (name == "cad_ik_create_task") return "create";
+    if (name == "cad_ik_update_task") return "update";
+    if (name == "cad_ik_remove_task") return "remove";
+    if (name == "cad_ik_inspect") return "inspect";
+    if (name == "cad_ik_solve") return "solve";
+    if (name == "cad_ik_status") return "status";
+    if (name == "cad_ik_reset_preview") return "resetPreview";
+    return {};
+}
+}
+
+// Runs one shared IK command on the message thread and waits for its structured result, so automation
+// receives the actual outcome rather than a "scheduled" acknowledgement.
+std::string DjehutiCAD::runIkCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const juce::String& command, const juce::String& arguments)
+{
+    const auto run = [safe, command, arguments]() -> std::string
+    {
+        if (safe == nullptr || safe->cadService == nullptr || safe->motionRuntime == nullptr) return R"({"ok": false, "error": "DjehutiCAD is closing."})";
+        const auto result = djehuti::cad::ikcmd::execute(command, juce::JSON::parse(arguments.isEmpty() ? juce::String("{}") : arguments), *safe->cadService, *safe->motionRuntime);
+        if (safe->cadWorkspace != nullptr) safe->cadWorkspace->repaint();
+        return result.toStdString();
+    };
+    if (juce::MessageManager::getInstance()->isThisTheMessageThread()) return run();
+    auto done = std::make_shared<juce::WaitableEvent>();
+    auto output = std::make_shared<std::string>(R"({"ok": false, "error": "DjehutiCAD did not answer within 20 s."})");
+    juce::MessageManager::callAsync([run, done, output] { *output = run(); done->signal(); });
+    done->wait(20000);
+    return *output;
 }
 
 DjehutiCAD::DjehutiCAD()
@@ -50,6 +83,7 @@ DjehutiCAD::DjehutiCAD()
         frust_engine::setCadMotionHooks([board] { return board->get().toStdString(); },
                                         [safe](const std::string& joint, double value) { juce::MessageManager::callAsync([safe, joint, value] { if (safe != nullptr && safe->motionRuntime != nullptr) { juce::String e; safe->motionRuntime->setPreviewCoordinate(joint, value, e); } }); },
                                         [safe](const std::string& command, double stepMs) { juce::MessageManager::callAsync([safe, command, stepMs] { if (safe != nullptr && safe->motionLink != nullptr) { juce::String e; safe->motionLink->requestLifecycle(command, (std::int64_t) std::llround(stepMs * 1.0e9), e); } }); });
+        frust_engine::setCadIkHook([safe](const std::string& command, const std::string& arguments) { return runIkCommand(safe, command, arguments); });
     }
     cadWorkspace = std::make_unique<CadWorkspacePanel>(cadService);
     tabs.addTab("CAD Workspace", juce::Colour(0xff11161b), cadWorkspace.get(), true);
@@ -73,6 +107,8 @@ DjehutiCAD::DjehutiCAD()
     agentPanel = std::make_unique<DjehutiAgentPanel>(properties, [safeThis, motionBoard](const std::string& name, const std::string& arguments, std::shared_ptr<DjehutiAgentRequestState> state) {
         // Link status is read from the thread-safe status board so the agent sees it immediately.
         if (name == "cad_motion_status") return motionBoard->get().toStdString();
+        if (const auto ikCommand = ikCommandForTool(name); ikCommand.isNotEmpty())
+            return (state == nullptr || state->cancelled) ? std::string(R"({"ok": false, "error": "Request cancelled."})") : runIkCommand(safeThis, ikCommand, arguments);
         juce::MessageManager::callAsync([safeThis, name, arguments, state] {
             if (safeThis == nullptr || state == nullptr || state->cancelled || !state->alive) return;
             if (name == "open_cad_workspace") safeThis->selectWorkspace(0);
@@ -175,6 +211,7 @@ DjehutiCAD::~DjehutiCAD()
     agentPanel.reset();
     viewsPanel.reset();
     frust_engine::setCadMotionHooks(nullptr, nullptr, nullptr);
+    frust_engine::setCadIkHook(nullptr);
     motionLink.reset();
     motionRuntime.reset();
     cadWorkspace.reset();
@@ -308,7 +345,8 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "3. Select the joint to preview a coordinate (runtime only, never saved) or map a DEWB signal to it.\n"
                                                "4. Motion Link: Start Listening and give DEWB the pipe path; DEWB validates the profile, synchronizes, then streams motion.\n"
                                                "5. Mechanisms: ground at least one instance (or joint parts to the world), give each joint a role (driver = input, dependent = solved, locked = held), add Couplings for gears, linear ratios, rack and pinion or screws; closed loops such as slider-cranks are allowed. Preview a driver and the dependent joints follow; the status shows remaining freedom and constraint errors.\n"
-                                               "6. Simulation controls in the Motion Link panel (Start/Resume, Pause, Stop Simulation, Reset, Single Step) ask DEWB to change its run state; they need a DEWB that advertises lifecycle control, and the model moves only when DEWB reports the new state.");
+                                               "6. Simulation controls in the Motion Link panel (Start/Resume, Pause, Stop Simulation, Reset, Single Step) ask DEWB to change its run state; they need a DEWB that advertises lifecycle control, and the model moves only when DEWB reports the new state.\n"
+                                               "7. Inverse Kinematics: press IK, choose the driver joints the solve may adjust, then add targets: the instance carrying the endpoint, a tool frame on it (mm, degrees), the reference frame (World or another instance), the mode (position, orientation or full pose) and the desired pose. Capture Current Pose copies the shown pose without moving anything. Solve moves only the selected drivers; dependent joints follow the mechanism, locked joints and grounding hold, hard bounds are respected. A result is shown only if every constraint and target holds; otherwise the last valid pose stays and the target errors are listed. Drag Target moves a target's position on the shown plane (the yellow diamond). Save Task stores the definition (undoable); solving never changes the document. Local IK is unavailable while DEWB drives the mechanism.");
     else if (commandId == 30)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About DjehutiCAD",
                                                "DjehutiCAD 0.1.0\nA FRust-programmable CAD foundation.");

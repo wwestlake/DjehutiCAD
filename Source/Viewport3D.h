@@ -30,8 +30,19 @@ public:
     juce::String pickBody(juce::Point<float> position) const;
     void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); }
     std::function<void(const juce::String& featureId)> onBodyPicked;
+    // IK target dragging. Only while enabled, and only when a press lands on the published drag handle, does a
+    // drag move the target within its drag plane; every other press keeps orbit, pan and picking unchanged.
+    void setTargetDragEnabled(bool enabled) { targetDragEnabled = enabled; if (!enabled) draggingTarget = false; }
+    std::function<void(const juce::String& targetId, const std::array<float, 3>& point, bool finished)> onTargetDragged;
 
 private:
+    bool rayThrough(juce::Point<float> position, std::array<float, 3>& origin, std::array<float, 3>& direction) const;
+    bool toScreen(const std::array<float, 3>& point, juce::Point<float>& screen) const;
+    bool dragPoint(juce::Point<float> position, std::array<float, 3>& point) const;
+    bool targetDragEnabled = false, draggingTarget = false;
+    juce::String dragTargetId;
+    std::array<float, 3> dragPlanePoint {}, dragPlaneNormal {};
+
     void timerCallback() override;
     void newOpenGLContextCreated() override;
     void renderOpenGL() override;

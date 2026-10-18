@@ -199,6 +199,9 @@ bool CadDocument::removeInstance(const juce::String& id,juce::String& error)
     return mutate([&](juce::String& e)
     {
         for (const auto& joint : mechanics.joints) if (joint.parentInstance == id || joint.childInstance == id) { e = "Remove joint " + joint.name + " before deleting this instance."; return false; }
+        for (const auto& task : mechanics.ikTasks)
+            for (const auto& target : task.targets)
+                if (target.instanceId == id || target.referenceInstance == id) { e = "IK task " + task.name + " uses this instance in target " + target.name + "; edit or delete that task first."; return false; }
         const auto before = mechanics.instances.size();
         mechanics.instances.erase(std::remove_if(mechanics.instances.begin(), mechanics.instances.end(), [&](const CadMechanicalInstance& i) { return i.id == id; }), mechanics.instances.end());
         if (mechanics.instances.size() == before) { e = "Unknown assembly instance: " + id; return false; }
@@ -216,6 +219,7 @@ bool CadDocument::renameMechanical(const juce::String& id,const juce::String& na
         for (auto& instance : mechanics.instances) if (instance.id == id) { instance.name = name.trim(); return true; }
         for (auto& coupling : mechanics.couplings) if (coupling.id == id) { coupling.name = name.trim(); return true; }
         for (auto& joint : mechanics.joints) if (joint.id == id) { joint.name = name.trim(); return true; }
+        for (auto& task : mechanics.ikTasks) if (task.id == id) { task.name = name.trim(); return true; }
         e = "Unknown instance or joint: " + id;
         return false;
     }, error);
@@ -269,6 +273,7 @@ bool CadDocument::removeJoint(const juce::String& id,juce::String& error)
         if (mechanics.joints.size() == before) { e = "Unknown joint: " + id; return false; }
         mechanics.mappings.erase(std::remove_if(mechanics.mappings.begin(), mechanics.mappings.end(), [&](const CadSignalMapping& m) { return m.jointId == id; }), mechanics.mappings.end());
         mechanics.couplings.erase(std::remove_if(mechanics.couplings.begin(), mechanics.couplings.end(), [&](const CadCoupling& c) { return c.jointA == id || c.jointB == id; }), mechanics.couplings.end());
+        for (auto& task : mechanics.ikTasks) task.adjustableJoints.removeString(id);   // the task stays; it no longer adjusts this joint
         ++mechanics.interfaceRevision; ++mechanics.profileRevision;
         return true;
     }, error);
@@ -359,6 +364,50 @@ bool CadDocument::removeCoupling(const juce::String& id,juce::String& error)
         mechanics.couplings.erase(std::remove_if(mechanics.couplings.begin(), mechanics.couplings.end(), [&](const CadCoupling& c) { return c.id == id; }), mechanics.couplings.end());
         if (mechanics.couplings.size() == before) { e = "Unknown coupling: " + id; return false; }
         ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        return true;
+    }, error);
+}
+
+bool CadDocument::createIkTask(const CadIkTask& request,juce::String& id,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        CadIkTask task = request;
+        task.id = newId("iktask", nextNumber++);
+        if (task.name.trim().isEmpty()) task.name = "IK task " + task.id.fromLastOccurrenceOf("-", false, false);
+        for (auto& target : task.targets) if (target.id.isEmpty()) target.id = newId("iktarget", nextNumber++);
+        mechanics.ikTasks.push_back(task);
+        if (!mech::validateModel(mechanics, e)) return false;
+        id = task.id;
+        return true;
+    }, error);
+}
+
+bool CadDocument::updateIkTask(const juce::String& id,const CadIkTask& request,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto& task : mechanics.ikTasks)
+            if (task.id == id)
+            {
+                auto updated = request; updated.id = id;
+                if (updated.name.trim().isEmpty()) updated.name = task.name;
+                for (auto& target : updated.targets) if (target.id.isEmpty()) target.id = newId("iktarget", nextNumber++);
+                task = updated;
+                return mech::validateModel(mechanics, e);
+            }
+        e = "Unknown IK task: " + id;
+        return false;
+    }, error);
+}
+
+bool CadDocument::removeIkTask(const juce::String& id,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        const auto before = mechanics.ikTasks.size();
+        mechanics.ikTasks.erase(std::remove_if(mechanics.ikTasks.begin(), mechanics.ikTasks.end(), [&](const CadIkTask& t) { return t.id == id; }), mechanics.ikTasks.end());
+        if (mechanics.ikTasks.size() == before) { e = "Unknown IK task: " + id; return false; }
         return true;
     }, error);
 }

@@ -93,6 +93,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadMechanics.cpp
     Source/CadKinematics.h
     Source/CadKinematics.cpp
+    Source/CadIkCommands.h
+    Source/CadIkCommands.cpp
     Source/CadMotionRuntime.h
     Source/CadMotionRuntime.cpp
     Source/MotionLink.h

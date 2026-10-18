@@ -213,6 +213,7 @@ extern "C" const char* djehuti_cad_boolean(const char* operation, const char* fi
 std::function<std::string()> motionStatusHook;
 std::function<void(const std::string&, double)> motionPreviewHook;
 std::function<void(const std::string&, double)> motionLifecycleHook;
+std::function<std::string(const std::string&, const std::string&)> ikCommandHook;
 
 extern "C" const char* djehuti_cad_create_instance(const char* feature, const char* name)
 {
@@ -311,6 +312,19 @@ extern "C" std::int64_t djehuti_cad_motion_lifecycle(const char* command, double
     return 1;
 }
 
+// IK task commands (create, update, remove, inspect, solve, status, resetPreview) with JSON arguments; returns
+// the shared IK command service's JSON result, including per-target errors and failure explanations.
+extern "C" const char* djehuti_cad_ik(const char* command, const char* argsJson)
+{
+    std::function<std::string(const std::string&, const std::string&)> hook;
+    { std::lock_guard<std::mutex> lock(cadMutex); hook = ikCommandHook; }
+    if (!hook) { setCadError("Inverse kinematics is not available."); return returnCad("{\"ok\": false, \"error\": \"Inverse kinematics is not available.\"}"); }
+    const auto result = juce::String(hook(command != nullptr ? command : "", argsJson != nullptr ? argsJson : "{}"));
+    const auto parsed = juce::JSON::parse(result);
+    setCadError((bool) parsed.getProperty("ok", false) ? juce::String() : parsed.getProperty("error", "IK command failed.").toString());
+    return returnCad(result);
+}
+
 extern "C" const char* djehuti_cad_motion_status()
 {
     std::function<std::string()> hook;
@@ -373,6 +387,7 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_set_instance_placement", reinterpret_cast<void*>(&djehuti_cad_set_instance_placement));
         frust_plugin_register_host_function("djehuti_cad_set_joint_role", reinterpret_cast<void*>(&djehuti_cad_set_joint_role));
         frust_plugin_register_host_function("djehuti_cad_create_coupling", reinterpret_cast<void*>(&djehuti_cad_create_coupling));
+        frust_plugin_register_host_function("djehuti_cad_ik", reinterpret_cast<void*>(&djehuti_cad_ik));
     });
 }
 
@@ -615,6 +630,12 @@ void setCadMotionHooks(std::function<std::string()> status, std::function<void(c
     motionLifecycleHook = std::move(lifecycle);
 }
 
+void setCadIkHook(std::function<std::string(const std::string&, const std::string&)> hook)
+{
+    std::lock_guard<std::mutex> lock(cadMutex);
+    ikCommandHook = std::move(hook);
+}
+
 void setCadCommandService(std::shared_ptr<djehuti::cad::CadCommandService> service)
 {
     std::lock_guard<std::mutex> lock(cadMutex);
@@ -643,6 +664,7 @@ std::string cadPrelude()
            "extern fn djehuti_cad_motion_preview(joint: String, value: f64) -> i64;\n"
            "extern fn djehuti_cad_motion_status() -> String;\n"
            "extern fn djehuti_cad_motion_lifecycle(command: String, step_ms: f64) -> i64;\n"
+           "extern fn djehuti_cad_ik(command: String, args_json: String) -> String;\n"
            "extern fn djehuti_cad_set_grounded(instance: String, grounded: i64) -> i64;\n"
            "extern fn djehuti_cad_set_instance_placement(instance: String, x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> i64;\n"
            "extern fn djehuti_cad_set_joint_role(joint: String, role: String, lock_value: f64, enforce_limits: i64) -> i64;\n"
@@ -656,7 +678,7 @@ const std::vector<std::string>& cadHostFunctions()
         "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
         "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
-        "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling"
+        "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik"
     };
     return names;
 }

@@ -35,6 +35,7 @@ const CadMechanicalInstance* CadMechanics::findInstance(const juce::String& id) 
 const CadJoint* CadMechanics::findJoint(const juce::String& id) const { for (const auto& j : joints) if (j.id == id) return &j; return nullptr; }
 const CadCoupling* CadMechanics::findCoupling(const juce::String& id) const { for (const auto& c : couplings) if (c.id == id) return &c; return nullptr; }
 const CadSignalMapping* CadMechanics::mappingForJoint(const juce::String& jointId) const { for (const auto& m : mappings) if (m.jointId == jointId) return &m; return nullptr; }
+const CadIkTask* CadMechanics::findIkTask(const juce::String& id) const { for (const auto& t : ikTasks) if (t.id == id) return &t; return nullptr; }
 bool CadMechanics::instanceHasJoints(const juce::String& id) const { for (const auto& j : joints) if (j.parentInstance == id || j.childInstance == id) return true; return false; }
 
 namespace mech
@@ -161,7 +162,69 @@ bool validateModel(const CadMechanics& model, juce::String& error)
         if (!ids.insert(c.id).second) { error = "Duplicate id " + c.id + "."; return false; }
         if (!validateCoupling(model, c, error)) return false;
     }
+    for (const auto& task : model.ikTasks)
+    {
+        if (!ids.insert(task.id).second) { error = "Duplicate id " + task.id + "."; return false; }
+        for (const auto& target : task.targets) if (!ids.insert(target.id).second) { error = "Duplicate id " + target.id + "."; return false; }
+        if (!validateIkTask(model, task, error)) return false;
+    }
     return true;
+}
+
+namespace
+{
+bool frameUsable(const CadFrame& f)
+{
+    const auto norm = std::sqrt(f.qw * f.qw + f.qx * f.qx + f.qy * f.qy + f.qz * f.qz);
+    for (const auto v : { f.x, f.y, f.z, f.qw, f.qx, f.qy, f.qz }) if (!std::isfinite(v)) return false;
+    return std::abs(norm - 1.0) <= 1.0e-6;
+}
+}
+
+bool validateIkTask(const CadMechanics& model, const CadIkTask& task, juce::String& error)
+{
+    const auto label = task.name.isNotEmpty() ? task.name : juce::String("IK task");
+    if (task.id.isEmpty()) { error = label + ": the task needs an id."; return false; }
+    if (!std::isfinite(task.positionToleranceMm) || task.positionToleranceMm <= 0.0) { error = label + ": the position tolerance must be a finite number greater than zero (mm)."; return false; }
+    if (!std::isfinite(task.angleToleranceRad) || task.angleToleranceRad <= 0.0) { error = label + ": the angle tolerance must be a finite number greater than zero."; return false; }
+    std::set<juce::String> joints;
+    for (const auto& id : task.adjustableJoints)
+    {
+        if (model.findJoint(id) == nullptr) { error = label + ": adjustable joint '" + id + "' does not exist."; return false; }
+        if (!joints.insert(id).second) { error = label + ": joint " + model.findJoint(id)->name + " is listed twice."; return false; }
+    }
+    std::set<juce::String> targets;
+    for (const auto& t : task.targets)
+    {
+        const auto name = t.name.isNotEmpty() ? t.name : t.id;
+        if (t.id.isEmpty()) { error = label + ": every target needs an id."; return false; }
+        if (!targets.insert(t.id).second) { error = label + ": target id " + t.id + " is used twice."; return false; }
+        if (model.findInstance(t.instanceId) == nullptr) { error = label + ", " + name + ": choose the instance that carries the endpoint."; return false; }
+        if (t.referenceInstance.isNotEmpty() && model.findInstance(t.referenceInstance) == nullptr) { error = label + ", " + name + ": reference instance '" + t.referenceInstance + "' does not exist."; return false; }
+        if (t.referenceInstance == t.instanceId) { error = label + ", " + name + ": the reference frame must be the world or a different instance."; return false; }
+        if (t.mode != "position" && t.mode != "orientation" && t.mode != "pose") { error = label + ", " + name + ": mode must be position, orientation or pose."; return false; }
+        if (!frameUsable(t.toolFrame) || !frameUsable(t.desired)) { error = label + ", " + name + ": frames must be finite with unit-quaternion rotations."; return false; }
+    }
+    return true;
+}
+
+juce::var ikTaskToJson(const CadIkTask& task)
+{
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty("id", task.id); o->setProperty("name", task.name);
+    juce::Array<juce::var> joints, targets;
+    for (const auto& j : task.adjustableJoints) joints.add(j);
+    for (const auto& t : task.targets)
+    {
+        auto to = std::make_unique<juce::DynamicObject>();
+        to->setProperty("id", t.id); to->setProperty("name", t.name); to->setProperty("instance", t.instanceId); to->setProperty("referenceInstance", t.referenceInstance);
+        to->setProperty("toolFrame", frameToJson(t.toolFrame, 1.0)); to->setProperty("desired", frameToJson(t.desired, 1.0));
+        to->setProperty("mode", t.mode); to->setProperty("enabled", t.enabled);
+        targets.add(juce::var(to.release()));
+    }
+    o->setProperty("adjustableJoints", joints); o->setProperty("targets", targets);
+    o->setProperty("positionToleranceMm", task.positionToleranceMm); o->setProperty("angleToleranceRad", task.angleToleranceRad);
+    return juce::var(o.release());
 }
 
 bool validateMapping(const CadMechanics& model, const CadSignalMapping& mapping, juce::String& error)
@@ -205,7 +268,32 @@ bool frameFromJson(const juce::var& value, CadFrame& frame, juce::String& error)
     frame.qw /= norm; frame.qx /= norm; frame.qy /= norm; frame.qz /= norm;
     return true;
 }
+}
 
+bool ikTaskFromJson(const juce::var& v, CadIkTask& task, juce::String& error)
+{
+    CadIkTask loaded;
+    if (!v.isObject()) { error = "IK task entry is invalid."; return false; }
+    loaded.id = v.getProperty("id", "").toString(); loaded.name = v.getProperty("name", "").toString();
+    if (const auto* list = v.getProperty("adjustableJoints", {}).getArray()) for (const auto& j : *list) loaded.adjustableJoints.add(j.toString());
+    loaded.positionToleranceMm = v.getProperty("positionToleranceMm", 0.01);
+    loaded.angleToleranceRad = v.getProperty("angleToleranceRad", 1.0e-4);
+    if (const auto* list = v.getProperty("targets", {}).getArray())
+        for (const auto& tv : *list)
+        {
+            CadIkTarget t;
+            t.id = tv.getProperty("id", "").toString(); t.name = tv.getProperty("name", "").toString();
+            t.instanceId = tv.getProperty("instance", "").toString(); t.referenceInstance = tv.getProperty("referenceInstance", "").toString();
+            t.mode = tv.getProperty("mode", "pose").toString(); t.enabled = (bool) tv.getProperty("enabled", true);
+            if (!frameFromJson(tv.getProperty("toolFrame", {}), t.toolFrame, error) || !frameFromJson(tv.getProperty("desired", {}), t.desired, error)) { error = "IK target " + t.id + ": " + error; return false; }
+            loaded.targets.push_back(t);
+        }
+    task = std::move(loaded);
+    return true;
+}
+
+namespace
+{
 // Schema 1 positioned joint children through a single-parent tree. Used only to migrate those documents.
 std::map<juce::String, gp_Trsf> legacyReferencePlacements(const CadMechanics& model)
 {
@@ -271,7 +359,10 @@ juce::var toJson(const CadMechanics& model)
         o->setProperty("scale", m.scale); o->setProperty("offset", m.offset); o->setProperty("initialCoordinate", m.initialCoordinate);
         mappings.add(juce::var(o.release()));
     }
+    juce::Array<juce::var> tasks;
+    for (const auto& t : model.ikTasks) tasks.add(ikTaskToJson(t));
     root->setProperty("instances", instances); root->setProperty("joints", joints); root->setProperty("couplings", couplings); root->setProperty("mappings", mappings);
+    root->setProperty("ikTasks", tasks);
     return juce::var(root.release());
 }
 
@@ -322,6 +413,13 @@ bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error)
             m.sourceQuantity = v.getProperty("sourceQuantity", "").toString(); m.sourceUnit = v.getProperty("sourceUnit", "").toString();
             m.scale = v.getProperty("scale", 1.0); m.offset = v.getProperty("offset", 0.0); m.initialCoordinate = v.getProperty("initialCoordinate", 0.0);
             loaded.mappings.push_back(m);
+        }
+    if (const auto* list = json.getProperty("ikTasks", {}).getArray())   // schema 3; absent in older documents
+        for (const auto& v : *list)
+        {
+            CadIkTask task;
+            if (!ikTaskFromJson(v, task, error)) return false;
+            loaded.ikTasks.push_back(task);
         }
     if (schema < 2)
     {

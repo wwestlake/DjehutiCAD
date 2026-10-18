@@ -83,12 +83,97 @@ Viewport3D::~Viewport3D() { context.detach(); }
 void Viewport3D::paint(juce::Graphics& g) { g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
 void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged) frameScene(); }
 void Viewport3D::timerCallback() {}
-void Viewport3D::mouseDown(const juce::MouseEvent& e) { dragStart = pressPosition = e.position.roundToInt(); }
+void Viewport3D::mouseDown(const juce::MouseEvent& e)
+{
+    dragStart = pressPosition = e.position.roundToInt();
+    draggingTarget = false;
+    if (!targetDragEnabled || e.mods.isRightButtonDown() || e.mods.isShiftDown() || onTargetDragged == nullptr) return;
+    const auto posed = poseSource ? poseSource() : pose;
+    juce::Point<float> handle;
+    if (posed == nullptr || !posed->dragHandle.active || !toScreen(posed->dragHandle.point, handle) || handle.getDistanceFrom(e.position) > 14.0f) return;
+    draggingTarget = true;
+    dragTargetId = posed->dragHandle.targetId;
+    dragPlanePoint = posed->dragHandle.point; dragPlaneNormal = posed->dragHandle.normal;
+}
 void Viewport3D::mouseUp(const juce::MouseEvent& e)
 {
+    if (draggingTarget)
+    {
+        draggingTarget = false;
+        std::array<float, 3> point {};
+        if (dragPoint(e.position, point) && onTargetDragged) onTargetDragged(dragTargetId, point, true);
+        return;
+    }
     // A click without dragging picks a body; any drag stays pure camera navigation.
     if (e.mods.isRightButtonDown() || e.mods.isShiftDown() || e.position.roundToInt().getDistanceFrom(pressPosition) > 3 || onBodyPicked == nullptr) return;
     onBodyPicked(pickBody(e.position));
+}
+// World ray (mm) through a component position, from the inverse of the current view-projection.
+bool Viewport3D::rayThrough(juce::Point<float> position, std::array<float, 3>& origin, std::array<float, 3>& direction) const
+{
+    if (getWidth() <= 0 || getHeight() <= 0) return false;
+    const auto vp = mul(projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
+    // General 4x4 inverse (column-major), cofactor expansion.
+    const float* a = vp.v; float inv[16];
+    inv[0] = a[5]*a[10]*a[15] - a[5]*a[11]*a[14] - a[9]*a[6]*a[15] + a[9]*a[7]*a[14] + a[13]*a[6]*a[11] - a[13]*a[7]*a[10];
+    inv[4] = -a[4]*a[10]*a[15] + a[4]*a[11]*a[14] + a[8]*a[6]*a[15] - a[8]*a[7]*a[14] - a[12]*a[6]*a[11] + a[12]*a[7]*a[10];
+    inv[8] = a[4]*a[9]*a[15] - a[4]*a[11]*a[13] - a[8]*a[5]*a[15] + a[8]*a[7]*a[13] + a[12]*a[5]*a[11] - a[12]*a[7]*a[9];
+    inv[12] = -a[4]*a[9]*a[14] + a[4]*a[10]*a[13] + a[8]*a[5]*a[14] - a[8]*a[6]*a[13] - a[12]*a[5]*a[10] + a[12]*a[6]*a[9];
+    inv[1] = -a[1]*a[10]*a[15] + a[1]*a[11]*a[14] + a[9]*a[2]*a[15] - a[9]*a[3]*a[14] - a[13]*a[2]*a[11] + a[13]*a[3]*a[10];
+    inv[5] = a[0]*a[10]*a[15] - a[0]*a[11]*a[14] - a[8]*a[2]*a[15] + a[8]*a[3]*a[14] + a[12]*a[2]*a[11] - a[12]*a[3]*a[10];
+    inv[9] = -a[0]*a[9]*a[15] + a[0]*a[11]*a[13] + a[8]*a[1]*a[15] - a[8]*a[3]*a[13] - a[12]*a[1]*a[11] + a[12]*a[3]*a[9];
+    inv[13] = a[0]*a[9]*a[14] - a[0]*a[10]*a[13] - a[8]*a[1]*a[14] + a[8]*a[2]*a[13] + a[12]*a[1]*a[10] - a[12]*a[2]*a[9];
+    inv[2] = a[1]*a[6]*a[15] - a[1]*a[7]*a[14] - a[5]*a[2]*a[15] + a[5]*a[3]*a[14] + a[13]*a[2]*a[7] - a[13]*a[3]*a[6];
+    inv[6] = -a[0]*a[6]*a[15] + a[0]*a[7]*a[14] + a[4]*a[2]*a[15] - a[4]*a[3]*a[14] - a[12]*a[2]*a[7] + a[12]*a[3]*a[6];
+    inv[10] = a[0]*a[5]*a[15] - a[0]*a[7]*a[13] - a[4]*a[1]*a[15] + a[4]*a[3]*a[13] + a[12]*a[1]*a[7] - a[12]*a[3]*a[5];
+    inv[14] = -a[0]*a[5]*a[14] + a[0]*a[6]*a[13] + a[4]*a[1]*a[14] - a[4]*a[2]*a[13] - a[12]*a[1]*a[6] + a[12]*a[2]*a[5];
+    inv[3] = -a[1]*a[6]*a[11] + a[1]*a[7]*a[10] + a[5]*a[2]*a[11] - a[5]*a[3]*a[10] - a[9]*a[2]*a[7] + a[9]*a[3]*a[6];
+    inv[7] = a[0]*a[6]*a[11] - a[0]*a[7]*a[10] - a[4]*a[2]*a[11] + a[4]*a[3]*a[10] + a[8]*a[2]*a[7] - a[8]*a[3]*a[6];
+    inv[11] = -a[0]*a[5]*a[11] + a[0]*a[7]*a[9] + a[4]*a[1]*a[11] - a[4]*a[3]*a[9] - a[8]*a[1]*a[7] + a[8]*a[3]*a[5];
+    inv[15] = a[0]*a[5]*a[10] - a[0]*a[6]*a[9] - a[4]*a[1]*a[10] + a[4]*a[2]*a[9] + a[8]*a[1]*a[6] - a[8]*a[2]*a[5];
+    const auto d = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
+    if (std::abs(d) < 1.0e-20f) return false;
+    const float ndcX = position.x / (float) getWidth() * 2.0f - 1.0f, ndcY = 1.0f - position.y / (float) getHeight() * 2.0f;
+    auto unproject = [&](float z, std::array<float, 3>& out)
+    {
+        float w = 0.0f;
+        for (int row = 0; row < 4; ++row)
+        {
+            const auto value = (inv[row] * ndcX + inv[4 + row] * ndcY + inv[8 + row] * z + inv[12 + row]) / d;
+            if (row < 3) out[(size_t) row] = value; else w = value;
+        }
+        if (std::abs(w) < 1.0e-20f) return false;
+        for (auto& c : out) c /= w;
+        return true;
+    };
+    std::array<float, 3> nearPoint {}, farPoint {};
+    if (!unproject(-1.0f, nearPoint) || !unproject(1.0f, farPoint)) return false;
+    origin = nearPoint;
+    for (size_t k = 0; k < 3; ++k) direction[k] = farPoint[k] - nearPoint[k];
+    return true;
+}
+bool Viewport3D::toScreen(const std::array<float, 3>& p, juce::Point<float>& screen) const
+{
+    if (getWidth() <= 0 || getHeight() <= 0) return false;
+    const auto vp = mul(projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
+    float clip[4];
+    for (int row = 0; row < 4; ++row) clip[row] = vp.v[row] * p[0] + vp.v[4 + row] * p[1] + vp.v[8 + row] * p[2] + vp.v[12 + row];
+    if (clip[3] <= 1.0e-6f) return false;
+    screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * (float) getWidth(), (1.0f - clip[1] / clip[3]) * 0.5f * (float) getHeight() };
+    return true;
+}
+// Intersection of the view ray with the drag plane captured at the press.
+bool Viewport3D::dragPoint(juce::Point<float> position, std::array<float, 3>& point) const
+{
+    std::array<float, 3> o {}, dir {};
+    if (!rayThrough(position, o, dir)) return false;
+    const auto& n = dragPlaneNormal;
+    const auto denom = dir[0] * n[0] + dir[1] * n[1] + dir[2] * n[2];
+    if (std::abs(denom) < 1.0e-9f) return false;   // ray parallel to the plane
+    const auto t = ((dragPlanePoint[0] - o[0]) * n[0] + (dragPlanePoint[1] - o[1]) * n[1] + (dragPlanePoint[2] - o[2]) * n[2]) / denom;
+    if (t < 0.0f) return false;
+    for (size_t k = 0; k < 3; ++k) point[k] = o[k] + t * dir[k];
+    return true;
 }
 juce::String Viewport3D::pickBody(juce::Point<float> position) const
 {
@@ -135,7 +220,15 @@ juce::String Viewport3D::pickBody(juce::Point<float> position) const
     return best;
 }
 void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { const juce::SpinLock::ScopedLockType lock(highlightLock); highlights = std::move(next); }
-void Viewport3D::mouseDrag(const juce::MouseEvent& e) { const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } userCameraChanged = true; dragStart = now; }
+void Viewport3D::mouseDrag(const juce::MouseEvent& e)
+{
+    if (draggingTarget)
+    {
+        std::array<float, 3> point {};
+        if (dragPoint(e.position, point) && onTargetDragged) onTargetDragged(dragTargetId, point, false);
+        return;
+    }
+    const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } userCameraChanged = true; dragStart = now; }
 void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w)
 {
     const auto minimumDistance = juce::jmax(0.001f, sceneRadius * 0.02f);
@@ -313,6 +406,27 @@ void Viewport3D::renderOpenGL()
             {
                 juce::Colour colour = posed->axes[i].linear ? juce::Colour(0xff7fdcff) : juce::Colour(0xffffcf70);
                 for (const auto& item : colours) if (item.first == posed->axes[i].jointId) colour = item.second.brighter(0.3f);
+                shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+                glDrawArrays(GL_LINES, static_cast<GLint>(i * 2), 2);
+            }
+            glBindVertexArray(0);
+            glEnable(GL_DEPTH_TEST);
+        }
+        if (posed != nullptr && !posed->overlay.empty() && axisVao != 0)
+        {
+            // IK desired/achieved markers and the drag plane, computed by the runtime from the drawn pose.
+            std::vector<float> lines;
+            const float light[3] { 0.4f / 1.0770f, 0.8f / 1.0770f, 0.6f / 1.0770f };
+            for (const auto& line : posed->overlay)
+                for (const auto* p : { &line.a, &line.b }) { lines.insert(lines.end(), { (*p)[0], (*p)[1], (*p)[2] }); lines.insert(lines.end(), { light[0], light[1], light[2] }); }
+            glBindBuffer(GL_ARRAY_BUFFER, axisVbo);
+            glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(float)), lines.data(), GL_DYNAMIC_DRAW);
+            glDisable(GL_DEPTH_TEST);
+            glBindVertexArray(axisVao);
+            shader->setUniformMat4("uInstance", unit.v, 1, GL_FALSE);
+            for (size_t i = 0; i < posed->overlay.size(); ++i)
+            {
+                const juce::Colour colour(posed->overlay[i].argb);
                 shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
                 glDrawArrays(GL_LINES, static_cast<GLint>(i * 2), 2);
             }

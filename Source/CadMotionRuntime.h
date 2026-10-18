@@ -26,6 +26,21 @@ struct CadAxisMarker
     bool linear = false;
 };
 
+// A world-millimetre line drawn over the model (IK desired/achieved markers and the drag plane).
+struct CadOverlayLine
+{
+    std::array<float, 3> a {}, b {};
+    juce::uint32 argb = 0xffffffff;
+};
+
+// Screen-space handle for dragging an IK target's position within its drag plane (world millimetres).
+struct CadDragHandle
+{
+    bool active = false;
+    juce::String targetId;
+    std::array<float, 3> point {}, normal {};
+};
+
 struct CadPoseSnapshot
 {
     std::uint64_t serial = 0;
@@ -33,6 +48,8 @@ struct CadPoseSnapshot
     std::set<juce::String> instancedFeatures;   // bodies drawn only through their instances
     std::vector<CadAxisMarker> axes;
     float axisLength = 20.0f;
+    std::vector<CadOverlayLine> overlay;
+    CadDragHandle dragHandle;
 };
 
 // The one runtime pose shared by every CAD view. Driver coordinates come from local preview or from the
@@ -61,10 +78,33 @@ public:
     juce::String statusJson() const;
     std::function<void()> onPoseChanged;
 
+    // Local inverse kinematics. Every entry point uses kin::solveTask with the current prescribed drivers and
+    // the last valid configuration as the seed; only complete, verified poses are published, and a failed solve
+    // keeps the last valid pose. Not available while DEWB owns the pose (simulation driver).
+    kin::SolveResult solveIk(const CadIkTask& task);                       // synchronous: Solve button and automation
+    bool requestIkAsync(const CadIkTask& task, juce::String& error);       // dragging: one active job, one replaceable pending request
+    // The task whose markers are drawn (desired from the task, achieved from the displayed pose) and the target
+    // whose drag plane ("XY", "XZ" or "YZ" of its reference frame) is shown; nullptr clears the markers.
+    void setIkDisplay(const CadIkTask* task, const juce::String& dragTargetId = {}, const juce::String& dragPlane = "XY");
+    bool captureTarget(CadIkTarget& target, juce::String& error) const;    // desired := current achieved pose (no motion)
+    std::vector<kin::TargetReport> shownTargetReports() const;             // errors of the pose currently shown
+    bool hasIkResult() const { return ikResultValid; }
+    const kin::SolveResult& lastIkResult() const { return ikResult; }      // last solve: accepted pose or rejected candidate
+    juce::String lastIkTaskId() const { return ikResultTask; }
+    juce::var ikStatus(const CadIkTask* task) const;                       // structured result for automation
+    std::uint64_t ikSerial() const { return ikResultSerial; }
+    std::function<void()> onIkChanged;
+
 private:
+    class IkWorker;
+    struct IkJob;
     void timerCallback() override;
     bool solveNow(const std::map<juce::String, double>& prescribed);
     void publish();
+    void invalidateIk();
+    void acceptIk(const CadIkTask& task, const kin::SolveResult& result);
+    void deliverIk(const IkJob& job, const kin::SolveResult& result);
+    std::map<juce::String, double> seedCoordinates() const;
 
     std::shared_ptr<CadCommandService> service;
     mutable std::mutex poseLock;
@@ -74,5 +114,16 @@ private:
     bool hasValid = false, hasAttempt = false;
     Driver currentDriver = Driver::preview;
     std::uint64_t shownRevision = 0, shownInstance = 0, serial = 0;
+    std::map<juce::String, gp_Trsf> shownWorld;      // instance poses of the published snapshot
+
+    // IK runtime state (never written to the document).
+    std::unique_ptr<IkWorker> worker;
+    std::shared_ptr<int> lifeToken = std::make_shared<int>(0);
+    std::uint64_t ikGeneration = 0, ikResultSerial = 0;
+    kin::SolveResult ikResult;
+    bool ikResultValid = false;
+    juce::String ikResultTask;
+    std::unique_ptr<CadIkTask> displayTask;
+    juce::String dragTargetId, dragPlane = "XY";
 };
 }
