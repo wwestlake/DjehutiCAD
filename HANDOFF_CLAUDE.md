@@ -34,6 +34,124 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Manufacturing export: 3MF, binary STL and STEP — October 18, 2026
+
+Reference: `docs/MANUFACTURING_EXPORT.md`. Code: `Source/CadExport.*` (planning, checks, writers),
+`Source/CadExportDialog.*` (UI), `CadCommandService::planExport/runExport`.
+
+### Behaviour
+
+Entry points:
+- File > Export... (3MF, STL, STEP).
+- Right-click a visible solid body or an assembly instance in the tree > Export... (instances had no context
+  menu before).
+- Agent tool `cad_export`, FRust `djehuti_cad_export(args_json)` (via a hook like IK), and node
+  "CAD Export" (`args json`). All use the same JSON and `DjehutiCAD::runExportCommand`.
+
+Parts and placement:
+- Default scope is the visible modeled assembly. The dialog lists those parts with their sizes; all ticked
+  means the whole visible model.
+- An instanced body is replaced by its instances (no duplicate source body). Sketches, hidden operands and
+  presentation helpers are never exported.
+- Placements are the authored reference configuration only. `CadDocument::instanceShapeTransform` is now
+  shared with `CadMotionRuntime::publish`, so viewport and export apply each placement once. No current-pose
+  option was added.
+
+Threads:
+- `planExport` runs on the message thread. It resolves parts and copies every source B-rep with
+  `BRepBuilderAPI_Copy` (geometry included, no mesh).
+- `runExport` uses only those copies, so the dialog runs it on a worker thread with progress and Cancel. OCCT
+  meshing and STEP transfer stop through a `Message_ProgressIndicator`.
+- Export never mutates or dirties the document.
+
+Formats:
+- **3MF:** lib3mf, millimetre unit, one mesh object per part (name = part name, part number = id), placement
+  as the build-item transform, Title and Application metadata.
+- **Binary STL:** OCCT `StlAPI_Writer` on the placed copy. Several parts give one file per part:
+  `<base>-<part>.stl`.
+- **STEP:** OCCT `STEPCAFControl_Writer` with `StepData_ConfParameters`: AP214 IS, millimetres, names on.
+  It writes from an export-only XCAF document: one product per source body, one named component per part.
+
+Mesh and checks:
+- Mesh quality presets: Standard 0.05 mm / 15°, Fine 0.01 mm / 5°, Custom 0.001–1 mm / 0.5–45° (validated).
+  `BRepMesh_IncrementalMesh` runs on the copies, so the display mesh is untouched.
+- Checks: solid present; `BRepCheck_Analyzer`; positive volume; finite coordinates; welded closed 2-manifold
+  with consistent orientation (every edge used twice, in opposite directions); positive signed volume; and,
+  for 3MF, lib3mf `IsManifoldAndOriented`. Failures name the part.
+- Collapsed triangles are omitted and reported. A mesh/solid volume deviation over 2 % is a warning. No
+  geometry repair.
+
+Files:
+- Output goes through `*.partial-xxxxxxxx.*` siblings, then `MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)`.
+- Cancel and failure delete the temporary files and keep existing files.
+- Automation needs `overwrite: true` to replace a file. The dialog lists existing destinations, including
+  every STL batch file, and asks once.
+
+### Dependencies
+
+- **OCCT 7.8.0:** the existing `deps/occt-build` was reconfigured with
+  `BUILD_ADDITIONAL_TOOLKITS=TKDESTEP;TKDESTL;TKBinXCAF` (no module switches). Debug builds were added for
+  TKXSBase, TKDE, TKHLR, TKService, TKV3d, TKVCAF, TKXCAF, TKBinXCAF, TKDESTL and TKDESTEP; building a static
+  target does not build its dependencies. Release libraries for these were not built.
+- **lib3mf 2.5.0:** the official prebuilt SDK `lib3mf_sdk_v2.5.0.zip`; SHA-256 checked against GitHub's
+  digest.
+  - Unpacked (not committed) at `deps/lib3mf-sdk`, pinned in `deps/LIB3MF_VERSION.txt`.
+  - BSD-2 notice in `deps/LIB3MF_LICENSE.txt` and `THIRD_PARTY_NOTICES.md`.
+  - CMake fails clearly if the SDK is missing, and copies `lib3mf.dll` next to `djehuti_cad.exe`.
+
+### Verification
+
+`djehuti_cad.exe --cad-export-check` (working directory `D:\DjehutiCAD`): 29/29 passed. Results in
+`build/cad-export-check.result.json`, files in `build/export-check/`.
+
+Representative part: a 60 × 40 × 10 mm plate with a 12 mm through-hole and an 8 mm boss (23874.34 mm³). Read
+back with lib3mf, OCCT `RWStl` and `STEPCAFControl_Reader`:
+
+| Format | Readback |
+|---|---|
+| 3MF | millimetre unit; one manifold object named "Bracket plate"; 60 × 40 × 15 mm; 23874.69 mm³ (400 triangles, Standard) |
+| Binary STL | binary size identity holds; 60 × 40 × 15 mm at the authored position; 23874.69 mm³ |
+| STEP | one solid, 23874.336 mm³ exact; 60 × 40 × 15 mm; AP214 schema; `SI_UNIT(.MILLI.,.METRE.)`; product name kept |
+
+The volumes are well below the 25005 mm³ the part would have without the hole.
+
+Assembly: Left and Right plate instances (the right one turned 90° about Z at y 80) plus a Clamp block.
+- 3MF: three named parts and no duplicate source. The Right plate spans x −40..0, y 80..140.
+- STEP: three solids, component names kept, bounds x −40..120 and y 0..140.
+- STL batch: three named files.
+
+Also checked:
+- The document revision was unchanged by every export.
+- Cancel kept an existing file and left no partial output.
+- A missing folder, an existing file without overwrite, and a chordal tolerance of 0 were refused.
+
+In the running app (`build/export-check/export-check.djo`):
+- File > Export… listed the two plate instances and the Clamp block (3 parts, 160 × 140 × 15 mm).
+- With the clamp unticked: 3MF, then STEP, then Fine STL (two files) were exported.
+- Exporting again to the same STL names was refused. After the change to confirm-first, a re-export showed
+  "Replace existing files?" with the path, and Replace saved it.
+- Right-click Clamp block > Export… preselected only that part.
+
+An independent Python zip/XML reading of `gui-plates.3mf` showed `unit="millimeter"`, objects "Left plate"
+and "Right plate" with part numbers and the 90° transform. The STEP text has one "Bracket plate" PRODUCT used
+by two NAUOs named Left plate and Right plate.
+
+Not observed:
+- No slicer is installed (PrusaSlicer, Cura, Orca and Bambu were not found). Microsoft 3D Builder exists, but
+  access to it was declined. **There is no real slicer observation and no physical print.**
+- Agent, FRust and node export paths were compiled but not run live. They share `runExportCommand` with the
+  checked service path.
+
+### Limits
+
+- Reference configuration only; no current-pose export.
+- STL has no units or names inside the file. 3MF carries no colours or materials. STEP carries no feature
+  history, sketches, scripts, constraints, joints or simulation.
+- No geometry repair: invalid solids or meshes stop the export with the part named.
+- Planning copies the geometry on the message thread, so very large models pause the UI briefly before the
+  worker starts.
+- The File menu's existing Close item has no handler (pre-existing, untouched).
+
 ## Idle CPU cleanup and face-based sketching — October 18, 2026
 
 ### Idle CPU

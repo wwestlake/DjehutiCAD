@@ -23,6 +23,8 @@ public:
     void openDocument();
     void saveDocument();
     void saveDocumentAs();
+    // Shared Export... dialog; the selected body or instance is checked initially, otherwise the whole visible model.
+    void showExportDialog();
     juce::String layoutState() const;
     void restoreLayoutState(const juce::String& state);
     void setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link);

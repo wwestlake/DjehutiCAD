@@ -1,0 +1,5 @@
+lib3mf 2.5.0 (3MF Consortium), prebuilt SDK lib3mf_sdk_v2.5.0.zip
+Source: https://github.com/3MFConsortium/lib3mf/releases/tag/v2.5.0
+SDK build revision: 64bb454d1fcb53effa57d3cef752a10d740d41a2
+Archive SHA-256: d04290d1309f775501d21c50858614cdf75c36fa0cbbfad8706e03e3b66b37d9
+Used: Bindings/Cpp (implicit C++ binding), Lib/lib3mf.lib, Bin/lib3mf.dll (copied next to djehuti_cad.exe)

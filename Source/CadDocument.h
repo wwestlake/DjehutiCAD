@@ -23,6 +23,7 @@
 #include <gp_Trsf.hxx>
 
 #include "CadMechanics.h"
+#include "CadExport.h"
 
 #include <cstdint>
 #include <map>
@@ -192,6 +193,9 @@ public:
     bool resolveReference(const CadPersistentReference& reference, juce::String& error) const;
 
     std::shared_ptr<const CadRenderSnapshot> snapshot() const;
+    // Maps a body's evaluated shape (which already carries its authored placement) onto an instance of it whose
+    // frame is instanceWorld. Shared by the runtime pose and export so each placement is applied exactly once.
+    gp_Trsf instanceShapeTransform(const juce::String& featureId, const gp_Trsf& instanceWorld) const;
     const std::vector<CadFeature>& features() const { return items; }
     const CadFeature* find(const juce::String& id) const;
     const CadSketch* findSketch(const juce::String& id) const;
@@ -314,6 +318,10 @@ public:
     bool save(const juce::File& file, juce::String& error) { return model.save(file, error); }
     bool load(const juce::File& file, juce::String& error) { return model.load(file, error); }
     std::shared_ptr<const CadRenderSnapshot> snapshot() const { return model.snapshot(); }
+    // Manufacturing export (3MF, binary STL, STEP). planExport reads the document on the message thread and
+    // copies the geometry; runExport works only on those copies, so it may run on a worker thread.
+    bool planExport(const CadExportSettings& settings, CadExportPlan& plan, juce::String& error) const { return exporting::plan(model, settings, plan, error); }
+    static CadExportResult runExport(const CadExportPlan& plan, const std::function<bool(double, const juce::String&)>& progress = {}) { return exporting::run(plan, progress); }
 
 private:
     CadDocument model;

@@ -1,4 +1,5 @@
 #include "CadWorkspacePanel.h"
+#include "CadExportDialog.h"
 
 #include <deque>
 #include <BRepGProp.hxx>
@@ -1462,14 +1463,30 @@ juce::Colour CadWorkspacePanel::colourFor(const juce::String& id) const
     return id == selectedId ? selectedColour : juce::Colour();
 }
 
+void CadWorkspacePanel::showExportDialog()
+{
+    showCadExportDialog(service, isSolid(selectedId) || isInstance(selectedId) ? juce::StringArray { selectedId } : juce::StringArray());
+}
+
 void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
 {
     const auto* f = service->document().find(id);
-    if (f == nullptr) return;
+    if (f == nullptr)
+    {
+        if (!isInstance(id)) return;
+        juce::PopupMenu instanceMenu;
+        instanceMenu.addItem(1, "Export...");
+        instanceMenu.showMenuAsync(juce::PopupMenu::Options(), [safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id](int result)
+        {
+            if (safe != nullptr && result == 1) showCadExportDialog(safe->service, { id });
+        });
+        return;
+    }
     juce::PopupMenu menu;
     if (f->type == "sketch") { menu.addItem(1, "Edit Sketch"); menu.addItem(2, "Extrude..."); menu.addItem(3, "Cut Sketch..."); }
     if (isSolid(id)) { menu.addItem(4, "Subtract from this body..."); if (task == Task::boolean) { menu.addItem(5, "Use as Target"); menu.addItem(6, "Use as Tool"); } }
     if (f->type != "sketch") menu.addItem(7, f->visible ? "Hide" : "Show");
+    if (isSolid(id) && f->visible) menu.addItem(9, "Export...");
     menu.addSeparator(); menu.addItem(8, "Delete");
     menu.showMenuAsync(juce::PopupMenu::Options(), [safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id](int result)
     {
@@ -1484,6 +1501,7 @@ void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
             case 6: safe->activeRole = 1; safe->assignRole(id); break;
             case 7: safe->toggleVisibility(id); break;
             case 8: safe->deleteFeature(id); break;
+            case 9: showCadExportDialog(safe->service, { id }); break;
             default: break;
         }
     });

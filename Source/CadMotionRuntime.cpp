@@ -367,10 +367,8 @@ void CadMotionRuntime::publish()
         const auto* feature = document.find(instance.featureId);
         if (feature == nullptr) continue;
         next->instancedFeatures.insert(instance.featureId);
-        // The tessellated mesh already contains the body's authored placement; the instance frame starts at that
-        // placement point, so only the motion relative to it is applied (no double placement).
-        gp_Trsf anchor; anchor.SetTranslation(gp_Vec(feature->x, feature->y, feature->z));
-        const auto transform = world[instance.id].Multiplied(anchor.Inverted());
+        // The tessellated mesh already contains the body's authored placement (no double placement).
+        const auto transform = document.instanceShapeTransform(instance.featureId, world[instance.id]);
         CadPoseInstance posed;
         posed.instanceId = instance.id; posed.featureId = instance.featureId;
         for (int column = 0; column < 4; ++column)
