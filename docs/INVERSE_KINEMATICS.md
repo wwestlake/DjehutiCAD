@@ -65,6 +65,9 @@ target's desired/achieved frames, positional error in millimetres, angular error
 hard-bound joints, and solver diagnostics. `targetNotReached` and `limitRestricted` are failures, not
 approximate successes. A candidate is published only after independent mechanical and target checks pass.
 
+The "Shown pose" lines always evaluate the task selected in the panel. When a Solve or drag result is
+published, the message area states its outcome.
+
 Desired and achieved frame markers show the gap. The selected position target has a yellow diamond on a
 blue drag plane. The plane belongs to the chosen reference frame and passes through the desired point.
 

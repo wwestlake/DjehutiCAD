@@ -88,6 +88,7 @@ public:
     void setIkDisplay(const CadIkTask* task, const juce::String& dragTargetId = {}, const juce::String& dragPlane = "XY");
     bool captureTarget(CadIkTarget& target, juce::String& error) const;    // desired := current achieved pose (no motion)
     std::vector<kin::TargetReport> shownTargetReports() const;             // errors of the pose currently shown
+    std::vector<kin::TargetReport> shownTargetReports(const CadIkTask& task) const;   // the given task's targets in the pose shown
     bool hasIkResult() const { return ikResultValid; }
     const kin::SolveResult& lastIkResult() const { return ikResult; }      // last solve: accepted pose or rejected candidate
     juce::String lastIkTaskId() const { return ikResultTask; }

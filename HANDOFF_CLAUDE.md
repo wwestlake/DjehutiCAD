@@ -34,6 +34,58 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## IK in-app verification pass — October 18, 2026
+
+This pass supersedes the "NOT observed" visual limitations in the closeout below. Observed directly in the
+running Debug app, by screenshots and real mouse/keyboard input:
+
+- `ik_arm.djc`, Reach full pose: Solve changed the arm configuration; the parts stayed connected; Result read
+  "Solved and shown: solved. Targets reached" (0.0013 mm, 0.0002 deg). The UI stayed responsive.
+- Markers and dragging: green desired and magenta achieved triads, the blue drag plane and the yellow diamond
+  were drawn. With dragging on, moving the diamond on XY and then XZ moved the target within the chosen
+  plane (the other coordinate held), and the arm followed. A run of quick moves ended on the last location
+  (desired 170.07, 131.62, 39.92 mm; Result 0.0017 mm, reached): no older result replaced it. Dragging on
+  empty canvas still orbited the camera and changed nothing in the assembly.
+- 3D Views: all three views showed the same posed arm with markers; orbiting View 1 left Views 2 and 3 as
+  they were. Workspace layout (tree, canvas, inspector) unchanged.
+- Authoring: a new unsaved task (three adjustable joints, position only, Z changed to 60 mm) solved
+  (0.0004 mm). Save Task stored it (Assembly tree entry); Undo removed it and kept the values as an unsaved
+  draft without moving the pose; Save Task again, Save As `build/ik-ui-check.djo`, and reopening it showed the
+  task. Closing the slider-crank after preview solves gave no unsaved-changes prompt.
+- `ik_slider_crank.djc`: Slide to 74.162 mm solved with the crank, rod and slider connected. Beyond crank
+  hard limit returned limitRestricted ("Stopped at the hard bounds of Crank pivot", "does not prove the
+  target is unreachable"); the pose stayed exactly as before; the Result listed the rejected candidate
+  (10.66 mm, outside tolerance) separately from the shown pose (24.16 mm, not reached).
+
+Defects found and fixed (one Debug build after the first two, one after the last two):
+
+- Crash: choosing another entry in the IK Task list (and the Target, Endpoint on, Reference and Mode lists)
+  rebuilt the panel inside the drop-down's own change callback, deleting it mid-call (access violation,
+  reproduced once). The rebuild is now deferred until the callback returns; switching tasks and modes was
+  rechecked without a crash.
+- The message area kept saying "Solving the IK task" after a background Solve or drag finished. It now shows
+  the outcome ("Targets reached (solved)..." or the failure) when the result is published.
+- Reopening a `.djo` saved earlier in the same session failed ("Unable to open native CAD document"): OCAF
+  keeps the saved document registered under `<file>.cbf`, the same name the loader staged the copy under.
+  Opens now stage under a unique name. Rechecked: Save, then Open of the same file succeeded.
+- The Result's "Shown pose" errors were computed for the task displayed before the panel switched, so a newly
+  selected task could report another task's error (0.0000 mm, reached). They are now computed for the
+  panel's own task (rechecked: 30.40 mm, not reached, before solving).
+
+Checks: two incremental Debug builds of the DjehutiCAD target (log `build/build-ik-ui-pass.log`).
+`--cad-ik-check` run once after the load fix with the examples folder passed explicitly: 18/18 passed. An
+earlier launch of it without the path argument reported a failure loading the arm example with an empty
+error; the cause was not investigated further.
+
+Test-environment note: the Claude desktop window overlapped the right part of the screen and was masked from
+screenshots, so clicks there went to it and looked like dead IK controls and a dead Fit All. With the CAD
+window moved clear of it, those controls worked. This is not a DjehutiCAD defect.
+
+Not changed or checked: the model view's initial framing after opening the arm examples is very close
+(Fit All corrects it); the status bar reads "Mechanism: unsolved (last valid pose shown)" after a rejected
+IK attempt, which is accurate but terse. FRust, node and agent IK adapters were not exercised in this pass,
+and no DEWB connection was made.
+
 ## Current inverse-kinematics closeout — October 17, 2026
 
 This section supersedes older statements that IK is future work. Claude left the feature implemented but
