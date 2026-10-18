@@ -7,6 +7,15 @@
 #include "Viewport3D.h"
 
 #include <BRepBndLib.hxx>
+#include <Poly_Triangulation.hxx>
+#include <RWStl.hxx>
+#include <STEPCAFControl_Reader.hxx>
+#include <TDataStd_Name.hxx>
+#include <TDocStd_Document.hxx>
+#include <XCAFApp_Application.hxx>
+#include <XCAFDoc_DocumentTool.hxx>
+#include <XCAFDoc_ShapeTool.hxx>
+#include "lib3mf_implicit.hpp"
 #include <BRepGProp.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
@@ -18,6 +27,227 @@ namespace
 // Uses the existing app target; it does not build a separate JUCE test runner.
 // Focused service check for face-attached sketches: reference resolution, dependent rebuild after a parameter
 // edit, undo/redo, native save/reopen, a non-horizontal face, and refusal when the support face disappears.
+// Focused manufacturing-export check. A 60 x 40 x 10 mm plate with a 12 mm through-hole and an 8 mm cylindrical
+// boss is exported as 3MF, binary STL and STEP and read back with lib3mf, OCCT RWStl and OCCT STEPCAFControl;
+// then a two-instance assembly with a second body, a cancellation and an output failure. Files stay in
+// build/export-check for inspection.
+bool runCadExportCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto item = new juce::DynamicObject(); item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        return ok;
+    };
+    const auto approx = [](double a, double b, double tolerance) { return std::abs(a - b) <= tolerance; };
+    const auto fmt3 = [](const double v[3]) { return juce::String(v[0], 3) + " x " + juce::String(v[1], 3) + " x " + juce::String(v[2], 3); };
+    const auto dir = juce::File::getCurrentWorkingDirectory().getChildFile("build").getChildFile("export-check");
+    dir.createDirectory();
+
+    CadCommandService svc;
+    juce::String e, plate, hole, cut, boss, part;
+    const bool built = svc.createBox(60, 40, 10, plate, e) && svc.createCylinder(6, 30, hole, e) && svc.setPlacement(hole, 30, 20, -10, 0, 0, 0, e)
+                       && svc.booleanOp("subtract", plate, hole, cut, e) && svc.createCylinder(8, 5, boss, e) && svc.setPlacement(boss, 12, 12, 10, 0, 0, 0, e)
+                       && svc.booleanOp("union", cut, boss, part, e) && svc.rename(part, "Bracket plate", e);
+    if (!record(built, "representative part: plate 60x40x10, 12 mm through-hole, 8 mm boss", e)) return false;
+    const double holeVolume = juce::MathConstants<double>::pi * 36.0 * 10.0;
+    const double partVolume = 60.0 * 40.0 * 10.0 - holeVolume + juce::MathConstants<double>::pi * 64.0 * 5.0;   // 23874.34 mm3; without the hole 25005.31
+    const auto revision = svc.document().revision();
+    const bool modified = svc.document().modified();
+
+    const auto exportTo = [&](CadExportFormat format, const juce::StringArray& ids, const juce::File& out, CadExportResult& result, CadExportPlan& plan, juce::String& error)
+    {
+        CadExportSettings settings; settings.format = format; settings.partIds = ids; settings.output = out; settings.overwrite = true;
+        if (!svc.planExport(settings, plan, error)) return false;
+        result = CadCommandService::runExport(plan);
+        if (!result.ok) error = result.error;
+        return result.ok;
+    };
+    // Reads a 3MF back: unit, build items (name, part number, transformed bounds, volume, manifold).
+    struct Item3mf { juce::String name, partNumber; double min[3], max[3], volume; bool manifold; };
+    const auto read3mf = [](const juce::File& file, bool& millimetres, std::vector<Item3mf>& items, juce::String& error)
+    {
+        try
+        {
+            auto wrapper = Lib3MF::CWrapper::loadLibrary();
+            auto model = wrapper->CreateModel();
+            model->QueryReader("3mf")->ReadFromFile(file.getFullPathName().toStdString());
+            millimetres = model->GetUnit() == Lib3MF::eModelUnit::MilliMeter;
+            auto it = model->GetBuildItems();
+            while (it->MoveNext())
+            {
+                auto item = it->GetCurrent();
+                auto object = item->GetObjectResource();
+                auto mesh = model->GetMeshObjectByID(object->GetResourceID());
+                const auto t = item->GetObjectTransform();
+                std::vector<Lib3MF::sPosition> vertices; std::vector<Lib3MF::sTriangle> triangles;
+                mesh->GetVertices(vertices); mesh->GetTriangleIndices(triangles);
+                std::vector<gp_Pnt> placed;
+                for (const auto& v : vertices)
+                {
+                    double p[3];
+                    for (int c = 0; c < 3; ++c) p[c] = v.m_Coordinates[0] * t.m_Fields[0][c] + v.m_Coordinates[1] * t.m_Fields[1][c] + v.m_Coordinates[2] * t.m_Fields[2][c] + t.m_Fields[3][c];
+                    placed.emplace_back(p[0], p[1], p[2]);
+                }
+                Item3mf out { juce::String(object->GetName()), juce::String(object->GetPartNumber()), { 1e30, 1e30, 1e30 }, { -1e30, -1e30, -1e30 }, 0.0, mesh->IsManifoldAndOriented() };
+                for (const auto& p : placed) for (int c = 0; c < 3; ++c) { out.min[c] = std::min(out.min[c], p.Coord(c + 1)); out.max[c] = std::max(out.max[c], p.Coord(c + 1)); }
+                for (const auto& tri : triangles)
+                    out.volume += gp_Vec(placed[tri.m_Indices[0]].XYZ()).Dot(gp_Vec(placed[tri.m_Indices[1]].XYZ()).Crossed(gp_Vec(placed[tri.m_Indices[2]].XYZ()))) / 6.0;
+                items.push_back(out);
+            }
+            return true;
+        }
+        catch (const std::exception& ex) { error = ex.what(); return false; }
+    };
+    // Reads a binary STL back with OCCT: triangle count, bounds, enclosed volume, and the binary size identity.
+    const auto readStl = [](const juce::File& file, int& triangles, double min[3], double max[3], double& volume, bool& binary)
+    {
+        const auto mesh = RWStl::ReadFile(file.getFullPathName().toRawUTF8(), juce::MathConstants<double>::halfPi);
+        if (mesh.IsNull()) return false;
+        triangles = mesh->NbTriangles(); volume = 0.0;
+        for (int c = 0; c < 3; ++c) { min[c] = 1e30; max[c] = -1e30; }
+        for (int i = 1; i <= mesh->NbNodes(); ++i) for (int c = 0; c < 3; ++c) { min[c] = std::min(min[c], mesh->Node(i).Coord(c + 1)); max[c] = std::max(max[c], mesh->Node(i).Coord(c + 1)); }
+        for (int i = 1; i <= triangles; ++i)
+        {
+            int a, b, c; mesh->Triangle(i).Get(a, b, c);
+            volume += gp_Vec(mesh->Node(a).XYZ()).Dot(gp_Vec(mesh->Node(b).XYZ()).Crossed(gp_Vec(mesh->Node(c).XYZ()))) / 6.0;
+        }
+        binary = file.getSize() == 84 + 50 * (juce::int64) triangles;
+        return true;
+    };
+    // Reads a STEP file back into an XCAF document: solids, volume, bounds and every product/component name.
+    struct StepRead { int solids = 0; double volume = 0.0, min[3] {}, max[3] {}; juce::StringArray names; };
+    const auto readStep = [](const juce::File& file, StepRead& out, juce::String& error)
+    {
+        Handle(TDocStd_Document) doc;
+        XCAFApp_Application::GetApplication()->NewDocument("MDTV-XCAF", doc);
+        STEPCAFControl_Reader reader; reader.SetNameMode(Standard_True);
+        if (reader.ReadFile(file.getFullPathName().toRawUTF8()) != IFSelect_RetDone || !reader.Transfer(doc)) { error = "STEP read failed"; XCAFApp_Application::GetApplication()->Close(doc); return false; }
+        const auto tool = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+        TDF_LabelSequence roots; tool->GetFreeShapes(roots);
+        const auto nameOf = [](const TDF_Label& label) { Handle(TDataStd_Name) n; return label.FindAttribute(TDataStd_Name::GetID(), n) ? juce::String(TCollection_AsciiString(n->Get()).ToCString()) : juce::String(); };
+        Bnd_Box box;
+        for (int i = 1; i <= roots.Length(); ++i)
+        {
+            const auto shape = tool->GetShape(roots.Value(i));
+            out.names.add(nameOf(roots.Value(i)));
+            TDF_LabelSequence components; XCAFDoc_ShapeTool::GetComponents(roots.Value(i), components);
+            for (int k = 1; k <= components.Length(); ++k) { out.names.add(nameOf(components.Value(k))); TDF_Label referred; if (XCAFDoc_ShapeTool::GetReferredShape(components.Value(k), referred)) out.names.add(nameOf(referred)); }
+            for (TopExp_Explorer ex(shape, TopAbs_SOLID); ex.More(); ex.Next()) ++out.solids;
+            GProp_GProps props; BRepGProp::VolumeProperties(shape, props); out.volume += props.Mass();
+            BRepBndLib::AddOptimal(shape, box, false, false);
+        }
+        box.Get(out.min[0], out.min[1], out.min[2], out.max[0], out.max[1], out.max[2]);
+        out.names.removeEmptyStrings(); out.names.removeDuplicates(false);
+        XCAFApp_Application::GetApplication()->Close(doc);
+        return true;
+    };
+
+    // 1. The representative part in the three formats.
+    CadExportResult result; CadExportPlan plan; juce::String error;
+    const auto file3mf = dir.getChildFile("bracket-plate.3mf");
+    if (record(exportTo(CadExportFormat::threeMF, { part }, file3mf, result, plan, error), "3MF export of the part", error))
+    {
+        bool mm = false; std::vector<Item3mf> items; juce::String readError;
+        const bool read = read3mf(file3mf, mm, items, readError);
+        record(read && mm && items.size() == 1 && items[0].name == "Bracket plate" && items[0].partNumber == part && items[0].manifold, "3MF reads back: millimetre unit, one named manifold object", readError);
+        if (read && items.size() == 1)
+        {
+            const double size[3] { items[0].max[0] - items[0].min[0], items[0].max[1] - items[0].min[1], items[0].max[2] - items[0].min[2] };
+            record(approx(size[0], 60, 1e-3) && approx(size[1], 40, 1e-3) && approx(size[2], 15, 1e-3), "3MF dimensions 60 x 40 x 15 mm", fmt3(size));
+            record(approx(items[0].volume, partVolume, partVolume * 0.01) && items[0].volume < partVolume + 0.5 * holeVolume, "3MF volume matches the solid with its hole (within 1 %)",
+                   juce::String(items[0].volume, 2) + " vs " + juce::String(partVolume, 2) + " mm3, " + juce::String(result.parts.front().triangles) + " triangles");
+        }
+    }
+    const auto fileStl = dir.getChildFile("bracket-plate.stl");
+    if (record(exportTo(CadExportFormat::stl, { part }, fileStl, result, plan, error), "binary STL export of the part", error))
+    {
+        int triangles = 0; double min[3], max[3], volume = 0.0; bool binary = false;
+        const bool read = readStl(fileStl, triangles, min, max, volume, binary);
+        const double size[3] { max[0] - min[0], max[1] - min[1], max[2] - min[2] };
+        record(read && binary && triangles > 0, "STL reads back with OCCT RWStl and is binary (84 + 50 x triangles bytes)", juce::String(triangles) + " triangles");
+        record(read && approx(size[0], 60, 1e-3) && approx(size[1], 40, 1e-3) && approx(size[2], 15, 1e-3) && approx(min[0], 0, 1e-3) && approx(min[2], 0, 1e-3), "STL dimensions 60 x 40 x 15 mm at the authored position", fmt3(size));
+        record(read && approx(volume, partVolume, partVolume * 0.01) && volume < partVolume + 0.5 * holeVolume, "STL encloses the solid volume with its hole (within 1 %)", juce::String(volume, 2) + " mm3");
+    }
+    const auto fileStep = dir.getChildFile("bracket-plate.step");
+    if (record(exportTo(CadExportFormat::step, { part }, fileStep, result, plan, error), "STEP export of the part", error))
+    {
+        StepRead read; juce::String readError;
+        const bool ok = readStep(fileStep, read, readError);
+        const double size[3] { read.max[0] - read.min[0], read.max[1] - read.min[1], read.max[2] - read.min[2] };
+        const auto text = fileStep.loadFileAsString();
+        record(ok && read.solids == 1 && approx(read.volume, partVolume, 1e-3 * partVolume), "STEP reads back as one B-rep solid with the exact volume (hole kept)", juce::String(read.volume, 3) + " mm3");
+        record(ok && approx(size[0], 60, 1e-3) && approx(size[1], 40, 1e-3) && approx(size[2], 15, 1e-3), "STEP dimensions 60 x 40 x 15 mm", fmt3(size));
+        record(text.contains("AUTOMOTIVE_DESIGN") && text.contains(".MILLI.") && read.names.contains("Bracket plate"), "STEP AP214 schema, millimetre unit and product name", read.names.joinIntoString(", "));
+    }
+
+    record(svc.document().revision() == revision && svc.document().modified() == modified, "exports did not change the document (same revision, no undo entry, dirty flag unchanged)");
+
+    // 2. Multi-component: two instances of the part plus a second body; the source body must not be duplicated.
+    juce::String clamp, left, right;
+    CadFrame turned; turned.y = 80.0; turned.qw = std::cos(juce::MathConstants<double>::pi / 4.0); turned.qz = std::sin(juce::MathConstants<double>::pi / 4.0);
+    const bool assembled = svc.createBox(20, 10, 10, clamp, e) && svc.setPlacement(clamp, 100, 0, 0, 0, 0, 0, e) && svc.rename(clamp, "Clamp block", e)
+                           && svc.createInstance(part, "Left plate", left, e) && svc.createInstance(part, "Right plate", right, e) && svc.setInstancePlacement(right, turned, e);
+    if (record(assembled, "assembly: Left plate and Right plate (instances, right turned 90 deg about Z at y 80) and Clamp block", e))
+    {
+        const auto revisionAssembly = svc.document().revision();
+        const auto asm3mf = dir.getChildFile("assembly.3mf");
+        if (record(exportTo(CadExportFormat::threeMF, {}, asm3mf, result, plan, error), "3MF export of the visible model", error))
+        {
+            bool mm = false; std::vector<Item3mf> items; juce::String readError;
+            read3mf(asm3mf, mm, items, readError);
+            juce::StringArray names; for (const auto& i : items) names.add(i.name);
+            record(items.size() == 3 && names.contains("Left plate") && names.contains("Right plate") && names.contains("Clamp block") && !names.contains("Bracket plate"),
+                   "3MF has three named parts and no duplicate source body", names.joinIntoString(", "));
+            for (const auto& i : items)
+                if (i.name == "Right plate")
+                    record(approx(i.min[0], -40, 1e-3) && approx(i.max[0], 0, 1e-3) && approx(i.min[1], 80, 1e-3) && approx(i.max[1], 140, 1e-3) && approx(i.min[2], 0, 1e-3),
+                           "3MF Right plate placed once: x -40..0, y 80..140", fmt3(i.min) + " .. " + fmt3(i.max));
+        }
+        const auto asmStep = dir.getChildFile("assembly.step");
+        if (record(exportTo(CadExportFormat::step, {}, asmStep, result, plan, error), "STEP export of the visible model", error))
+        {
+            StepRead read; juce::String readError;
+            readStep(asmStep, read, readError);
+            record(read.solids == 3 && approx(read.volume, 2.0 * partVolume + 2000.0, 1e-3 * read.volume) && read.names.contains("Left plate") && read.names.contains("Right plate") && read.names.contains("Clamp block"),
+                   "STEP assembly: three solids, names kept, no duplicate source", juce::String(read.solids) + " solids, " + read.names.joinIntoString(", "));
+            record(approx(read.min[0], -40, 1e-3) && approx(read.max[0], 120, 1e-3) && approx(read.min[1], 0, 1e-3) && approx(read.max[1], 140, 1e-3), "STEP assembly bounds x -40..120, y 0..140", fmt3(read.min) + " .. " + fmt3(read.max));
+        }
+        const auto asmStl = dir.getChildFile("assembly.stl");
+        if (record(exportTo(CadExportFormat::stl, {}, asmStl, result, plan, error), "STL batch export of the visible model", error))
+            record(result.files.size() == 3 && dir.getChildFile("assembly-Left_plate.stl").existsAsFile() && dir.getChildFile("assembly-Right_plate.stl").existsAsFile() && dir.getChildFile("assembly-Clamp_block.stl").existsAsFile(),
+                   "one STL per part with clear names", result.files.joinIntoString(", "));
+        record(svc.document().revision() == revisionAssembly, "assembly exports did not change the document");
+        record(svc.save(dir.getChildFile("export-check.djo"), e), "assembly saved for the interactive check", e);
+    }
+
+    // 3. Cancellation keeps an existing destination; a missing folder and an existing file without overwrite are refused.
+    const auto sentinel = dir.getChildFile("cancelled.3mf");
+    sentinel.replaceWithText("existing file");
+    {
+        CadExportSettings settings; settings.format = CadExportFormat::threeMF; settings.output = sentinel; settings.overwrite = true;
+        CadExportPlan cancelPlan; juce::String planError;
+        const bool planned = svc.planExport(settings, cancelPlan, planError);
+        const auto cancelled = CadCommandService::runExport(cancelPlan, [](double, const juce::String&) { return false; });
+        const auto leftovers = dir.findChildFiles(juce::File::findFiles, false, "*.partial-*");
+        record(planned && !cancelled.ok && cancelled.cancelled && sentinel.loadFileAsString() == "existing file" && leftovers.isEmpty(), "cancel keeps the existing file and leaves no partial output", cancelled.error);
+    }
+    {
+        CadExportSettings settings; settings.format = CadExportFormat::stl; settings.output = dir.getChildFile("no-such-folder").getChildFile("x.stl");
+        CadExportPlan failPlan; juce::String planError;
+        record(!svc.planExport(settings, failPlan, planError) && planError.contains("does not exist"), "missing output folder is refused", planError);
+        settings.output = sentinel.withFileExtension(".3mf"); settings.format = CadExportFormat::threeMF;
+        record(!svc.planExport(settings, failPlan, planError) && planError.contains("already exists"), "existing file is not replaced without overwrite", planError);
+        settings.quality = { "custom", 0.0, 15.0 };
+        record(!svc.planExport(settings, failPlan, planError) && planError.contains("chordal"), "invalid custom tolerance is refused", planError);
+    }
+    return passed;
+}
+
 bool runCadFaceCheck(juce::var& report)
 {
     using namespace djehuti::cad;
@@ -235,6 +465,13 @@ public:
             const bool ok = runCadIkCheck(examples, report);
             const auto result = juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-ik-check.result.json");
             result.replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-export-check"))
+        {
+            juce::var report;
+            const bool ok = runCadExportCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-export-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-face-check"))

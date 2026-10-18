@@ -49,6 +49,7 @@ private:
     std::shared_ptr<djehuti::cad::CadCommandService> cadService;
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
     static std::string runFaceCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const std::string& name, const juce::String& arguments);
+    static std::string runExportCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const juce::String& arguments);
     static std::string runIkCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const juce::String& command, const juce::String& arguments);
     std::unique_ptr<djehuti::motion::MotionLink> motionLink;
 

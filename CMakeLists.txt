@@ -101,6 +101,10 @@ target_sources(DjehutiCAD PRIVATE
     Source/MotionLink.cpp
     Source/CadWorkspacePanel.h
     Source/CadWorkspacePanel.cpp
+    Source/CadExport.h
+    Source/CadExport.cpp
+    Source/CadExportDialog.h
+    Source/CadExportDialog.cpp
 )
 
 target_compile_definitions(DjehutiCAD PRIVATE
@@ -139,6 +143,22 @@ endif()
 
 if(EXISTS "${OCCT_INCLUDE_DIR}/TopoDS_Shape.hxx")
     target_link_libraries(DjehutiCAD PRIVATE TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKMesh TKShHealing TKBO TKBool TKCDF TKStd TKStdL TKLCAF TKCAF TKBin TKBinL)
+    # Manufacturing export: STEP and STL writers with the XCAF assembly document they use (and its dependencies).
+    target_link_libraries(DjehutiCAD PRIVATE TKDESTEP TKDESTL TKBinXCAF TKXCAF TKVCAF TKV3d TKService TKHLR TKDE TKXSBase)
+    if(WIN32)
+        target_link_libraries(DjehutiCAD PRIVATE winmm)
+    endif()
 endif()
+
+# lib3mf (3MF Consortium), pinned prebuilt SDK; see deps/README.md and deps/LIB3MF_VERSION.txt.
+set(LIB3MF_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/lib3mf-sdk" CACHE PATH "Pinned lib3mf SDK used for 3MF export")
+if(NOT EXISTS "${LIB3MF_ROOT}/Bindings/Cpp/lib3mf_implicit.hpp")
+    message(FATAL_ERROR "lib3mf SDK not found at ${LIB3MF_ROOT}. Unpack lib3mf_sdk_v2.5.0.zip there (see deps/README.md).")
+endif()
+target_include_directories(DjehutiCAD PRIVATE "${LIB3MF_ROOT}/Bindings/Cpp")
+target_link_libraries(DjehutiCAD PRIVATE "${LIB3MF_ROOT}/Lib/lib3mf.lib")
+add_custom_command(TARGET DjehutiCAD POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${LIB3MF_ROOT}/Bin/lib3mf.dll" "$<TARGET_FILE_DIR:DjehutiCAD>"
+    COMMENT "Copying lib3mf.dll next to djehuti_cad.exe")
 
 juce_generate_juce_header(DjehutiCAD)

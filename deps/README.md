@@ -12,3 +12,29 @@ are preserved beside the local source checkout as `LICENSE_LGPL_21.txt` and
 `OCCT_LGPL_EXCEPTION.txt`, and the upstream project is at:
 
 https://github.com/Open-Cascade-SAS/OCCT
+
+## OCCT toolkits for manufacturing export
+
+Export needs the STEP and STL data-exchange toolkits, which are not part of the
+modules configured for modeling. They are added to the same `occt-build`
+configuration without enabling whole modules:
+
+```powershell
+cmake -S occt-src -B occt-build "-DBUILD_ADDITIONAL_TOOLKITS=TKDESTEP;TKDESTL;TKBinXCAF"
+cmake --build occt-build --config Debug --target TKXSBase TKDE TKHLR TKService TKV3d TKVCAF TKXCAF TKBinXCAF TKDESTL TKDESTEP --parallel 1
+```
+
+The configuration adds their dependencies (`TKDE`, `TKXSBase`, `TKXCAF`,
+`TKVCAF`, `TKV3d`, `TKService`, `TKHLR`), but building a static toolkit does
+not build the toolkits it depends on, so all of them are listed. A Release
+build needs the same targets built with `--config Release`.
+
+## lib3mf (3MF export)
+
+`lib3mf-sdk/` holds the unpacked official lib3mf 2.5.0 SDK from the 3MF
+Consortium (`lib3mf_sdk_v2.5.0.zip`, pinned in `LIB3MF_VERSION.txt` with its
+SHA-256). It is not committed; download the release asset from
+https://github.com/3MFConsortium/lib3mf/releases/tag/v2.5.0, verify the hash
+and unpack its `lib3mf_sdk` folder here as `lib3mf-sdk`. CMake uses the C++
+binding, the import library and copies `lib3mf.dll` next to the executable.
+lib3mf is BSD-2-Clause licensed; the notice is kept as `LIB3MF_LICENSE.txt`.

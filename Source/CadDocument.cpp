@@ -828,6 +828,14 @@ bool CadDocument::createFaceSketch(const juce::String& featureId,const juce::Str
     },error);
 }
 
+gp_Trsf CadDocument::instanceShapeTransform(const juce::String& featureId, const gp_Trsf& instanceWorld) const
+{
+    // The instance frame starts at the body's placement point, so only the motion relative to it is applied.
+    gp_Trsf anchor;
+    if (const auto* feature = find(featureId)) anchor.SetTranslation(gp_Vec(feature->x, feature->y, feature->z));
+    return instanceWorld.Multiplied(anchor.Inverted());
+}
+
 std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
 {
     if (cachedSnapshot != nullptr && cachedRevision == documentRevision) return cachedSnapshot;

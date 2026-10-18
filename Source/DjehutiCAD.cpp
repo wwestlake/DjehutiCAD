@@ -20,6 +20,7 @@ constexpr int kNewCadDocument = 106;
 constexpr int kOpenCadDocument = 107;
 constexpr int kSaveCadDocument = 108;
 constexpr int kSaveCadDocumentAs = 109;
+constexpr int kExportCad = 110;
 
 // Agent tool name -> shared IK command.
 juce::String ikCommandForTool(const std::string& name)
@@ -61,6 +62,35 @@ std::string DjehutiCAD::runFaceCommand(const juce::Component::SafePointer<Djehut
     juce::MessageManager::callAsync([run, done, output] { *output = run(); done->signal(); });
     done->wait(20000);
     return *output;
+}
+
+// Manufacturing export for automation (agent, FRust, nodes): the plan reads the document on the message thread,
+// then the writer runs on the calling thread from the plan's geometry copies.
+std::string DjehutiCAD::runExportCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const juce::String& arguments)
+{
+    const auto failure = [](const juce::String& error) { auto o = std::make_unique<juce::DynamicObject>(); o->setProperty("ok", false); o->setProperty("error", error); return juce::JSON::toString(juce::var(o.release())).toStdString(); };
+    djehuti::cad::CadExportSettings settings; juce::String error;
+    if (!djehuti::cad::exporting::settingsFromJson(juce::JSON::parse(arguments.isEmpty() ? juce::String("{}") : arguments), settings, error)) return failure(error);
+    auto plan = std::make_shared<djehuti::cad::CadExportPlan>();
+    auto planError = std::make_shared<juce::String>("DjehutiCAD is closing.");
+    const auto prepare = [safe, settings, plan, planError]
+    {
+        if (safe == nullptr || safe->cadService == nullptr) return false;
+        return safe->cadService->planExport(settings, *plan, *planError);
+    };
+    bool planned = false;
+    if (juce::MessageManager::getInstance()->isThisTheMessageThread()) planned = prepare();
+    else
+    {
+        auto done = std::make_shared<juce::WaitableEvent>();
+        auto ok = std::make_shared<std::atomic<bool>>(false);
+        juce::MessageManager::callAsync([prepare, done, ok] { *ok = prepare(); done->signal(); });
+        if (!done->wait(20000)) return failure("DjehutiCAD did not answer within 20 s.");
+        planned = *ok;
+    }
+    if (!planned) return failure(*planError);
+    const auto result = djehuti::cad::CadCommandService::runExport(*plan);
+    return juce::JSON::toString(result.toVar(*plan)).toStdString();
 }
 
 std::string DjehutiCAD::runIkCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const juce::String& command, const juce::String& arguments)
@@ -110,6 +140,7 @@ DjehutiCAD::DjehutiCAD()
                                         [safe](const std::string& joint, double value) { juce::MessageManager::callAsync([safe, joint, value] { if (safe != nullptr && safe->motionRuntime != nullptr) { juce::String e; safe->motionRuntime->setPreviewCoordinate(joint, value, e); } }); },
                                         [safe](const std::string& command, double stepMs) { juce::MessageManager::callAsync([safe, command, stepMs] { if (safe != nullptr && safe->motionLink != nullptr) { juce::String e; safe->motionLink->requestLifecycle(command, (std::int64_t) std::llround(stepMs * 1.0e9), e); } }); });
         frust_engine::setCadIkHook([safe](const std::string& command, const std::string& arguments) { return runIkCommand(safe, command, arguments); });
+        frust_engine::setCadExportHook([safe](const std::string& arguments) { return runExportCommand(safe, arguments); });
     }
     cadWorkspace = std::make_unique<CadWorkspacePanel>(cadService);
     tabs.addTab("CAD Workspace", juce::Colour(0xff11161b), cadWorkspace.get(), true);
@@ -139,6 +170,8 @@ DjehutiCAD::DjehutiCAD()
     agentPanel = std::make_unique<DjehutiAgentPanel>(properties, [safeThis, motionBoard](const std::string& name, const std::string& arguments, std::shared_ptr<DjehutiAgentRequestState> state) {
         // Link status is read from the thread-safe status board so the agent sees it immediately.
         if (name == "cad_motion_status") return motionBoard->get().toStdString();
+        if (name == "cad_export")
+            return (state == nullptr || state->cancelled) ? std::string(R"({"ok": false, "error": "Request cancelled."})") : runExportCommand(safeThis, arguments);
         if (name == "cad_list_faces" || name == "cad_create_face_sketch")
             return (state == nullptr || state->cancelled) ? std::string(R"({"ok": false, "error": "Request cancelled."})") : runFaceCommand(safeThis, name, arguments);
         if (const auto ikCommand = ikCommandForTool(name); ikCommand.isNotEmpty())
@@ -294,6 +327,8 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
         menu.addItem(kSaveCadDocument, "Save CAD Document");
         menu.addItem(kSaveCadDocumentAs, "Save CAD Document As...");
         menu.addSeparator();
+        menu.addItem(kExportCad, "Export... (3MF, STL, STEP)", cadService != nullptr && !cadService->document().features().empty());
+        menu.addSeparator();
         menu.addItem(10, "Close");
     }
     else if (index == 1)
@@ -332,6 +367,8 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
         cadWorkspace->saveDocument();
     else if (commandId == kSaveCadDocumentAs)
         cadWorkspace->saveDocumentAs();
+    else if (commandId == kExportCad)
+        cadWorkspace->showExportDialog();
     else if (commandId == kAgentSettings)
     {
         auto content = new DjehutiAgentSettings(properties, [] {});
@@ -381,7 +418,8 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "5. Mechanisms: ground at least one instance (or joint parts to the world), give each joint a role (driver = input, dependent = solved, locked = held), add Couplings for gears, linear ratios, rack and pinion or screws; closed loops such as slider-cranks are allowed. Preview a driver and the dependent joints follow; the status shows remaining freedom and constraint errors.\n"
                                                "6. Simulation controls in the Motion Link panel (Start/Resume, Pause, Stop Simulation, Reset, Single Step) ask DEWB to change its run state; they need a DEWB that advertises lifecycle control, and the model moves only when DEWB reports the new state.\n"
                                                "6a. Faces and edges: the Body, Face and Edge buttons choose what a click in a 3-D view picks. Hover highlights in light cyan; the selection is magenta in every view and is described in the right panel. A planar face with a persistent name (e.g. box-1/top) can carry a sketch: select it and press Create Sketch. The sketch lies in the face, follows it when the body's dimensions change, and an edit that removes or splits that face is refused instead of moving the sketch. Cuts from a face sketch go into the body unless reversed.\n"
-                                               "7. Inverse Kinematics: press IK, choose the driver joints the solve may adjust, then add targets: the instance carrying the endpoint, a tool frame on it (mm, degrees), the reference frame (World or another instance), the mode (position, orientation or full pose) and the desired pose. Capture Current Pose copies the shown pose without moving anything. Solve moves only the selected drivers; dependent joints follow the mechanism, locked joints and grounding hold, hard bounds are respected. A result is shown only if every constraint and target holds; otherwise the last valid pose stays and the target errors are listed. Drag Target moves a target's position on the shown plane (the yellow diamond). Save Task stores the definition (undoable); solving never changes the document. Local IK is unavailable while DEWB drives the mechanism.");
+                                               "7. Inverse Kinematics: press IK, choose the driver joints the solve may adjust, then add targets: the instance carrying the endpoint, a tool frame on it (mm, degrees), the reference frame (World or another instance), the mode (position, orientation or full pose) and the desired pose. Capture Current Pose copies the shown pose without moving anything. Solve moves only the selected drivers; dependent joints follow the mechanism, locked joints and grounding hold, hard bounds are respected. A result is shown only if every constraint and target holds; otherwise the last valid pose stays and the target errors are listed. Drag Target moves a target's position on the shown plane (the yellow diamond). Save Task stores the definition (undoable); solving never changes the document. Local IK is unavailable while DEWB drives the mechanism.\n"
+                                               "8. Export: File > Export..., or right-click a body or instance in the tree. Choose 3MF (preferred for 3-D printing: millimetres, one named object per part), binary STL (millimetres; one file per part) or STEP AP214 (exact solids with names and placements). Tick the parts; all ticked exports the visible model, with instanced bodies exported as their instances and construction operands left out. Placements are the authored reference configuration, never a simulation or IK pose. Mesh quality: Standard 0.05 mm / 15 deg, Fine 0.01 mm / 5 deg, or Custom. Solids and meshes are checked before writing; a failed or cancelled export leaves existing files untouched, and export never changes the document.");
     else if (commandId == 30)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About DjehutiCAD",
                                                "DjehutiCAD 0.1.0\nA FRust-programmable CAD foundation.");
