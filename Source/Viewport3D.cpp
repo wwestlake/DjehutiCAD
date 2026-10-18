@@ -106,8 +106,9 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
         return;
     }
     // A click without dragging picks a body; any drag stays pure camera navigation.
-    if (e.mods.isRightButtonDown() || e.mods.isShiftDown() || e.position.roundToInt().getDistanceFrom(pressPosition) > 3 || onBodyPicked == nullptr) return;
-    onBodyPicked(pickBody(e.position));
+    if (e.mods.isRightButtonDown() || e.mods.isShiftDown() || e.position.roundToInt().getDistanceFrom(pressPosition) > 3) return;
+    if (selection != nullptr && selection->mode() != djehuti::cad::CadSelection::Mode::body && !(wantsBodyPick && wantsBodyPick())) { selection->setSelected(pick(e.position, selection->mode())); if (onFrameRequested) onFrameRequested(); return; }
+    if (onBodyPicked != nullptr) onBodyPicked(pickBody(e.position));
 }
 // World ray (mm) through a component position, from the inverse of the current view-projection.
 bool Viewport3D::rayThrough(juce::Point<float> position, std::array<float, 3>& origin, std::array<float, 3>& direction) const
@@ -176,12 +177,15 @@ bool Viewport3D::dragPoint(juce::Point<float> position, std::array<float, 3>& po
     for (size_t k = 0; k < 3; ++k) point[k] = o[k] + t * dir[k];
     return true;
 }
-juce::String Viewport3D::pickBody(juce::Point<float> position) const
+juce::String Viewport3D::pickBody(juce::Point<float> position) const { return pick(position, djehuti::cad::CadSelection::Mode::body).drawId; }
+djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad::CadSelection::Mode mode) const
 {
-    if (pickSnapshot == nullptr || getWidth() <= 0 || getHeight() <= 0) return {};
+    using Mode = djehuti::cad::CadSelection::Mode;
+    djehuti::cad::CadPick result;
+    if (pickSnapshot == nullptr || getWidth() <= 0 || getHeight() <= 0) return result;
     const auto viewProjection = mul(projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
     const auto w = (float) getWidth(), h = (float) getHeight();
-    juce::String best; float bestDepth = 2.0f;
+    float bestDepth = 2.0f;
     struct Draw { const djehuti::cad::CadMesh* mesh; M4 model; juce::String id; };
     std::vector<Draw> draws;
     for (const auto& mesh : pickSnapshot->meshes)
@@ -215,11 +219,50 @@ juce::String Viewport3D::pickBody(juce::Point<float> position) const
             const auto t = 1.0f - u - v;
             if (u < 0.0f || v < 0.0f || t < 0.0f) continue;
             const auto depth = u * da + v * db + t * dc;
-            if (depth >= -1.0f && depth < bestDepth) { bestDepth = depth; best = draw.id; }
+            if (depth >= -1.0f && depth < bestDepth) { bestDepth = depth; result.drawId = draw.id; result.featureId = mesh.featureId; result.face = mesh.faceIndex; }
         }
     }
-    return best;
+    if (mode == Mode::body) { result.face = -1; return result; }
+    if (mode == Mode::face) return result;
+    // Edge mode: the nearest edge within 7 px whose depth there is not behind the surface under the cursor.
+    djehuti::cad::CadPick edgePick; float bestDistance = 7.0f;
+    for (const auto& line : pickSnapshot->edges)
+    {
+        std::vector<std::pair<M4, juce::String>> placements;
+        if (pose == nullptr || pose->instancedFeatures.count(line.featureId) == 0) placements.push_back({ identity(), line.featureId });
+        if (pose != nullptr) for (const auto& instance : pose->instances) if (instance.featureId == line.featureId) { M4 m; std::memcpy(m.v, instance.matrix.data(), sizeof(m.v)); placements.push_back({ m, instance.instanceId }); }
+        for (const auto& [model, id] : placements)
+        {
+            const auto mvp = mul(viewProjection, model);
+            const auto project = [&](size_t i, juce::Point<float>& screen, float& depth)
+            {
+                const auto* v = line.points.data() + i * 3u; float clip[4];
+                for (int row = 0; row < 4; ++row) clip[row] = mvp.v[row] * v[0] + mvp.v[4 + row] * v[1] + mvp.v[8 + row] * v[2] + mvp.v[12 + row];
+                if (clip[3] <= 1.0e-6f) return false;
+                screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * w, (1.0f - clip[1] / clip[3]) * 0.5f * h }; depth = clip[2] / clip[3];
+                return true;
+            };
+            for (size_t i = 0; i + 1 < line.points.size() / 3; ++i)
+            {
+                juce::Point<float> a, b; float da = 0, db = 0;
+                if (!project(i, a, da) || !project(i + 1, b, db)) continue;
+                const auto ab = b - a; const auto len2 = ab.x * ab.x + ab.y * ab.y;
+                const auto t = len2 > 0.0f ? juce::jlimit(0.0f, 1.0f, ((position.x - a.x) * ab.x + (position.y - a.y) * ab.y) / len2) : 0.0f;
+                const auto closest = a + ab * t; const auto distanceToEdge = closest.getDistanceFrom(position);
+                const auto depth = da + (db - da) * t;
+                if (distanceToEdge < bestDistance && (bestDepth > 1.5f || depth <= bestDepth + 0.002f)) { bestDistance = distanceToEdge; edgePick = { id, line.featureId, -1, line.edgeIndex }; }
+            }
+        }
+    }
+    return edgePick;
 }
+void Viewport3D::mouseMove(const juce::MouseEvent& e)
+{
+    if (selection == nullptr || selection->mode() == djehuti::cad::CadSelection::Mode::body) return;
+    selection->setHover(pick(e.position, selection->mode()));
+    if (onFrameRequested) onFrameRequested();
+}
+void Viewport3D::mouseExit(const juce::MouseEvent&) { if (selection != nullptr) selection->setHover({}); }
 void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { { const juce::SpinLock::ScopedLockType lock(highlightLock); if (highlights == next) return; highlights = std::move(next); } markDirty(); }
 void Viewport3D::mouseDrag(const juce::MouseEvent& e)
 {
@@ -331,6 +374,12 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
             { const juce::SpinLock::ScopedLockType lock(highlightLock); glPose = pose; }
             renderDirty = true;
         }
+    if (selection != nullptr && selection->serial() != shownSelectionSerial)
+    {
+        shownSelectionSerial = selection->serial();
+        { const juce::SpinLock::ScopedLockType lock(highlightLock); glHover = selection->hover(); glSelected = selection->selected(); }
+        renderDirty = true;
+    }
     tryPendingFit();
     const auto p = projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
     std::array<float, 32> cameraState {};
@@ -370,7 +419,7 @@ void Viewport3D::renderOpenGL()
         meshRanges.clear();
         for (const auto& mesh : pendingSnapshot->meshes)
         {
-            meshRanges.push_back({ mesh.featureId, static_cast<GLsizei>(indices.size()), static_cast<GLsizei>(mesh.indices.size()) });
+            meshRanges.push_back({ mesh.featureId, static_cast<GLsizei>(indices.size()), static_cast<GLsizei>(mesh.indices.size()), mesh.faceIndex });
             const auto base = static_cast<std::uint32_t>(vertices.size() / 6);
             vertices.insert(vertices.end(), mesh.vertices.begin(), mesh.vertices.end());
             for (const auto index : mesh.indices) indices.push_back(base + index);
@@ -399,7 +448,9 @@ void Viewport3D::renderOpenGL()
     {
         std::vector<std::pair<juce::String, juce::Colour>> colours;
         std::shared_ptr<const djehuti::cad::CadPoseSnapshot> posed;
-        { const juce::SpinLock::ScopedLockType lock(highlightLock); colours = highlights; posed = glPose; }
+        djehuti::cad::CadPick hoverPick, selectedPick;
+        { const juce::SpinLock::ScopedLockType lock(highlightLock); colours = highlights; posed = glPose; hoverPick = glHover; selectedPick = glSelected; }
+        const auto geometry = pendingSnapshot;
         const auto colourOf = [&](const juce::String& id) { juce::Colour colour(0xff2e9ec7); for (const auto& item : colours) if (item.first == id) colour = item.second; return colour; };
         const auto draw = [&](const MeshRange& range, const float* matrix, const juce::String& id)
         {
@@ -417,6 +468,52 @@ void Viewport3D::renderOpenGL()
             if (posed != nullptr) for (const auto& instance : posed->instances) if (instance.featureId == range.featureId) draw(range, instance.matrix.data(), instance.instanceId);
         }
         glBindVertexArray(0);
+        // Picked faces and edges: hover in light cyan, the selection in magenta, with the same instance transform as
+        // the body they belong to (only the instance that was hit).
+        const auto matrixFor = [&](const djehuti::cad::CadPick& p, M4& m)
+        {
+            m = identity();
+            if (posed == nullptr || posed->instancedFeatures.count(p.featureId) == 0) return p.drawId == p.featureId;
+            for (const auto& instance : posed->instances) if (instance.instanceId == p.drawId) { std::memcpy(m.v, instance.matrix.data(), sizeof(m.v)); return true; }
+            return false;
+        };
+        const auto drawLines = [&](const std::vector<float>& points, bool strip, const float* matrix, juce::Colour colour)
+        {
+            if (points.size() < 6 || axisVao == 0) return;
+            std::vector<float> data;
+            const float light[3] { 0.4f / 1.0770f, 0.8f / 1.0770f, 0.6f / 1.0770f };
+            for (size_t i = 0; i + 2 < points.size(); i += 3) { data.insert(data.end(), { points[i], points[i + 1], points[i + 2] }); data.insert(data.end(), { light[0], light[1], light[2] }); }
+            glBindBuffer(GL_ARRAY_BUFFER, axisVbo);
+            glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)), data.data(), GL_DYNAMIC_DRAW);
+            glDisable(GL_DEPTH_TEST);
+            glBindVertexArray(axisVao);
+            shader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
+            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+            glDrawArrays(strip ? GL_LINE_STRIP : GL_LINES, 0, static_cast<GLsizei>(points.size() / 3));
+            glBindVertexArray(0);
+            glEnable(GL_DEPTH_TEST);
+        };
+        for (const auto& [p, colour] : { std::pair<djehuti::cad::CadPick, juce::Colour> { hoverPick, juce::Colour(0xff9be7ff) }, { selectedPick, juce::Colour(0xffff4fd8) } })
+        {
+            M4 m;
+            if (!p.valid() || !matrixFor(p, m)) continue;
+            if (p.face >= 0)
+            {
+                glDepthFunc(GL_LEQUAL); glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0f, -1.0f);
+                glBindVertexArray(vao);
+                shader->setUniformMat4("uInstance", m.v, 1, GL_FALSE);
+                shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+                for (const auto& range : meshRanges)
+                    if (range.featureId == p.featureId && range.faceIndex == p.face)
+                        glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));
+                glBindVertexArray(0);
+                glDisable(GL_POLYGON_OFFSET_FILL); glDepthFunc(GL_LESS);
+            }
+            if (p.edge >= 0 && geometry != nullptr)
+                for (const auto& line : geometry->edges) if (line.featureId == p.featureId && line.edgeIndex == p.edge) drawLines(line.points, true, m.v, colour);
+        }
+        // Visible sketches in their resolved 3-D plane (pairs of points per segment).
+        if (geometry != nullptr) for (const auto& outline : geometry->sketchOutlines) drawLines(outline.points, false, unit.v, juce::Colour(0xffe8d27a));
         if (posed != nullptr && !posed->axes.empty() && axisVao != 0)
         {
             // Each joint axis: a line through the joint origin along +Z (revolute amber, prismatic cyan), always visible.
@@ -486,8 +583,9 @@ ThreeDViewsPanel::ThreeDViewsPanel(std::shared_ptr<djehuti::cad::CadCommandServi
     addAndMakeVisible(addButton); addAndMakeVisible(pauseButton); addAndMakeVisible(resetButton); addAndMakeVisible(fitButton); addButton.onClick = [this] { addView(); }; pauseButton.onClick = [this] { paused = !paused; pauseButton.setButtonText(paused ? "Resume" : "Pause"); }; resetButton.onClick = [this] { for (auto* tile : tiles) tile->viewport().resetCamera(); }; fitButton.onClick = [this] { for (auto* tile : tiles) tile->viewport().fitAll(); }; addView(); addView(); addView(); startTimerHz(60);
 }
 ThreeDViewsPanel::~ThreeDViewsPanel() { stopTimer(); }
+void ThreeDViewsPanel::setSelection(std::shared_ptr<djehuti::cad::CadSelection> next) { selection = std::move(next); for (auto* tile : tiles) tile->viewport().setSelection(selection); }
 void ThreeDViewsPanel::setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); for (auto* tile : tiles) tile->viewport().setPoseSource(poseSource); }
-bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); tiles.getLast()->viewport().setPoseSource(poseSource); tiles.getLast()->viewport().onFrameRequested = [this] { wakeFrames(); }; addAndMakeVisible(tiles.getLast()); if (currentSnapshot != nullptr) tiles.getLast()->viewport().setSnapshot(currentSnapshot); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
+bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); tiles.getLast()->viewport().setPoseSource(poseSource); tiles.getLast()->viewport().onFrameRequested = [this] { wakeFrames(); }; tiles.getLast()->viewport().setSelection(selection); addAndMakeVisible(tiles.getLast()); if (currentSnapshot != nullptr) tiles.getLast()->viewport().setSnapshot(currentSnapshot); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
 void ThreeDViewsPanel::closeView(int id) { if (tiles.size() <= 1) return; for (int i = tiles.size(); --i >= 0;) if (tiles[i]->id() == id) { tiles.remove(i); break; } addButton.setEnabled(tiles.size() < 6); resized(); }
 // Views frame a newly opened or created document once; otherwise every camera stays as the user left it.
 // Frames are published (and rendered) only for views whose camera, pose, geometry or visibility changed.

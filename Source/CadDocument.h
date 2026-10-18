@@ -25,6 +25,7 @@
 #include "CadMechanics.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,6 +33,12 @@
 
 namespace djehuti::cad
 {
+// Construction origins of the faces of an evaluated shape: each face carries tokens "<featureId>/<role>" naming
+// the feature that generated it and its role there (box "top", extrude "end", "side:<sketch entity>", ...).
+// Tokens follow faces through Booleans and placements via OCCT's modified/deleted history; they are how a
+// face is named persistently. Derived on every rebuild, never stored as geometry.
+using CadFaceOrigins = std::vector<std::pair<TopoDS_Shape, juce::StringArray>>;
+
 struct CadFeature
 {
     juce::String id, name, type;
@@ -42,6 +49,7 @@ struct CadFeature
     double x = 0.0, y = 0.0, z = 0.0, rx = 0.0, ry = 0.0, rz = 0.0;
     bool visible = true;
     TopoDS_Shape shape;
+    CadFaceOrigins faceOrigins;   // derived with shape
 };
 
 struct CadSketchEntity
@@ -58,8 +66,11 @@ struct CadSketchConstraint
 
 struct CadSketch
 {
-    juce::String id, plane = "XY";
+    juce::String id, plane = "XY";    // "XY", "XZ", "YZ", or "FACE" for a sketch attached to a model face
     double offset = 0.0;
+    // Face attachment: the planar face named by its construction token on supportFeature (see CadFaceOrigins).
+    juce::String supportFeature, supportFace;
+    bool onFace() const { return supportFeature.isNotEmpty(); }
     std::vector<CadSketchEntity> entities;
     std::vector<CadSketchConstraint> constraints;
 };
@@ -67,8 +78,17 @@ struct CadSketch
 struct CadMesh
 {
     juce::String featureId;
+    int faceIndex = -1;   // face of the feature's shape in TopExp order (transient render index)
     std::vector<float> vertices;
     std::vector<std::uint32_t> indices;
+};
+
+// A polyline in feature coordinates: a model edge (edgeIndex in the feature's unique-edge order) or a sketch outline.
+struct CadPolyline
+{
+    juce::String featureId;
+    int edgeIndex = -1;
+    std::vector<float> points;   // x, y, z triples
 };
 
 struct CadRenderSnapshot
@@ -76,6 +96,26 @@ struct CadRenderSnapshot
     std::uint64_t revision = 0;
     std::uint64_t documentInstance = 0;   // which document (New/Open) the meshes belong to
     std::vector<CadMesh> meshes;
+    std::vector<CadPolyline> edges;           // model edges, for edge picking and highlighting
+    std::vector<CadPolyline> sketchOutlines;  // visible sketches drawn in their resolved 3-D plane
+};
+
+// A face of a feature resolved for display, picking and automation.
+struct CadFaceInfo
+{
+    juce::String featureId, token;   // token empty: the face has no persistent name and cannot support a sketch
+    int faceIndex = -1;
+    bool planar = false;
+    gp_Pnt centre;
+    gp_Dir normal { 0, 0, 1 };
+    double area = 0.0;
+};
+
+// Resolved local frame of a sketch: world points are origin + u * U + v * V; normal is the sketch normal.
+struct CadSketchFrame
+{
+    gp_Pnt origin;
+    gp_Dir u { 1, 0, 0 }, v { 0, 1, 0 }, normal { 0, 0, 1 };
 };
 
 struct CadPersistentReference
@@ -105,6 +145,12 @@ public:
     bool createBox(double width, double depth, double height, juce::String& id, juce::String& error);
     bool createCylinder(double radius, double height, juce::String& id, juce::String& error);
     bool createSketch(const juce::String& plane, double offset, juce::String& id, juce::String& error);
+    // Sketch on the planar face of featureId named by faceToken (from listFaces/describeFace).
+    bool createFaceSketch(const juce::String& featureId, const juce::String& faceToken, juce::String& id, juce::String& error);
+    bool listFaces(const juce::String& featureId, std::vector<CadFaceInfo>& faces, juce::String& error) const;
+    bool describeFace(const juce::String& featureId, int faceIndex, CadFaceInfo& face, juce::String& error) const;
+    bool describeEdge(const juce::String& featureId, int edgeIndex, juce::String& description, juce::String& error) const;
+    bool sketchFrame(const juce::String& sketchId, CadSketchFrame& frame) const;
     bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {});
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error);
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error);
@@ -171,8 +217,11 @@ public:
 private:
     bool mutate(std::function<bool(juce::String&)> action, juce::String& error);
     bool rebuild(juce::String& error);
-    TopoDS_Shape evaluate(const juce::String& id, juce::String& error, juce::StringArray& active);
-    TopoDS_Shape place(const TopoDS_Shape& source, const CadFeature& feature) const;
+    TopoDS_Shape evaluate(const juce::String& id, juce::String& error, juce::StringArray& active, CadFaceOrigins* origins = nullptr);
+    TopoDS_Shape place(const TopoDS_Shape& source, const CadFeature& feature, CadFaceOrigins* origins = nullptr) const;
+    gp_Trsf placement(const CadFeature& feature) const;
+    bool resolveSketchFrame(const CadSketch& sketch, CadSketchFrame& frame, juce::String& error, juce::StringArray& active);
+    bool supportFace(const CadFeature& feature, const juce::String& token, TopoDS_Face& face, juce::String& error) const;
     juce::String serialize() const;
     bool deserialize(const juce::String& json, juce::String& error);
     juce::String serializeSketches() const;
@@ -184,8 +233,9 @@ private:
     CadSketch* mutableSketch(const juce::String& id);
     bool solveSketch(CadSketch& sketch, juce::String& error) const;
     bool validateSketch(const CadSketch& sketch, juce::String& error) const;
-    bool sketchProfiles(const CadSketch& sketch, std::vector<TopoDS_Face>& faces, juce::String& error) const;
-    TopoDS_Shape extrudeSketch(const CadSketch& sketch, double depth, bool reverse, juce::String& error) const;
+    bool sketchProfiles(const CadSketch& sketch, const CadSketchFrame& frame, std::vector<TopoDS_Face>& faces, juce::String& error, std::vector<std::pair<TopoDS_Shape, juce::String>>* edgeEntities = nullptr) const;
+    TopoDS_Shape extrudeSketch(const CadSketch& sketch, const CadSketchFrame& frame, double depth, bool reverse, juce::String& error, CadFaceOrigins* origins = nullptr, const juce::String& owner = {}) const;
+    static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);
     bool syncItemsFromOCAF(juce::String& error);
@@ -196,6 +246,7 @@ private:
 
     std::vector<CadFeature> items;
     std::vector<CadSketch> sketches;
+    std::map<juce::String, CadSketchFrame> sketchFrames;   // derived on rebuild
     CadMechanics mechanics;
     std::vector<CadPersistentReference> references;
     std::vector<CadTopologyEvolution> operationHistory;
@@ -219,6 +270,12 @@ public:
     bool createBox(double w, double d, double h, juce::String& id, juce::String& error);
     bool createCylinder(double radius, double height, juce::String& id, juce::String& error);
     bool createSketch(const juce::String& plane, double offset, juce::String& id, juce::String& error) { return model.createSketch(plane, offset, id, error); }
+    bool createFaceSketch(const juce::String& featureId, const juce::String& faceToken, juce::String& id, juce::String& error) { return model.createFaceSketch(featureId, faceToken, id, error); }
+    bool listFaces(const juce::String& featureId, std::vector<CadFaceInfo>& faces, juce::String& error) const { return model.listFaces(featureId, faces, error); }
+    bool describeFace(const juce::String& featureId, int faceIndex, CadFaceInfo& face, juce::String& error) const { return model.describeFace(featureId, faceIndex, face, error); }
+    bool describeEdge(const juce::String& featureId, int edgeIndex, juce::String& description, juce::String& error) const { return model.describeEdge(featureId, edgeIndex, description, error); }
+    // [{ index, name (persistent face token, or "" if none), planar, normal [x,y,z], centre [x,y,z] mm, area mm2 }]
+    bool listFacesJson(const juce::String& featureId, juce::String& json, juce::String& error) const;
     bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {}) { return model.addSketchLine(sketchId, x1, y1, x2, y2, entityId, error, firstConnection, secondConnection); }
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error) { return model.addSketchRectangle(sketchId, x, y, width, height, groupId, error); }
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error) { return model.addSketchCircle(sketchId, x, y, radius, entityId, error); }

@@ -5,6 +5,7 @@
 #include "Viewport3D.h"
 #include "CadMotionRuntime.h"
 #include "MotionLink.h"
+#include "CadSelection.h"
 
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
@@ -25,10 +26,11 @@ public:
     juce::String layoutState() const;
     void restoreLayoutState(const juce::String& state);
     void setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link);
+    void setSelection(std::shared_ptr<djehuti::cad::CadSelection> shared);
     std::function<void()> onOpenViews;
 
 private:
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -86,6 +88,11 @@ private:
     void linkChanged();
     // Inverse kinematics task panel. The draft is the edited (possibly unsaved) task; Save stores it.
     bool isIkTask(const juce::String& id) const;
+    juce::String supportText(const djehuti::cad::CadSketch& sketch) const;
+    // The selected face, if it can support a sketch (planar and persistently named); otherwise why not.
+    bool selectedSupport(djehuti::cad::CadFaceInfo& face, juce::String& reason) const;
+    void selectionChanged();
+    void addSubshapePanel(juce::String& title, juce::String& instruction);
     void loadIkDraft(const juce::String& taskId);
     void addIkPanel(juce::String& title, juce::String& instruction, juce::String& accept, bool& showAccept, bool& showCancel);
     void validateIkPanel(juce::String& problem, int& severity);
@@ -104,7 +111,8 @@ private:
         fitButton { "Fit All" }, resetViewButton { "Reset View" }, viewsButton { "3D Views" },
         selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, constrainButton { "Constrain" },
         fitSketchButton { "Fit Sketch" }, finishSketchButton { "Finish Sketch" },
-        instanceButton { "Instance" }, jointButton { "Joint" }, couplingButton { "Coupling" }, linkButton { "Motion Link" }, ikButton { "IK" };
+        instanceButton { "Instance" }, jointButton { "Joint" }, couplingButton { "Coupling" }, linkButton { "Motion Link" }, ikButton { "IK" },
+        bodyModeButton { "Body" }, faceModeButton { "Face" }, edgeModeButton { "Edge" };
     juce::TreeView tree { "Model" };
     std::unique_ptr<juce::TreeViewItem> rootItem;
     juce::Component centre, side;
@@ -125,6 +133,7 @@ private:
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
     djehuti::motion::MotionLink* motionLink = nullptr;
     std::uint64_t shownLinkSerial = 0;
+    std::shared_ptr<djehuti::cad::CadSelection> selection;
     std::unique_ptr<djehuti::cad::CadIkTask> ikDraft;
     int ikTargetIndex = 0;
     bool ikDirty = false, ikDragEnabled = false, ikMarkersShown = false, ikFormStale = false;   // stale: the form still shows another task or target

@@ -34,6 +34,115 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Idle CPU cleanup and face-based sketching — October 18, 2026
+
+### Idle CPU
+
+Cause: `MotionLink::handleAsyncUpdate` (10 Hz) re-serialised the whole status board (status, mechanism,
+lifecycle and IK JSON) every tick, about 600 ms of message-thread time per 10 s. It now builds a small
+`BoardKey` from the link snapshot, `CadMotionRuntime::statusSerial()` (bumped by `solveNow` and `acceptIk`)
+and the document revision, and rebuilds the board only when the key changes. Heartbeats, timeouts, deadlines,
+write-stall detection, pending-state publication and reconnect are untouched; the motion protocol and DEWB
+are unchanged.
+
+Process CPU, % of one core, Debug, `ik_arm.djc` open, no input:
+
+| State | Before | After (instrumented build) | Final build, 20 s samples |
+|---|---|---|---|
+| CAD Workspace visible | 6.6 % | 1.0 % | 1.5–1.6 % |
+| Minimised | 6.1 % | 0.9 % | 1.2 % |
+
+The remaining timers total about 1.5 ms/s. An IK Solve still rebuilds the board once (8–11 ms). After the
+change an IK Solve on the arm still updated the model view.
+
+### Face and edge selection
+
+`CadSelection` (`Source/CadSelection.h`) is shared by the model view and every 3-D view: mode
+(Body/Face/Edge buttons on the right of the workspace toolbar), hover, selected pick and a serial.
+`Viewport3D::pick` uses the same instance matrices and runtime pose as rendering:
+- The nearest surface triangle gives the instance (or feature), the feature and the B-rep face index.
+- Edge mode takes the nearest edge polyline within 7 px whose depth is not behind the surface under the
+  cursor.
+
+Selection details:
+- A click selects only when the mouse did not move (a drag still orbits). During a command task the views
+  still pick bodies (`wantsBodyPick`).
+- Hover is light cyan and the selection is magenta in every view; the body highlight is suppressed while a
+  subshape is picked. Picking in one view never moves another view's camera.
+- The right panel inspects the pick: persistent face name, planar or curved, area and normal, or the edge
+  type and length. It offers "Create Sketch on this face" and "Clear selection".
+
+### Face-attached sketches and persistent references
+
+Face names come from construction history, not indices:
+- Box faces: `box-N/top|bottom|left|right|front|back`.
+- Cylinder faces: `<cylinder id>/top|bottom|side`.
+- Extrude and cut faces: `<id>/start|end|side:<sketch entity>`, from `BRepPrimAPI_MakePrism` history.
+- Booleans carry names through `Modified`/`IsDeleted`, and placements through
+  `BRepBuilderAPI_Transform`.
+
+A sketch stores `supportFeature` + `supportFace`; the support feature is a dependency of the sketch and of
+everything built from it, so cycles are rejected by the evaluation stack.
+
+Each rebuild resolves the token to exactly one planar face:
+- The frame: N is the outward normal; U is the first placed feature axis that is not nearly parallel to N,
+  projected into the plane; V = N × U; the origin is the feature's placement origin projected onto the plane.
+- Dimension edits therefore move the sketch without flipping its axes.
+- A missing, split or non-planar support is an error naming the sketch and face. The edit is rejected; the
+  sketch is never silently reattached.
+
+Extrudes follow +N; cuts from a face sketch go into the body (−N); Reverse flips both. Deleting a body
+that supports a sketch is refused.
+
+Persistence and loading:
+- OCAF: each face sketch has a reference label at `1000 + sketch number` (support feature, kind `face`, token,
+  sketch id) with a TNaming named shape of the resolved face. Document `formatVersion` is now 6.
+- Older documents load unchanged; their legacy edge references remain.
+- No simulation pose is stored in an attachment.
+
+### Automation
+
+| Surface | Faces | Face sketch |
+|---|---|---|
+| Agent tools | `cad_list_faces {feature}` | `cad_create_face_sketch {feature, face}` |
+| FRust | `djehuti_cad_list_faces(feature)` | `djehuti_cad_create_face_sketch(feature, face)` |
+| Nodes | "CAD List Faces" | "CAD Face Sketch" |
+
+- All go through `CadCommandService`; `listFacesJson` returns index, name, planar, canSupportSketch, normal,
+  centre and area.
+- Help item 6a describes the workflow.
+
+### Verification
+
+`djehuti_cad.exe --cad-face-check` writes `build/cad-face-check.result.json`: 19/19 passed. It covers:
+- the top-face frame and the pocket volume;
+- the plate height 10 → 16, with the pocket floor following to z 12;
+- undo/redo, and native save/reopen;
+- a right-face frame (N +X, U +Y, V +Z);
+- refusal of a 20 mm through-cut that removes a sketch's floor support, with state kept;
+- the delete guard.
+
+Observed in the running app:
+- Plate top face: selected, then a sketch with a dimensioned rectangle, a 4 mm cut and height 16; the pocket
+  followed. The pocket floor was picked as `cut-18/end` and highlighted in all three 3-D views.
+- Edge mode: picked and inspected a box edge. Picking another edge in View 2 left View 2's camera unchanged
+  and highlighted it in View 1 too.
+- Right side face (`box-1/right`): a circle sketch extruded 10 mm along +X. Width 20 → 30 moved the
+  cylinder with the face, and undo/redo moved it back and forth.
+- Native save to `build\face-gui-check.djo` and reopen; width 40 then still moved it.
+- Deleting the support box was refused ("Cannot delete a body that supports Sketch 2…").
+- The cylinder's side was reported as curved and not sketchable.
+
+### Limits
+
+- Only planar faces with history names can carry sketches; curved faces are inspect-only.
+- A topology change that deletes or splits the support face is refused. There is no reattachment UI yet:
+  undo, or delete and recreate the sketch.
+- Edges are selectable and inspectable but not persistently referenced.
+- Face names exist only for faces created by box, cylinder, extrude, cut and the Boolean history mapped from
+  them; other faces show "no persistent name".
+- Sketch outlines draw with the authored feature placement; they are not posed by runtime instances.
+
 ## Document framing and idle viewport activity — October 18, 2026
 
 Framing: each view frames the visible geometry once when it is created and when a document is opened or
@@ -61,9 +170,8 @@ Measured (Debug build, `ik_arm.djc` open, no input, 10 s samples, process CPU as
 | 3D Views tab showing | not measured | 6.2 % |
 | Window minimised | 43.8 % | 7.5 % |
 
-The remainder is all on the message thread with no GL work. The likely main contributor is the motion link's
-10 Hz status board, which re-serialises the full status and mechanism JSON every tick. It was left unchanged:
-motion-link code is outside this assignment.
+The remainder is all on the message thread with no GL work. Its main contributor, the motion link's 10 Hz
+status board, was fixed in the idle CPU cleanup above.
 
 Observed in the running app: the arm and slider-crank examples framed correctly on open, in either order
 and repeatedly; 3D views that were hidden at open time, and a newly added view, framed correctly when shown.

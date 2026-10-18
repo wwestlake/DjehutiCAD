@@ -2154,6 +2154,9 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
         // solve, status or resetPreview; args is the JSON task description; the result is the JSON outcome.
         { "cad_ik", "CAD Inverse Kinematics", "CAD Motion", juce::Colour(0xff4b8fc8), 0,
           { in("command", "string"), in("args json", "string") }, { out("result", "string") } },
+        // Persistent face references: list a body's named faces (JSON), or attach a sketch to one by name.
+        { "cad_list_faces", "CAD List Faces", "CAD", juce::Colour(0xff4b8fc8), 0, { in("feature", "string") }, { out("faces json", "string") } },
+        { "cad_face_sketch", "CAD Face Sketch", "CAD", juce::Colour(0xff4b8fc8), 0, { in("feature", "string"), in("face", "string") }, { out("sketch", "string") } },
         // A FRust programmable component's electrical interface (Workbench):
         // values are f64 volts, amps, seconds; each names a pin, parameter
         // or state variable of the component.

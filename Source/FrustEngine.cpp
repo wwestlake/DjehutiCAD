@@ -162,6 +162,22 @@ extern "C" const char* djehuti_cad_sketch_constraint(const char* sketchId, const
     if (auto service = activeCadService()) { juce::String id, error; if(service->addSketchConstraint(sketchId != nullptr ? sketchId : "", type != nullptr ? type : "", first != nullptr ? first : "", second != nullptr ? second : "", value, id, error)){setCadError({});return returnCad(id);}setCadError(error); } else setCadError("No CAD document is attached."); return returnCad({});
 }
 
+// Faces of a solid feature with their persistent names, as JSON (see CadCommandService::listFacesJson).
+extern "C" const char* djehuti_cad_list_faces(const char* feature)
+{
+    if (auto service = activeCadService()) { juce::String json, error; if (service->listFacesJson(feature != nullptr ? feature : "", json, error)) { setCadError({}); return returnCad(json); } setCadError(error); }
+    else setCadError("No CAD document is attached.");
+    return returnCad("[]");
+}
+
+// Sketch attached to the planar face named face (from djehuti_cad_list_faces) on feature; returns the sketch id.
+extern "C" const char* djehuti_cad_create_face_sketch(const char* feature, const char* face)
+{
+    if (auto service = activeCadService()) { juce::String id, error; if (service->createFaceSketch(feature != nullptr ? feature : "", face != nullptr ? face : "", id, error)) { setCadError({}); return returnCad(id); } setCadError(error); }
+    else setCadError("No CAD document is attached.");
+    return returnCad({});
+}
+
 extern "C" const char* djehuti_cad_extrude(const char* sketchId, double depth, std::int64_t reverse)
 {
     if (auto service = activeCadService()) { juce::String id, error; if(service->createExtrude(sketchId != nullptr ? sketchId : "", depth, reverse != 0, id, error)){setCadError({});return returnCad(id);}setCadError(error); } else setCadError("No CAD document is attached."); return returnCad({});
@@ -388,6 +404,8 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_set_joint_role", reinterpret_cast<void*>(&djehuti_cad_set_joint_role));
         frust_plugin_register_host_function("djehuti_cad_create_coupling", reinterpret_cast<void*>(&djehuti_cad_create_coupling));
         frust_plugin_register_host_function("djehuti_cad_ik", reinterpret_cast<void*>(&djehuti_cad_ik));
+        frust_plugin_register_host_function("djehuti_cad_list_faces", reinterpret_cast<void*>(&djehuti_cad_list_faces));
+        frust_plugin_register_host_function("djehuti_cad_create_face_sketch", reinterpret_cast<void*>(&djehuti_cad_create_face_sketch));
     });
 }
 
@@ -665,6 +683,8 @@ std::string cadPrelude()
            "extern fn djehuti_cad_motion_status() -> String;\n"
            "extern fn djehuti_cad_motion_lifecycle(command: String, step_ms: f64) -> i64;\n"
            "extern fn djehuti_cad_ik(command: String, args_json: String) -> String;\n"
+           "extern fn djehuti_cad_list_faces(feature: String) -> String;\n"
+           "extern fn djehuti_cad_create_face_sketch(feature: String, face: String) -> String;\n"
            "extern fn djehuti_cad_set_grounded(instance: String, grounded: i64) -> i64;\n"
            "extern fn djehuti_cad_set_instance_placement(instance: String, x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> i64;\n"
            "extern fn djehuti_cad_set_joint_role(joint: String, role: String, lock_value: f64, enforce_limits: i64) -> i64;\n"
@@ -678,7 +698,7 @@ const std::vector<std::string>& cadHostFunctions()
         "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
         "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
-        "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik"
+        "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik", "djehuti_cad_list_faces", "djehuti_cad_create_face_sketch"
     };
     return names;
 }

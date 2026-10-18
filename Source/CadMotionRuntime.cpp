@@ -174,6 +174,7 @@ bool CadMotionRuntime::solveNow(const std::map<juce::String, double>& prescribed
     request.seed = seedCoordinates();
     if (hasValid) request.seedRank = valid.rank;
     attempt = kin::solve(model, request);
+    ++attemptSerial;
     hasAttempt = true;
     if (attempt.valid)
     {
@@ -267,7 +268,7 @@ void CadMotionRuntime::deliverIk(const IkJob& job, const kin::SolveResult& resul
 void CadMotionRuntime::acceptIk(const CadIkTask& task, const kin::SolveResult& result)
 {
     ikResult = result; ikResultValid = true; ikResultTask = task.id; ++ikResultSerial;
-    attempt = result; hasAttempt = true;
+    attempt = result; hasAttempt = true; ++attemptSerial;
     if (!result.valid) return;   // rejected candidate: the last valid pose stays; its errors are diagnostics only
     valid = result; hasValid = true;
     // The adjusted drivers become the prescribed inputs from now on, so later solves keep this configuration.
