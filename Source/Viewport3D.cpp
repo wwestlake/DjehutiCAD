@@ -77,11 +77,12 @@ bool runViewportCameraCheck(juce::String& detail)
 
 Viewport3D::Viewport3D(int number) : viewNumber(number)
 {
-    setOpaque(false); context.setRenderer(this); context.setContinuousRepainting(true); context.setOpenGLVersionRequired(juce::OpenGLContext::openGL4_1); context.attachTo(*this);
+    // Rendered on demand: prepareFrame requests a render only when something changed.
+    setOpaque(false); context.setRenderer(this); context.setContinuousRepainting(false); context.setOpenGLVersionRequired(juce::OpenGLContext::openGL4_1); context.attachTo(*this);
 }
 Viewport3D::~Viewport3D() { context.detach(); }
 void Viewport3D::paint(juce::Graphics& g) { g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
-void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged) frameScene(); }
+void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged && !fitPending) frameScene(); tryPendingFit(); markDirty(); }
 void Viewport3D::timerCallback() {}
 void Viewport3D::mouseDown(const juce::MouseEvent& e)
 {
@@ -219,28 +220,45 @@ juce::String Viewport3D::pickBody(juce::Point<float> position) const
     }
     return best;
 }
-void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { const juce::SpinLock::ScopedLockType lock(highlightLock); highlights = std::move(next); }
+void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { { const juce::SpinLock::ScopedLockType lock(highlightLock); if (highlights == next) return; highlights = std::move(next); } markDirty(); }
 void Viewport3D::mouseDrag(const juce::MouseEvent& e)
 {
     if (draggingTarget)
     {
         std::array<float, 3> point {};
         if (dragPoint(e.position, point) && onTargetDragged) onTargetDragged(dragTargetId, point, false);
+        if (onFrameRequested) onFrameRequested();
         return;
     }
-    const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } userCameraChanged = true; dragStart = now; }
+    const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } dragStart = now; cameraChanged(); }
 void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w)
 {
     const auto minimumDistance = juce::jmax(0.001f, sceneRadius * 0.02f);
     const auto maximumDistance = juce::jmax(1000.0f, sceneRadius * 100000.0f);
-    distance = juce::jlimit(minimumDistance, maximumDistance, distance * std::exp(-w.deltaY * 0.5f)); userCameraChanged = true;
+    distance = juce::jlimit(minimumDistance, maximumDistance, distance * std::exp(-w.deltaY * 0.5f)); cameraChanged();
 }
-void Viewport3D::resetCamera() { yaw = 0.55f; pitch = 0.35f; panX = panY = 0.0f; userCameraChanged = false; frameScene(); }
-void Viewport3D::fitAll() { userCameraChanged = false; frameScene(); }
+void Viewport3D::resetCamera() { yaw = 0.55f; pitch = 0.35f; panX = panY = 0.0f; userCameraChanged = false; if (hasSceneBounds) frameScene(); else fitPending = true; markDirty(); }
+void Viewport3D::fitAll() { userCameraChanged = false; if (hasSceneBounds) frameScene(); else fitPending = true; markDirty(); }
+void Viewport3D::requestFit(std::uint64_t documentInstance) { fitPending = true; fitDocument = documentInstance; userCameraChanged = false; tryPendingFit(); markDirty(); }
+// The user moved the camera: their view wins over any fit still waiting for geometry.
+void Viewport3D::cameraChanged() { userCameraChanged = true; fitPending = false; if (onFrameRequested) onFrameRequested(); }
+void Viewport3D::markDirty() { renderDirty = true; if (onFrameRequested) onFrameRequested(); }
+// A pending fit uses the posed bounds of the drawn geometry, so it waits for the view size and for a runtime
+// pose computed from the same document state; an older pose would place instances where they are not drawn.
+void Viewport3D::tryPendingFit()
+{
+    if (!fitPending || !hasSceneBounds || getWidth() <= 0 || getHeight() <= 0) return;
+    if (fitDocument != 0 && boundsDocument != fitDocument) return;
+    if (poseSource != nullptr && (pose == nullptr || pose->documentInstance != boundsDocument || pose->documentRevision != boundsRevision)) return;
+    frameScene();
+    fitPending = false;
+    renderDirty = true;
+}
 void Viewport3D::updateSceneBounds(const std::shared_ptr<const djehuti::cad::CadRenderSnapshot>& snapshot)
 {
     if (snapshot == nullptr || snapshot->revision == boundsRevision) return;
     boundsRevision = snapshot->revision;
+    boundsDocument = snapshot->documentInstance;
     featureBounds.clear();
     for (const auto& mesh : snapshot->meshes)
         for (size_t i = 0; i + 2 < mesh.vertices.size(); i += 6)
@@ -278,9 +296,9 @@ void Viewport3D::updatePosedBounds()
         sceneCenterX = (minX + maxX) * 0.5f; sceneCenterY = (minY + maxY) * 0.5f; sceneCenterZ = (minZ + maxZ) * 0.5f;
         const auto dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
         sceneRadius = juce::jmax(0.001f, 0.5f * std::sqrt(dx * dx + dy * dy + dz * dz));
-        if (!hasFramedInitialScene) { frameScene(); hasFramedInitialScene = true; }
+        tryPendingFit();
     }
-    else if (!hasFramedInitialScene) { targetX = targetY = targetZ = 0.0f; sceneRadius = 1.0f; }
+    else if (fitPending) { targetX = targetY = targetZ = 0.0f; sceneRadius = 1.0f; }   // empty document: neutral view
     clipRadius = sceneRadius;
     for (const auto& c : corners) clipRadius = juce::jmax(clipRadius, length(sub(c, { targetX, targetY, targetZ })));
 }
@@ -295,20 +313,34 @@ void Viewport3D::frameScene()
     distance = juce::jmax(0.001f, margin / std::tan(limitingHalfFov));
     panX = panY = 0.0f;
 }
-void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { pickSnapshot = next; updateSceneBounds(next); pendingSnapshot = std::move(next); }
+void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { pickSnapshot = next; updateSceneBounds(next); pendingSnapshot = std::move(next); markDirty(); }
 juce::String Viewport3D::diagnostics() const { return glStatus; }
-void Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
+bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 {
+    // Hidden views (other tab, minimised window) do no work and catch up when shown again.
+    if (!isShowing()) { wasShowing = false; return false; }
+    if (!wasShowing) { wasShowing = true; renderDirty = true; }
+    // JUCE creates the GL context inside a requested render and waits for the next request if it cannot yet;
+    // keep requesting until the context is ready, then render only on change.
+    if (!glReady) { renderDirty = true; context.triggerRepaint(); return false; }
     if (poseSource != nullptr)
         if (auto latest = poseSource(); latest != pose)
         {
             pose = std::move(latest);
             updatePosedBounds();
-            const juce::SpinLock::ScopedLockType lock(highlightLock);
-            glPose = pose;
+            { const juce::SpinLock::ScopedLockType lock(highlightLock); glPose = pose; }
+            renderDirty = true;
         }
+    tryPendingFit();
     const auto p = projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
-    DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle; frames.publish(packet);
+    std::array<float, 32> cameraState {};
+    std::memcpy(cameraState.data(), p.v, sizeof(p.v)); std::memcpy(cameraState.data() + 16, v.v, sizeof(v.v));
+    if (!renderDirty.exchange(false) && hasPublished && cameraState == lastCamera) return false;   // nothing changed: no frame, no render
+    DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle;
+    if (frames.publish(packet)) { lastCamera = cameraState; hasPublished = true; }
+    else renderDirty = true;   // every slot is still in flight: the render below retires fences, then retry next tick
+    context.triggerRepaint();
+    return true;
 }
 
 void Viewport3D::newOpenGLContextCreated()
@@ -325,7 +357,7 @@ void Viewport3D::newOpenGLContextCreated()
     // Joint axis indications share the shader: same vertex layout, drawn as lines.
     glGenVertexArrays(1, &axisVao); glBindVertexArray(axisVao); glGenBuffers(1, &axisVbo); glBindBuffer(GL_ARRAY_BUFFER, axisVbo); glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(positionAttribute->attributeID); glVertexAttribPointer(positionAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr); glEnableVertexAttribArray(normalAttribute->attributeID); glVertexAttribPointer(normalAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float))); glBindVertexArray(0);
-    const auto* version = reinterpret_cast<const char*>(glGetString(GL_VERSION)); const auto* shading = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)); glStatus = juce::String("OpenGL ") + (version != nullptr ? version : "version unavailable") + " / GLSL " + (shading != nullptr ? shading : "unavailable") + " / 3 UBO frames"; glReady = true;
+    const auto* version = reinterpret_cast<const char*>(glGetString(GL_VERSION)); const auto* shading = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)); glStatus = juce::String("OpenGL ") + (version != nullptr ? version : "version unavailable") + " / GLSL " + (shading != nullptr ? shading : "unavailable") + " / 3 UBO frames"; glReady = true; renderDirty = true;   // a new context needs a fresh frame
 }
 void Viewport3D::renderOpenGL()
 {
@@ -436,7 +468,7 @@ void Viewport3D::renderOpenGL()
     } if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 void Viewport3D::drawCube(const float*) {}
-void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); if (axisVao != 0) glDeleteVertexArrays(1, &axisVao); if (axisVbo != 0) glDeleteBuffers(1, &axisVbo); frameBuffers.fill(0); vao = vbo = ibo = axisVao = axisVbo = 0; frames.reset(); lastSlot = -1; hasFrame = false; uploadedGeometryRevision = 0; geometryIndexCount = 0; meshRanges.clear(); shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
+void Viewport3D::releaseGL() { for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); if (axisVao != 0) glDeleteVertexArrays(1, &axisVao); if (axisVbo != 0) glDeleteBuffers(1, &axisVbo); frameBuffers.fill(0); vao = vbo = ibo = axisVao = axisVbo = 0; frames.reset(); lastSlot = -1; hasFrame = false; renderDirty = true; uploadedGeometryRevision = 0; geometryIndexCount = 0; meshRanges.clear(); shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
 void Viewport3D::openGLContextClosing() { releaseGL(); }
 
 class ThreeDViewsPanel::ViewTile final : public juce::Component
@@ -455,9 +487,42 @@ ThreeDViewsPanel::ThreeDViewsPanel(std::shared_ptr<djehuti::cad::CadCommandServi
 }
 ThreeDViewsPanel::~ThreeDViewsPanel() { stopTimer(); }
 void ThreeDViewsPanel::setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); for (auto* tile : tiles) tile->viewport().setPoseSource(poseSource); }
-bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); tiles.getLast()->viewport().setPoseSource(poseSource); addAndMakeVisible(tiles.getLast()); if (currentSnapshot != nullptr) tiles.getLast()->viewport().setSnapshot(currentSnapshot); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
+bool ThreeDViewsPanel::addView() { if (tiles.size() >= 6) { addButton.setEnabled(false); return false; } static int nextId = 1; tiles.add(new ViewTile(nextId++, [this](int id) { closeView(id); })); tiles.getLast()->viewport().setPoseSource(poseSource); tiles.getLast()->viewport().onFrameRequested = [this] { wakeFrames(); }; addAndMakeVisible(tiles.getLast()); if (currentSnapshot != nullptr) tiles.getLast()->viewport().setSnapshot(currentSnapshot); addButton.setEnabled(tiles.size() < 6); resized(); return true; }
 void ThreeDViewsPanel::closeView(int id) { if (tiles.size() <= 1) return; for (int i = tiles.size(); --i >= 0;) if (tiles[i]->id() == id) { tiles.remove(i); break; } addButton.setEnabled(tiles.size() < 6); resized(); }
-void ThreeDViewsPanel::publishFrames() { if (cadService != nullptr && cadService->document().revision() != shownRevision) { currentSnapshot = cadService->snapshot(); shownRevision = currentSnapshot != nullptr ? currentSnapshot->revision : 0; for (auto* tile : tiles) tile->viewport().setSnapshot(currentSnapshot); } ++frameSerial; for (auto* tile : tiles) tile->viewport().prepareFrame(sharedAngle, frameSerial); }
-void ThreeDViewsPanel::timerCallback() { publishFrames(); }
+// Views frame a newly opened or created document once; otherwise every camera stays as the user left it.
+// Frames are published (and rendered) only for views whose camera, pose, geometry or visibility changed.
+bool ThreeDViewsPanel::publishFrames()
+{
+    bool changed = false;
+    if (cadService != nullptr)
+    {
+        const auto& document = cadService->document();
+        if (document.documentInstance() != shownDocument)
+        {
+            shownDocument = document.documentInstance();
+            for (auto* tile : tiles) tile->viewport().requestFit(shownDocument);
+            shownRevision = ~std::uint64_t(0);
+        }
+        if (document.revision() != shownRevision)
+        {
+            currentSnapshot = cadService->snapshot(); shownRevision = currentSnapshot != nullptr ? currentSnapshot->revision : 0;
+            for (auto* tile : tiles) tile->viewport().setSnapshot(currentSnapshot);
+            changed = true;
+        }
+    }
+    ++frameSerial;
+    for (auto* tile : tiles) changed = tile->viewport().prepareFrame(sharedAngle, frameSerial) || changed;
+    return changed;
+}
+void ThreeDViewsPanel::timerCallback()
+{
+    if (publishFrames()) wakeFrames();
+    else if (fastFrames && ++idleFrameTicks >= 60) { fastFrames = false; startTimerHz(10); }
+}
+void ThreeDViewsPanel::wakeFrames()
+{
+    idleFrameTicks = 0;
+    if (!fastFrames) { fastFrames = true; startTimerHz(60); }
+}
 void ThreeDViewsPanel::paint(juce::Graphics& g) { g.fillAll(juce::Colour(0xff171b20)); }
 void ThreeDViewsPanel::resized() { auto area = getLocalBounds().reduced(10); auto bar = area.removeFromTop(32); addButton.setBounds(bar.removeFromLeft(120)); pauseButton.setBounds(bar.removeFromLeft(90).reduced(4, 0)); resetButton.setBounds(bar.removeFromLeft(130).reduced(4, 0)); fitButton.setBounds(bar.removeFromLeft(90).reduced(4, 0)); const int columns = tiles.size() > 2 ? 2 : 1, rows = (tiles.size() + columns - 1) / columns, w = juce::jmax(1, area.getWidth() / columns), h = juce::jmax(1, area.getHeight() / rows); for (int i = 0; i < tiles.size(); ++i) tiles[i]->setBounds(area.getX() + (i % columns) * w + 4, area.getY() + (i / columns) * h + 4, w - 8, h - 8); }

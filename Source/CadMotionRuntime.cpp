@@ -354,6 +354,7 @@ void CadMotionRuntime::publish()
     const auto& model = document.mechanicsData();
     auto next = std::make_shared<CadPoseSnapshot>();
     next->serial = ++serial;
+    next->documentInstance = document.documentInstance(); next->documentRevision = document.revision();
     std::map<juce::String, gp_Trsf> world;
     for (const auto& instance : model.instances)
     {

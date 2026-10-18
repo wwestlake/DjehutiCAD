@@ -35,6 +35,7 @@ private:
     class TaskForm;
 
     void timerCallback() override;
+    void wakeFrames();
     void handleAsyncUpdate() override;
     void refreshFromDocument(bool force = false);
     void refreshTree();
@@ -135,7 +136,9 @@ private:
     int commandSeverity = 0, validationSeverity = 0;
     bool pendingKeepValues = true, updatingTree = false;
     double boxSize[3] { 20.0, 20.0, 10.0 }, cylinderSize[2] { 5.0, 20.0 }, extrudeDistance = 10.0, cutDepth = 10.0;
-    std::uint64_t shownRevision = 0, frameSerial = 0;
+    std::uint64_t shownRevision = 0, shownDocument = 0, frameSerial = 0;
+    int idleFrameTicks = 0;
+    bool fastFrames = true;
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CadWorkspacePanel)

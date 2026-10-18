@@ -5,6 +5,8 @@
 #include "CadDocument.h"
 #include "CadMotionRuntime.h"
 
+#include <atomic>
+
 bool runViewportCameraCheck(juce::String& detail);
 
 class Viewport3D final : public juce::Component,
@@ -21,7 +23,14 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void resetCamera();
-    void prepareFrame(float sharedAngle, std::uint64_t serial);
+    // Publishes a frame and requests one render only when the camera, pose, geometry, highlights or visibility
+    // changed; returns true if it did. Hidden and minimised views do nothing.
+    bool prepareFrame(float sharedAngle, std::uint64_t serial);
+    // Frame the visible geometry once it and a matching runtime pose are available (new view, New, Open).
+    // documentInstance names the document to frame, so geometry still shown from the previous one is not used.
+    void requestFit(std::uint64_t documentInstance = 0);
+    // Called when this view needs frames soon (camera input, new geometry); owners speed up their frame timer.
+    std::function<void()> onFrameRequested;
     void setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next);
     void fitAll();
     juce::String diagnostics() const;
@@ -52,6 +61,9 @@ private:
     void updateSceneBounds(const std::shared_ptr<const djehuti::cad::CadRenderSnapshot>& snapshot);
     void frameScene();
     void updatePosedBounds();
+    void tryPendingFit();
+    void markDirty();
+    void cameraChanged();
 
     const int viewNumber;
     juce::OpenGLContext context;
@@ -63,8 +75,11 @@ private:
     float yaw = 0.55f, pitch = 0.35f, distance = 4.0f, panX = 0.0f, panY = 0.0f;
     float targetX = 0.0f, targetY = 0.0f, targetZ = 0.0f;
     float sceneCenterX = 0.0f, sceneCenterY = 0.0f, sceneCenterZ = 0.0f, sceneRadius = 1.0f;
-    bool hasSceneBounds = false, hasFramedInitialScene = false, userCameraChanged = false;
-    std::uint64_t boundsRevision = 0;
+    bool hasSceneBounds = false, fitPending = true, userCameraChanged = false;
+    std::uint64_t boundsRevision = 0, boundsDocument = 0, fitDocument = 0;
+    std::atomic<bool> renderDirty { true };   // set from the GL thread too (context recreation)
+    std::array<float, 32> lastCamera {};       // projection and view of the last published frame
+    bool hasPublished = false, wasShowing = false;
     juce::Point<int> dragStart, pressPosition;
     juce::String title;
     std::shared_ptr<const djehuti::cad::CadRenderSnapshot> pickSnapshot;
@@ -77,7 +92,7 @@ private:
     std::vector<std::pair<juce::String, juce::Colour>> highlights;
     struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; };
     std::vector<MeshRange> meshRanges;
-    bool glReady = false;
+    std::atomic<bool> glReady { false };   // written on the GL thread
     juce::String glStatus = "Waiting for OpenGL context";
     std::array<GLsync, 3> fences {};
     std::array<GLuint, 3> frameBuffers {};
@@ -104,7 +119,11 @@ public:
 private:
     void timerCallback() override;
     void closeView(int viewId);
-    void publishFrames();
+    bool publishFrames();
+    void wakeFrames();
+    int idleFrameTicks = 0;
+    bool fastFrames = true;
+    std::uint64_t shownDocument = 0;
     juce::TextButton addButton { "New 3D View" }, pauseButton { "Pause" }, resetButton { "Reset Cameras" }, fitButton { "Fit All" };
     class ViewTile;
     juce::OwnedArray<ViewTile> tiles;
