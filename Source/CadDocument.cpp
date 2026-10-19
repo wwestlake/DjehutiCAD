@@ -1,3 +1,4 @@
+#include <cstring>
 #include "CadDocument.h"
 
 #include <atomic>
@@ -121,7 +122,7 @@ void recordOperationHistory(const TDF_Label& label, const CadDocument::CadTopolo
 namespace { std::atomic<std::uint64_t> documentInstanceCounter { 0 }; }
 CadDocument::CadDocument() { clear(); }
 void CadDocument::initializeOCAF() { ocafApplication = new TDocStd_Application(); BinDrivers::DefineFormat(ocafApplication); ocafApplication->NewDocument(TCollection_ExtendedString("BinOcaf"), ocafDocument); ocafDocument->SetUndoLimit(100); }
-void CadDocument::clear() { instanceId=++documentInstanceCounter; items.clear(); sketches.clear(); mechanics = {}; mechanics.modelId = juce::Uuid().toDashedString(); references.clear(); operationHistory.clear(); nextNumber=1; documentRevision=0; dirty=false; documentFile={}; initializeOCAF(); juce::String ignored; syncOCAFFromItems(ignored); invalidate(); }
+void CadDocument::clear() { geometryCache.clear(); instanceId=++documentInstanceCounter; items.clear(); sketches.clear(); mechanics = {}; mechanics.modelId = juce::Uuid().toDashedString(); references.clear(); operationHistory.clear(); nextNumber=1; documentRevision=0; dirty=false; documentFile={}; initializeOCAF(); juce::String ignored; syncOCAFFromItems(ignored); invalidate(); }
 juce::String CadDocument::newId(const char* prefix, int number) { return juce::String(prefix)+"-"+juce::String(number); }
 const CadFeature* CadDocument::find(const juce::String& id) const { for (const auto& f:items) if (f.id==id) return &f; return nullptr; }
 CadSketch* CadDocument::mutableSketch(const juce::String& id) { for (auto& sketch:sketches) if (sketch.id==id) return &sketch; return nullptr; }
@@ -136,7 +137,8 @@ bool CadDocument::mutate(std::function<bool(juce::String&)> action, juce::String
     writeString(ocafDocument->Main().FindChild(kSketchContainerTag,true),1,serializeSketches());
     writeString(ocafDocument->Main().FindChild(kMechanicsContainerTag,true),1,juce::JSON::toString(mech::toJson(mechanics),true));
     ocafDocument->CommitCommand();
-    if (!syncItemsFromOCAF(error)) return false;
+    const auto evaluated=items;   // shapes are shared handles; this copies no geometry
+    if (!syncItemsFromOCAF(error,&evaluated)) return false;
     dirty=true; invalidate(); return true;
 }
 bool CadDocument::createBox(double w,double d,double h,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){if(w<=0||d<=0||h<=0){e="Box dimensions must be greater than zero.";return false;} CadFeature f;f.id=newId("box",nextNumber++);f.name="Box "+juce::String(nextNumber-1);f.type="box";f.width=w;f.depth=d;f.height=h;items.push_back(f);id=f.id;return true;},error); }
@@ -675,8 +677,61 @@ bool CadDocument::resolveSketchFrame(const CadSketch& sketch,CadSketchFrame& fra
     return true;
 }
 
+namespace
+{
+juce::String exact(double v) { juce::int64 bits; std::memcpy(&bits, &v, sizeof bits); return juce::String::toHexString(bits); }
+}
+
+juce::String CadDocument::sketchSignature(const juce::String& sketchId,juce::StringArray& visiting) const
+{
+    const auto* s=findSketch(sketchId);
+    if(s==nullptr)return "nosketch:"+sketchId;
+    juce::String sig="S:"+s->id+"|"+s->plane+"|"+exact(s->offset)+"|"+s->supportFeature+"|"+s->supportFace;
+    for(const auto& e:s->entities)sig<<"|e:"<<e.id<<","<<e.type<<","<<e.groupId<<","<<exact(e.x1)<<","<<exact(e.y1)<<","<<exact(e.x2)<<","<<exact(e.y2)<<","<<exact(e.radius);
+    for(const auto& c:s->constraints)sig<<"|c:"<<c.id<<","<<c.type<<","<<c.firstEntity<<","<<c.secondEntity<<","<<exact(c.value);
+    if(s->onFace())sig<<"|support("<<geometrySignature(s->supportFeature,visiting)<<")";
+    return sig;
+}
+
+juce::String CadDocument::geometrySignature(const juce::String& id,juce::StringArray& visiting) const
+{
+    if(signaturePass!=nullptr)if(const auto hit=signaturePass->find(id);hit!=signaturePass->end())return hit->second;
+    if(visiting.contains(id))return "cycle:"+id;   // evaluate() reports the cycle; this signature never matches a cached one
+    const auto* f=find(id);
+    if(f==nullptr)return "missing:"+id;
+    visiting.add(id);
+    juce::String sig="F:"+f->id+"|"+f->type+"|"+exact(f->width)+"|"+exact(f->depth)+"|"+exact(f->height)+"|"+exact(f->radius)+"|"+exact(f->x)+"|"+exact(f->y)+"|"+exact(f->z)
+                    +"|"+exact(f->rx)+"|"+exact(f->ry)+"|"+exact(f->rz)+"|"+(f->reverse?"r":"-")+(f->throughAll?"t":"-")+"|"+f->firstOperand+"|"+f->secondOperand+"|"+f->sketchId+"|"+f->targetFeatureId;
+    if(f->type=="extrude")sig<<"|("<<sketchSignature(f->sketchId.isEmpty()?f->firstOperand:f->sketchId,visiting)<<")";
+    else if(f->type=="cut")sig<<"|("<<geometrySignature(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,visiting)<<")("<<sketchSignature(f->sketchId.isEmpty()?f->secondOperand:f->sketchId,visiting)<<")";
+    else if(f->type=="union"||f->type=="subtract"||f->type=="intersect")sig<<"|("<<geometrySignature(f->firstOperand,visiting)<<")("<<geometrySignature(f->secondOperand,visiting)<<")";
+    visiting.removeString(id);
+    if(signaturePass!=nullptr)(*signaturePass)[id]=sig;
+    return sig;
+}
+
 TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,juce::StringArray& active,CadFaceOrigins* origins)
 {
+    if(evaluationPass!=nullptr)
+        if(const auto hit=evaluationPass->find(id);hit!=evaluationPass->end()){if(origins!=nullptr)*origins=hit->second.origins;return hit->second.shape;}
+    juce::String signature;
+    const auto historyStart=operationHistory.size();
+    if(!active.contains(id))
+    {
+        juce::StringArray visiting;signature=geometrySignature(id,visiting);
+        if(const auto cached=geometryCache.find(id);cached!=geometryCache.end()&&cached->second.signature==signature)
+        {
+            // Unchanged definition and dependencies: reuse the result. Inside a rebuild pass its Boolean history is
+            // replayed too, so OCAF naming sees every operation exactly once.
+            if(origins!=nullptr)*origins=cached->second.origins;
+            if(evaluationPass!=nullptr)
+            {
+                operationHistory.insert(operationHistory.end(),cached->second.history.begin(),cached->second.history.end());
+                (*evaluationPass)[id]={cached->second.shape,cached->second.origins};
+            }
+            return cached->second.shape;
+        }
+    }
     if(active.contains(id)){error="Circular feature dependency detected at "+id+(findSketch(id)!=nullptr?" (a sketch is attached to a face of a feature that uses it)":"");return{};}
     active.add(id);
     const auto* f=find(id);if(!f){error="Missing feature dependency: "+id;return{};}
@@ -737,6 +792,13 @@ TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,ju
         active.removeString(id);
         const auto placed=place(result,*f,trace);
         if(origins!=nullptr)*origins=local;
+        if(evaluationPass!=nullptr&&trace!=nullptr)(*evaluationPass)[id]={placed,local};   // traced results serve every caller
+        if(signature.isNotEmpty()&&trace!=nullptr&&evaluationPass!=nullptr)   // only complete, traced rebuild results are kept
+        {
+            CachedFeature entry{signature,placed,local,{}};
+            for(size_t i=historyStart;i<operationHistory.size();++i)if(operationHistory[i].featureId==id)entry.history.push_back(operationHistory[i]);
+            geometryCache[id]=std::move(entry);
+        }
         return placed;
     }
     catch(const Standard_Failure& ex){error="OCCT failed evaluating "+f->name+": "+juce::String(ex.GetMessageString());return{};}
@@ -746,6 +808,10 @@ TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,ju
 // nothing consumes the sketch yet.
 bool CadDocument::rebuild(juce::String& error)
 {
+    std::map<juce::String, EvaluatedFeature> pass;
+    std::map<juce::String, juce::String> signatures;
+    evaluationPass=&pass; signaturePass=&signatures;
+    const struct EndPass { CadDocument& d; ~EndPass(){ d.evaluationPass=nullptr; d.signaturePass=nullptr; } } endPass { *this };
     operationHistory.clear(); sketchFrames.clear();
     for(auto& f:items)
     {
@@ -759,6 +825,7 @@ bool CadDocument::rebuild(juce::String& error)
         f.shape=evaluate(f.id,error,active,&f.faceOrigins);
         if(f.shape.IsNull())return false;
     }
+    for(auto it=geometryCache.begin();it!=geometryCache.end();)it=find(it->first)==nullptr?geometryCache.erase(it):std::next(it);   // drop deleted features
     return true;
 }
 
@@ -985,7 +1052,25 @@ bool CadDocument::syncOCAFFromItems(juce::String& error) { if(ocafDocument.IsNul
         recordGeneratedOrModifiedAt(label.FindChild(kReferenceShapeTag,true).FindChild(kShapeTag,true),face);
     }
     return true; }
-bool CadDocument::syncItemsFromOCAF(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();const auto meta=root.FindChild(kMetaTag,false);const auto features=root.FindChild(kFeatureContainerTag,false);if(features.IsNull()){error="Native CAD document has no feature container.";return false;}nextNumber=readInteger(meta,1,1);items.clear();bool allShapesNamed=true;for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)==0)continue;CadFeature f;f.id=readString(label,2);f.name=readString(label,3);f.type=readString(label,4);f.firstOperand=readString(label,5);f.secondOperand=readString(label,6);f.sketchId=readString(label,7);f.targetFeatureId=readString(label,8);f.width=readReal(label,10,f.width);f.depth=readReal(label,11,f.depth);f.height=readReal(label,12,f.height);f.radius=readReal(label,13,f.radius);f.x=readReal(label,14,0);f.y=readReal(label,15,0);f.z=readReal(label,16,0);f.rx=readReal(label,17,0);f.ry=readReal(label,18,0);f.rz=readReal(label,19,0);f.visible=readInteger(label,20,1)!=0;f.reverse=readInteger(label,21,0)!=0;f.throughAll=readInteger(label,22,0)!=0;if(f.id.isEmpty()||f.type.isEmpty()){error="Native CAD document contains an invalid feature.";return false;}const auto stored=namedShape(label.FindChild(kShapeTag,false));if((stored.IsNull()||stored->IsEmpty())&&f.type!="sketch"){allShapesNamed=false;}else if(!stored.IsNull()&&!stored->IsEmpty())f.shape=TNaming_Tool::CurrentShape(stored);items.push_back(std::move(f));}references.clear();const auto refs=root.FindChild(kReferenceContainerTag,false);if(!refs.IsNull())for(TDF_ChildIterator it(refs);it.More();it.Next())if(readInteger(it.Value(),1,0)!=0&&readString(it.Value(),3)!="face")references.push_back({readString(it.Value(),2),readString(it.Value(),3),readString(it.Value(),4)});juce::ignoreUnused(allShapesNamed);return rebuild(error); }   // rebuild derives face names and sketch frames
+namespace
+{
+bool sameDefinition(const CadFeature& a,const CadFeature& b)
+{
+    return a.id==b.id&&a.name==b.name&&a.type==b.type&&a.firstOperand==b.firstOperand&&a.secondOperand==b.secondOperand&&a.sketchId==b.sketchId
+        &&a.targetFeatureId==b.targetFeatureId&&a.width==b.width&&a.depth==b.depth&&a.height==b.height&&a.radius==b.radius
+        &&a.x==b.x&&a.y==b.y&&a.z==b.z&&a.rx==b.rx&&a.ry==b.ry&&a.rz==b.rz&&a.visible==b.visible&&a.reverse==b.reverse&&a.throughAll==b.throughAll;
+}
+}
+
+bool CadDocument::syncItemsFromOCAF(juce::String& error,const std::vector<CadFeature>* evaluated) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();const auto meta=root.FindChild(kMetaTag,false);const auto features=root.FindChild(kFeatureContainerTag,false);if(features.IsNull()){error="Native CAD document has no feature container.";return false;}nextNumber=readInteger(meta,1,1);items.clear();bool allShapesNamed=true;for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)==0)continue;CadFeature f;f.id=readString(label,2);f.name=readString(label,3);f.type=readString(label,4);f.firstOperand=readString(label,5);f.secondOperand=readString(label,6);f.sketchId=readString(label,7);f.targetFeatureId=readString(label,8);f.width=readReal(label,10,f.width);f.depth=readReal(label,11,f.depth);f.height=readReal(label,12,f.height);f.radius=readReal(label,13,f.radius);f.x=readReal(label,14,0);f.y=readReal(label,15,0);f.z=readReal(label,16,0);f.rx=readReal(label,17,0);f.ry=readReal(label,18,0);f.rz=readReal(label,19,0);f.visible=readInteger(label,20,1)!=0;f.reverse=readInteger(label,21,0)!=0;f.throughAll=readInteger(label,22,0)!=0;if(f.id.isEmpty()||f.type.isEmpty()){error="Native CAD document contains an invalid feature.";return false;}const auto stored=namedShape(label.FindChild(kShapeTag,false));if((stored.IsNull()||stored->IsEmpty())&&f.type!="sketch"){allShapesNamed=false;}else if(!stored.IsNull()&&!stored->IsEmpty())f.shape=TNaming_Tool::CurrentShape(stored);items.push_back(std::move(f));}references.clear();const auto refs=root.FindChild(kReferenceContainerTag,false);if(!refs.IsNull())for(TDF_ChildIterator it(refs);it.More();it.Next())if(readInteger(it.Value(),1,0)!=0&&readString(it.Value(),3)!="face")references.push_back({readString(it.Value(),2),readString(it.Value(),3),readString(it.Value(),4)});juce::ignoreUnused(allShapesNamed);
+    // Reuse is only valid when the sketches are also unchanged, which holds for callers that pass `evaluated`
+    // right after evaluating these same in-memory sketches (commit, JSON export). Undo/redo/open rebuild.
+    if(evaluated!=nullptr&&evaluated->size()==items.size()&&std::equal(items.begin(),items.end(),evaluated->begin(),sameDefinition))
+    {
+        for(size_t i=0;i<items.size();++i){items[i].shape=(*evaluated)[i].shape;items[i].faceOrigins=(*evaluated)[i].faceOrigins;}
+        return true;
+    }
+    return rebuild(error); }   // rebuild derives face names and sketch frames
 
 juce::String CadDocument::serialize() const { auto root=std::make_unique<juce::DynamicObject>();root->setProperty("formatVersion",6);root->setProperty("units","mm");root->setProperty("nextNumber",nextNumber);juce::Array<juce::var> list;for(const auto& f:items){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("id",f.id);o->setProperty("name",f.name);o->setProperty("type",f.type);o->setProperty("firstOperand",f.firstOperand);o->setProperty("secondOperand",f.secondOperand);o->setProperty("sketchId",f.sketchId);o->setProperty("targetFeatureId",f.targetFeatureId);o->setProperty("width",f.width);o->setProperty("depth",f.depth);o->setProperty("height",f.height);o->setProperty("radius",f.radius);o->setProperty("reverse",f.reverse);o->setProperty("throughAll",f.throughAll);o->setProperty("x",f.x);o->setProperty("y",f.y);o->setProperty("z",f.z);o->setProperty("rx",f.rx);o->setProperty("ry",f.ry);o->setProperty("rz",f.rz);o->setProperty("visible",f.visible);list.add(juce::var(o.release()));}root->setProperty("features",juce::var(list));juce::Array<juce::var> refs;for(const auto& r:references){auto o=std::make_unique<juce::DynamicObject>();o->setProperty("ownerFeatureId",r.ownerFeatureId);o->setProperty("topologyKind",r.topologyKind);o->setProperty("semanticRole",r.semanticRole);refs.add(juce::var(o.release()));}root->setProperty("references",juce::var(refs));root->setProperty("sketches",juce::JSON::parse(serializeSketches()));root->setProperty("mechanics",mech::toJson(mechanics));return juce::JSON::toString(juce::var(root.release())); }
 bool CadDocument::deserialize(const juce::String& json,juce::String& error) { const auto parsed=juce::JSON::parse(json);auto* root=parsed.getDynamicObject();if(!root){error="CAD document is not valid JSON.";return false;}if(root->getProperty("units").toString()!="mm"){error="Only millimeter CAD documents are supported.";return false;}std::vector<CadFeature> loaded;if(auto* array=root->getProperty("features").getArray())for(const auto& value:*array){auto* o=value.getDynamicObject();if(!o){error="CAD feature entry is invalid.";return false;}CadFeature f;f.id=o->getProperty("id").toString();f.name=o->getProperty("name").toString();f.type=o->getProperty("type").toString();f.firstOperand=o->getProperty("firstOperand").toString();f.secondOperand=o->getProperty("secondOperand").toString();f.sketchId=o->getProperty("sketchId").toString();f.targetFeatureId=o->getProperty("targetFeatureId").toString();f.width=number(o->getProperty("width"),f.width);f.depth=number(o->getProperty("depth"),f.depth);f.height=number(o->getProperty("height"),f.height);f.radius=number(o->getProperty("radius"),f.radius);f.reverse=static_cast<bool>(o->getProperty("reverse"));f.throughAll=static_cast<bool>(o->getProperty("throughAll"));f.x=number(o->getProperty("x"),0);f.y=number(o->getProperty("y"),0);f.z=number(o->getProperty("z"),0);f.rx=number(o->getProperty("rx"),0);f.ry=number(o->getProperty("ry"),0);f.rz=number(o->getProperty("rz"),0);f.visible=static_cast<bool>(o->getProperty("visible"));loaded.push_back(std::move(f));}const auto old=items;const auto oldSketches=sketches;const auto oldMechanicsJson=mechanics;const auto oldRefs=references;const auto oldNext=nextNumber;items=std::move(loaded);references.clear();nextNumber=(int)root->getProperty("nextNumber");if(nextNumber<1)nextNumber=(int)items.size()+1;if(auto* array=root->getProperty("references").getArray())for(const auto& value:*array)if(auto* o=value.getDynamicObject())references.push_back({o->getProperty("ownerFeatureId").toString(),o->getProperty("topologyKind").toString(),o->getProperty("semanticRole").toString()});if(root->hasProperty("mechanics")&&!mech::fromJson(root->getProperty("mechanics"),mechanics,error)){items=old;sketches=oldSketches;mechanics=oldMechanicsJson;references=oldRefs;nextNumber=oldNext;return false;}if(!root->hasProperty("mechanics")){mechanics={};mechanics.modelId=juce::Uuid().toDashedString();}if(root->hasProperty("sketches")&&!deserializeSketches(juce::JSON::toString(root->getProperty("sketches")),error)){mechanics=oldMechanicsJson;items=old;sketches=oldSketches;references=oldRefs;nextNumber=oldNext;return false;}if(!rebuild(error)||!syncOCAFFromItems(error)){items=old;sketches=oldSketches;mechanics=oldMechanicsJson;references=oldRefs;nextNumber=oldNext;rebuild(error);return false;}writeString(ocafDocument->Main().FindChild(kSketchContainerTag,true),1,serializeSketches());writeString(ocafDocument->Main().FindChild(kMechanicsContainerTag,true),1,juce::JSON::toString(mech::toJson(mechanics),true));return true; }
@@ -994,7 +1079,7 @@ bool CadDocument::saveNative(const juce::File& file,juce::String& error) { if(oc
 // "<file>.cbf" path, and OCAF refuses to retrieve a second document from a path that is already in session.
 bool CadDocument::loadNative(const juce::File& file,juce::String& error) { const auto encoded=juce::File(file.getFullPathName()+"."+juce::Uuid().toDashedString().substring(0,8)+".cbf");encoded.deleteFile();if(!file.copyFileTo(encoded)){error="Unable to stage native CAD document: "+file.getFullPathName();return false;}Handle(TDocStd_Document) opened;const auto status=ocafApplication->Open(pathString(encoded),opened);encoded.deleteFile();if(status!=PCDM_RS_OK||opened.IsNull()){error="Unable to open native CAD document: "+file.getFullPathName();return false;}const auto oldDocument=ocafDocument;const auto oldItems=items;const auto oldSketches=sketches;const auto oldRefs=references;const auto oldNext=nextNumber;ocafDocument=opened;const auto sketchData=readString(ocafDocument->Main().FindChild(kSketchContainerTag,false),1);const auto oldMechanics=mechanics;if((!sketchData.isEmpty()&&!deserializeSketches(sketchData,error))||!syncItemsFromOCAF(error)||!restoreMechanicsFromOCAF(error)){ocafDocument=oldDocument;items=oldItems;sketches=oldSketches;mechanics=oldMechanics;references=oldRefs;nextNumber=oldNext;return false;}documentFile=file;dirty=false;ocafDocument->SetUndoLimit(100);ocafDocument->ClearUndos();ocafDocument->ClearRedos();invalidate();return true; }
 bool CadDocument::save(const juce::File& file,juce::String& error) { return file.hasFileExtension("djo") ? saveNative(file,error) : exportJson(file,error); }
-bool CadDocument::exportJson(const juce::File& file,juce::String& error) const { auto* writable=const_cast<CadDocument*>(this);if(!writable->syncItemsFromOCAF(error))return false;if(!file.replaceWithText(serialize())){error="Unable to write CAD JSON: "+file.getFullPathName();return false;}return true; }
+bool CadDocument::exportJson(const juce::File& file,juce::String& error) const { auto* writable=const_cast<CadDocument*>(this);const auto evaluated=items;if(!writable->syncItemsFromOCAF(error,&evaluated))return false;if(!file.replaceWithText(serialize())){error="Unable to write CAD JSON: "+file.getFullPathName();return false;}return true; }
 bool CadDocument::load(const juce::File& file,juce::String& error) { if(!loadFile(file,error))return false; instanceId=++documentInstanceCounter; invalidate(); return true; }
 bool CadDocument::loadFile(const juce::File& file,juce::String& error) { if(file.hasFileExtension("djo"))return loadNative(file,error);const auto text=file.loadFileAsString();if(text.isEmpty()){error="CAD document is empty or unreadable.";return false;}const auto oldDocument=ocafDocument;const auto oldItems=items;const auto oldRefs=references;const auto oldNext=nextNumber;const auto oldFile=documentFile;const auto oldDirty=dirty;initializeOCAF();if(!deserialize(text,error)){ocafDocument=oldDocument;items=oldItems;references=oldRefs;nextNumber=oldNext;documentFile=oldFile;dirty=oldDirty;invalidate();return false;}ocafDocument->ClearUndos();ocafDocument->ClearRedos();documentFile=file;dirty=false;invalidate();return true; }
 bool CadDocument::undo(juce::String& error) { if(!ocafDocument->Undo()){error="Nothing to undo.";return false;}const auto sketchData=readString(ocafDocument->Main().FindChild(kSketchContainerTag,false),1);if((!sketchData.isEmpty()&&!deserializeSketches(sketchData,error))||!syncItemsFromOCAF(error)||!restoreMechanicsFromOCAF(error))return false;dirty=true;invalidate();return true; }

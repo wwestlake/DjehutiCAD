@@ -249,7 +249,9 @@ private:
     static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);
-    bool syncItemsFromOCAF(juce::String& error);
+    // Reads the feature definitions back from OCAF (authoritative). When every definition equals one in
+    // `evaluated` (same order), that evaluated geometry and its face names are reused instead of rebuilding.
+    bool syncItemsFromOCAF(juce::String& error, const std::vector<CadFeature>* evaluated = nullptr);
     bool saveNative(const juce::File& file, juce::String& error);
     bool loadNative(const juce::File& file, juce::String& error);
     void invalidate();
@@ -270,6 +272,18 @@ private:
     juce::File documentFile;
     mutable std::shared_ptr<CadRenderSnapshot> cachedSnapshot;
     mutable std::uint64_t cachedRevision = 0;
+    // Results of the rebuild pass in progress (feature id -> placed shape and face origins). Each feature is
+    // evaluated once per pass however many features consume it; null outside rebuild().
+    struct EvaluatedFeature { TopoDS_Shape shape; CadFaceOrigins origins; };
+    std::map<juce::String, EvaluatedFeature>* evaluationPass = nullptr;
+    // Evaluated features kept across rebuilds. An entry is reused only while its signature (the feature's exact
+    // definition plus, recursively, its operands, the sketches it uses and face-sketch supports) is unchanged, so
+    // any upstream edit invalidates every dependent. Derived data only; OCAF stays authoritative.
+    struct CachedFeature { juce::String signature; TopoDS_Shape shape; CadFaceOrigins origins; std::vector<CadTopologyEvolution> history; };
+    std::map<juce::String, CachedFeature> geometryCache;
+    std::map<juce::String, juce::String>* signaturePass = nullptr;
+    juce::String geometrySignature(const juce::String& id, juce::StringArray& visiting) const;
+    juce::String sketchSignature(const juce::String& sketchId, juce::StringArray& visiting) const;
 };
 
 class CadCommandService

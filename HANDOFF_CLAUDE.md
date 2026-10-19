@@ -34,6 +34,72 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Geometry rebuild performance repair — October 19, 2026
+
+### Cause
+
+Measured on the 44-feature robot-arm document: creating a box took 27 s and undo 14 s, all on the message
+thread, so the viewport could not repaint.
+
+1. `evaluate()` recursed into operands with no reuse, and `rebuild()` evaluated every item. Each union
+   recomputed its whole operand chain, so the Boolean work per rebuild grew roughly with the square of the
+   chain length. Boolean history was also collected repeatedly.
+2. `mutate()` rebuilt, committed, then called `syncItemsFromOCAF()`. That re-reads the item definitions from
+   OCAF (which drops the derived shapes, face names and sketch frames) and unconditionally rebuilt a second
+   time.
+3. Even with fixes 1 and 2, every change re-ran every Boolean in the document once: 18.6 s on a 50-feature
+   test chain. That showed a need to reuse results across changes.
+
+### Fix (all in `CadDocument.*`)
+
+- **Per-rebuild pass:** `evaluationPass` maps feature id to shape and face origins. Each feature is evaluated
+  once per pass. Only completed results are stored, so cycle detection is unchanged.
+- **Cross-change cache:** `geometryCache` maps feature id to signature, shape, face origins and that feature's
+  Boolean history.
+  - **Signature:** the feature's exact definition (bit-exact numbers, operands, sketch id, target), the
+    operands' signatures recursively, the full content of the sketches used (plane, offset, entities,
+    constraints), and the face-sketch support's signature.
+  - **Invalidation:** an upstream change alters every dependent signature, so dependents recompute. Equal-looking
+    but different features never share results, because the key is the id plus the full signature.
+  - **Hits:** a hit replays the cached Boolean history inside the pass, so OCAF TNaming still sees each operation
+    exactly once.
+  - **Lifetime:** entries for deleted features are pruned after each rebuild; `clear()` empties the cache. OCAF
+    remains authoritative, and the cache holds only derived results.
+- **No second rebuild after commit:** `syncItemsFromOCAF(error, &evaluated)` still reads every definition back
+  from OCAF. When each one equals the just-evaluated item (same order and fields), it reuses that geometry and
+  those face names instead of rebuilding. `exportJson` does the same. Undo, redo and open rebuild through the
+  cache.
+- **Boolean validation:** the check that runs inside `booleanOp()` before a Boolean is added now uses the
+  cache read-only, so it no longer recomputes the operand chain.
+
+### Results
+
+| | Before | After |
+|---|---|---|
+| Robot arm (live, Debug), read state | 11 ms | 9 ms |
+| Robot arm, create 10 mm box | 27 s | **0.43 s** |
+| Robot arm, undo | 14 s | **0.31 s** |
+| UI Box task Apply / Undo command | — | 0.48 s / 0.31 s |
+| 50-feature 24-union chain (`--cad-rebuild-check`), create box | 18.6 s (after memo only) | **35 ms** |
+| Same, undo | 18.9 s (after memo only) | **19 ms** |
+
+Checks:
+- `--cad-rebuild-check` (new): 8/8. Six dependent unions equal an independent OCCT fuse; an upstream edit
+  (60 → 80 mm) updates all six unions (10750 mm³) while an independent box is unchanged; undo, redo and
+  save/reopen pass.
+- `--cad-face-check`: 19/19 (face-sketch attachment, dependent pocket, undo/redo, save/reopen).
+- `--cad-export-check`: 29/29.
+
+Live, on a copy at `build/perf-check/Robot Arm working copy.djo`: the box appeared and disappeared on undo,
+and the screenshot showed the arm correct with no stale or duplicate geometry.
+
+### Remaining
+
+- Opening a document still evaluates every Boolean once with an empty cache: 11.8 s for the robot arm in Debug.
+- Adding a new Boolean runs its fuse twice (validation, then rebuild).
+- About 0.3–0.4 s per change remains, probably render-snapshot meshing and OCAF sync; not profiled.
+- Evaluation is still on the message thread; moving it off was not part of this repair.
+
 ## Local automation API for paced demonstrations — October 18, 2026
 
 Reference: `docs/LOCAL_AUTOMATION_API.md`. Code:

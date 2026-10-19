@@ -31,6 +31,84 @@ namespace
 // boss is exported as 3MF, binary STL and STEP and read back with lib3mf, OCCT RWStl and OCCT STEPCAFControl;
 // then a two-instance assembly with a second body, a cancellation and an output failure. Files stay in
 // build/export-check for inspection.
+// Focused rebuild check: a chain of dependent unions plus an independent body, compared with a direct OCCT fuse
+// computed outside the document; upstream edit, undo/redo, save/reopen, and mutation timings on ~50 features.
+bool runCadRebuildCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto item = new juce::DynamicObject(); item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        return ok;
+    };
+    const auto volumeOf = [](const TopoDS_Shape& shape) { GProp_GProps p; BRepGProp::VolumeProperties(shape, p); return p.Mass(); };
+    const auto volume = [&](const CadCommandService& svc, const juce::String& id) { const auto* f = svc.document().find(id); return f == nullptr || f->shape.IsNull() ? -1.0 : volumeOf(f->shape); };
+    const auto same = [](double a, double b) { return std::abs(a - b) <= 1.0e-6 * std::max(1.0, std::abs(b)); };
+    // Direct OCCT reference: base box of length L fused with boxes 1..n, no document involved.
+    const auto expected = [&](double length, int n)
+    {
+        TopoDS_Shape shape = BRepPrimAPI_MakeBox(gp_Pnt(0, 0, 0), length, 10, 10).Shape();
+        for (int i = 1; i <= n; ++i) { BRepAlgoAPI_Fuse fuse(shape, BRepPrimAPI_MakeBox(gp_Pnt(i * 9.0, 5, 0), 10, 10, 10).Shape()); fuse.Build(); shape = fuse.Shape(); }
+        return volumeOf(shape);
+    };
+
+    CadCommandService svc;
+    juce::String e, base, independent;
+    std::vector<juce::String> unions;
+    bool built = svc.createBox(60, 10, 10, base, e);
+    juce::String chain = base;
+    for (int i = 1; built && i <= 6; ++i)
+    {
+        juce::String b, u;
+        built = svc.createBox(10, 10, 10, b, e) && svc.setPlacement(b, i * 9.0, 5, 0, 0, 0, 0, e) && svc.booleanOp("union", chain, b, u, e);
+        chain = u; unions.push_back(u);
+    }
+    built = built && svc.createBox(7, 7, 7, independent, e) && svc.setPlacement(independent, 200, 0, 0, 0, 0, 0, e);
+    if (!record(built, "six dependent unions and an independent box", e)) return false;
+    const auto chainMatches = [&](double length)
+    {
+        for (int i = 0; i < 6; ++i) if (!same(volume(svc, unions[(size_t) i]), expected(length, i + 1))) return false;
+        return true;
+    };
+    record(chainMatches(60) && same(volume(svc, independent), 343.0), "every union equals a direct OCCT fuse; independent box 343 mm3",
+           juce::String(volume(svc, unions.back()), 3) + " vs " + juce::String(expected(60, 6), 3));
+    const bool edited = svc.setDimensions(base, 80, 10, 10, 0, e) && chainMatches(80) && same(volume(svc, independent), 343.0);
+    record(edited, "upstream edit (base 60 -> 80 mm) updates all six downstream unions; independent box unchanged",
+           juce::String(volume(svc, unions.back()), 3) + " vs " + juce::String(expected(80, 6), 3));
+    record(svc.undo(e) && chainMatches(60) && same(volume(svc, independent), 343.0), "undo restores the chain", e);
+    record(svc.redo(e) && chainMatches(80), "redo reapplies the edit", e);
+    const auto file = juce::File::getCurrentWorkingDirectory().getChildFile("build").getChildFile("rebuild-check-" + juce::Uuid().toString() + ".djo");
+    if (record(svc.save(file, e), "native save", e))
+    {
+        CadCommandService reopened; juce::String e2;
+        bool ok = reopened.load(file, e2);
+        for (int i = 0; ok && i < 6; ++i) ok = same(volume(reopened, unions[(size_t) i]), expected(80, i + 1));
+        record(ok && same(volume(reopened, independent), 343.0), "reopen evaluates the same chain", e2);
+        file.deleteFile();
+    }
+    // ~50 features: extend the chain, then time one box creation and its undo (the robot-arm scenario).
+    for (int i = 7; built && i <= 24; ++i)
+    {
+        juce::String b, u;
+        built = svc.createBox(10, 10, 10, b, e) && svc.setPlacement(b, i * 9.0, 5, 0, 0, 0, 0, e) && svc.booleanOp("union", chain, b, u, e);
+        chain = u;
+    }
+    const auto features = (int) svc.document().features().size();
+    juce::String probe;
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    const bool created = svc.createBox(10, 10, 10, probe, e);
+    const auto t1 = juce::Time::getMillisecondCounterHiRes();
+    const bool undone = svc.undo(e);
+    const auto t2 = juce::Time::getMillisecondCounterHiRes();
+    record(built && created && undone && svc.document().find(probe) == nullptr && same(volume(svc, chain), expected(80, 24)),
+           "timing on " + juce::String(features) + " features (24-union chain)", "create box " + juce::String(t1 - t0, 0) + " ms, undo " + juce::String(t2 - t1, 0) + " ms");
+    return passed;
+}
+
 bool runCadExportCheck(juce::var& report)
 {
     using namespace djehuti::cad;
@@ -482,6 +560,13 @@ public:
             const bool ok = runCadIkCheck(examples, report);
             const auto result = juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-ik-check.result.json");
             result.replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-rebuild-check"))
+        {
+            juce::var report;
+            const bool ok = runCadRebuildCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-rebuild-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-export-check"))
