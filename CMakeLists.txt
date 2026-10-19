@@ -87,6 +87,10 @@ target_sources(DjehutiCAD PRIVATE
     Source/FrameResourceRing.h
     Source/Viewport3D.h
     Source/Viewport3D.cpp
+    Source/CadReferenceGuides.cpp
+    Source/CadRegionSelection.cpp
+    Source/WorkspaceMenu.h
+    Source/CadToolbox.h
     Source/CadDocument.h
     Source/CadDocument.cpp
     Source/CadMechanics.h

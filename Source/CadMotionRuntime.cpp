@@ -375,6 +375,9 @@ void CadMotionRuntime::publish()
             for (int row = 0; row < 3; ++row)
                 posed.matrix[(size_t) (column * 4 + row)] = (float) transform.Value(row + 1, column + 1);
         posed.matrix[3] = posed.matrix[7] = posed.matrix[11] = 0.0f; posed.matrix[15] = 1.0f;
+        CadLocalFrame local; local.id=instance.id; local.name=instance.name;
+        for (int c=0;c<4;++c) for (int row=0;row<3;++row) local.matrix[(size_t)(c*4+row)]=(float)world[instance.id].Value(row+1,c+1);
+        local.matrix[15]=1; next->localFrames.push_back(std::move(local));
         next->instances.push_back(posed);
     }
     double extent = 0.0;
@@ -389,6 +392,15 @@ void CadMotionRuntime::publish()
         marker.jointId = joint.id; marker.linear = joint.type == "prismatic";
         marker.origin = { (float) origin.X(), (float) origin.Y(), (float) origin.Z() };
         marker.direction = { (float) axis.X(), (float) axis.Y(), (float) axis.Z() };
+        marker.name=joint.name; marker.role=joint.role; marker.coordinate=coordinate(joint.id); marker.reference=joint.reference;
+        marker.hasLimits=joint.hasLimits; marker.hardLimits=joint.enforceLimits; marker.lower=joint.lower; marker.upper=joint.upper;
+        const auto base=parent.Multiplied(joint.parentToJoint.toTrsf());
+        for (int c=0;c<4;++c) for (int row=0;row<3;++row)
+        {
+            marker.parentFrame[(size_t)(c*4+row)]=(float)base.Value(row+1,c+1);
+            marker.movingFrame[(size_t)(c*4+row)]=(float)frame.Value(row+1,c+1);
+        }
+        marker.parentFrame[15]=marker.movingFrame[15]=1;
         next->axes.push_back(marker);
         extent = juce::jmax(extent, origin.Modulus());
     }

@@ -111,6 +111,7 @@ void setCadMotionHooks(std::function<std::string()> status, std::function<void(c
 // Runs a shared IK command synchronously on the message thread and returns its JSON result.
 void setCadIkHook(std::function<std::string(const std::string&, const std::string&)> hook);
 // Manufacturing export (args JSON as for the cad_export agent tool) -> result JSON.
+void setCadWorkspaceHook(std::function<std::string(const std::string&)> hook);
 void setCadExportHook(std::function<std::string(const std::string&)> hook);
 std::string cadPrelude();
 const std::vector<std::string>& cadHostFunctions();

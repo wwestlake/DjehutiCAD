@@ -34,6 +34,52 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Workspace menus, Toolbox and reference guides — October 18, 2026
+
+Bill authorized Codex to take over implementation temporarily while Claude's session allowance resets.
+Face sketching and manufacturing export were already complete and merged; this assignment builds on them.
+Read `docs/WORK_ORDER_WORKSPACE_TOOLS.md` for scope and `docs/WORKSPACE_TOOLS_AND_GUIDES.md` for behavior and automation.
+
+- The shell now uses the existing CreationDock library. It owns workspace contents and a dockable Toolbox.
+  File/Window/Settings/Account/Help are application menus. CAD, FRust, nodes and 3D Views own local menus,
+  including Float/Dock; these remain with the content when undocked. Apply/Cancel stay in the task inspector.
+- The Toolbox selects persistent Pointer/Box/Circle tools and Body/Face/Edge filters, plus the existing
+  sketch drawing tools in sketch mode. Area selection operates on projected 3D geometry, including obscured
+  items; enclosing/crossing semantics and Ctrl-add are documented. The primary item drives the inspector.
+  Tree selection also updates the shared geometric selection. A Parts Library is a separate future feature.
+- Right-click model views expose appropriate inspect/sketch/export/hide/delete actions plus view controls.
+  Instance hide/delete is not invented; instance context actions remain inspect/export.
+- A default XY world floor and optional world/local planes and joint guides use the modern rendering path.
+  Local frames and joint parent/moving frames come from the same authored/solved transforms as the model.
+  These are presentation geometry, excluded from picking, Fit All bounds, OCAF history and exports.
+- Dock/hidden/floating state and guide visibility persist in CAD settings. Restored floating bounds are
+  constrained to available displays. FRust autosave now belongs to CAD, with a read-only legacy fallback.
+- Agent `cad_workspace`, FRust `djehuti_cad_workspace(args_json)` and the CAD Workspace node share dispatch.
+  The Help text and guide document describe menus, tools, context actions and guide visibility.
+- `--cad-workspace-check` is the new focused diagnostic. It constructs an isolated workspace without saving
+  workspace preferences or FRust source and writes `build/cad-workspace-check.result.json`. It covers changed services
+  and components; it does not establish native menu/pointer/OpenGL behavior by itself.
+
+Validation:
+- Final single-worker incremental Debug application build passed (68.44 seconds), with no compiler warning
+  or error diagnostics in its log. Executable: `D:\DjehutiCAD\bin\Debug\djehuti_cad.exe`.
+- The focused diagnostic passed all 17 checks; the entire process exited successfully in 1.56 seconds.
+  Its report reached `componentShutdownComplete`. Logs and timing are under `build/cad-workspace-check.*`.
+- The initial diagnostic produced 17 passing checks but failed its 30-second process limit at shutdown.
+  Its entry point now uses JUCE's event loop and normal quit/cleanup instead of `std::exit` during
+  `initialise`; the bounded rerun verified clean component teardown and process exit.
+- A normal CAD test instance launched, but the Windows computer-use helper failed both initial capture
+  and one refreshed retry with `foreground window did not report a process id`. Native menu interaction,
+  mouse gestures and rendered guide appearance remain unverified in this session. The untouched test
+  instance was stopped. No other application process was stopped.
+- No existing modeling, mechanism, IK, export or DEWB regression diagnostic was run. No real DEWB–CAD
+  acceptance claim follows from these workspace checks.
+- `git diff --check` passed. Closeout uses feature branch `feat/workspace-tools-guides`, followed by a
+  merge into `main` and push. Preserve the pre-existing untracked `tools/motion_peer/__pycache__/`.
+
+The next inspection should be a brief native GUI check of these changed controls when computer use is
+available. Do not automatically start a parts library, supplier catalog or another modeling phase.
+
 ## Manufacturing export: 3MF, binary STL and STEP — October 18, 2026
 
 Reference: `docs/MANUFACTURING_EXPORT.md`. Code: `Source/CadExport.*` (planning, checks, writers),

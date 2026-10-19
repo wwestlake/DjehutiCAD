@@ -10,6 +10,7 @@
 // Workbench agent drives it through the public operations below.
 
 #include <JuceHeader.h>
+#include "WorkspaceMenu.h"
 
 #include "FrustExecution.h"
 #include "NodeCompiler.h"
@@ -26,6 +27,7 @@ public:
     NodeDesignerPanel();
     explicit NodeDesignerPanel(const juce::File& fileToOpen);
     ~NodeDesignerPanel() override;
+    WorkspaceMenu workspaceMenu;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

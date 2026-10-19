@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "WorkspaceMenu.h"
 
 #include "FrustEngine.h"
 
@@ -16,8 +17,9 @@
 class FrustPanel final : public juce::Component
 {
 public:
-    FrustPanel();
+    explicit FrustPanel(bool persistSource = true);
     ~FrustPanel() override;
+    WorkspaceMenu workspaceMenu;
 
     void setSource(const juce::String& source);
     juce::String getSource() const;
@@ -34,6 +36,7 @@ public:
     void resized() override;
 
 private:
+    bool persistSource = true;
     void runFromEditor();
     void executionChanged();
     void show(const frust_engine::Result& result, bool ran);

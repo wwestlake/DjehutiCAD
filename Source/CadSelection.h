@@ -26,20 +26,28 @@ class CadSelection
 public:
     enum class Mode { body, face, edge };
 
+    enum class Tool { pointer, box, circle };
+    Tool tool() const { return activeTool; }
+    void setTool(Tool next) { if (next != activeTool) { activeTool = next; changed(); } }
+    const std::vector<CadPick>& items() const { return chosenItems; }
+    void setSelectedMany(std::vector<CadPick> next) { chosenItems = std::move(next); chosen = chosenItems.empty() ? CadPick() : chosenItems.back(); changed(); }
+
     Mode mode() const { return currentMode; }
     const CadPick& hover() const { return hovered; }
     const CadPick& selected() const { return chosen; }
     std::uint64_t serial() const { return changeSerial; }
 
-    void setMode(Mode next) { if (next == currentMode) return; currentMode = next; hovered = {}; chosen = {}; changed(); }
+    void setMode(Mode next) { if (next == currentMode) return; currentMode = next; hovered = {}; chosen = {}; chosenItems.clear(); changed(); }
     void setHover(const CadPick& next) { if (next == hovered) return; hovered = next; ++changeSerial; }   // hover only redraws
-    void setSelected(const CadPick& next) { if (next == chosen) return; chosen = next; changed(); }
-    void clear() { if (!hovered.valid() && !chosen.valid()) return; hovered = {}; chosen = {}; changed(); }
+    void setSelected(const CadPick& next) { if (next == chosen && chosenItems.size() <= 1) return; chosen = next; chosenItems = next.valid() ? std::vector<CadPick>{next} : std::vector<CadPick>(); changed(); }
+    void clear() { if (!hovered.valid() && !chosen.valid()) return; hovered = {}; chosen = {}; chosenItems.clear(); changed(); }
     void addListener(std::function<void()> listener) { listeners.push_back(std::move(listener)); }
 
 private:
     void changed() { ++changeSerial; for (const auto& l : listeners) if (l) l(); }
 
+    Tool activeTool = Tool::pointer;
+    std::vector<CadPick> chosenItems;
     Mode currentMode = Mode::body;
     CadPick hovered, chosen;
     std::uint64_t changeSerial = 1;

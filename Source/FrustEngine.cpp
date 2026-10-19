@@ -230,7 +230,7 @@ std::function<std::string()> motionStatusHook;
 std::function<void(const std::string&, double)> motionPreviewHook;
 std::function<void(const std::string&, double)> motionLifecycleHook;
 std::function<std::string(const std::string&, const std::string&)> ikCommandHook;
-std::function<std::string(const std::string&)> exportCommandHook;
+std::function<std::string(const std::string&)> exportCommandHook, workspaceCommandHook;
 
 extern "C" const char* djehuti_cad_create_instance(const char* feature, const char* name)
 {
@@ -354,6 +354,17 @@ extern "C" const char* djehuti_cad_export(const char* argsJson)
     return returnCad(result);
 }
 
+extern "C" const char* djehuti_cad_workspace(const char* argsJson)
+{
+    std::function<std::string(const std::string&)> hook;
+    { std::lock_guard<std::mutex> lock(cadMutex); hook = workspaceCommandHook; }
+    if (!hook) { setCadError("Workspace is not available."); return returnCad("{\"ok\": false, \"error\": \"Workspace is not available.\"}"); }
+    const auto result = juce::String(hook(argsJson != nullptr ? argsJson : "{}"));
+    const auto parsed = juce::JSON::parse(result);
+    setCadError((bool) parsed.getProperty("ok", false) ? juce::String() : parsed.getProperty("error", "Workspace failed.").toString());
+    return returnCad(result);
+}
+
 extern "C" const char* djehuti_cad_motion_status()
 {
     std::function<std::string()> hook;
@@ -418,6 +429,7 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_create_coupling", reinterpret_cast<void*>(&djehuti_cad_create_coupling));
         frust_plugin_register_host_function("djehuti_cad_ik", reinterpret_cast<void*>(&djehuti_cad_ik));
         frust_plugin_register_host_function("djehuti_cad_list_faces", reinterpret_cast<void*>(&djehuti_cad_list_faces));
+        frust_plugin_register_host_function("djehuti_cad_workspace", reinterpret_cast<void*>(&djehuti_cad_workspace));
         frust_plugin_register_host_function("djehuti_cad_export", reinterpret_cast<void*>(&djehuti_cad_export));
         frust_plugin_register_host_function("djehuti_cad_create_face_sketch", reinterpret_cast<void*>(&djehuti_cad_create_face_sketch));
     });
@@ -668,6 +680,8 @@ void setCadIkHook(std::function<std::string(const std::string&, const std::strin
     ikCommandHook = std::move(hook);
 }
 
+void setCadWorkspaceHook(std::function<std::string(const std::string&)> hook) { std::lock_guard<std::mutex> lock(cadMutex); workspaceCommandHook=std::move(hook); }
+
 void setCadExportHook(std::function<std::string(const std::string&)> hook)
 {
     std::lock_guard<std::mutex> lock(cadMutex);
@@ -704,6 +718,7 @@ std::string cadPrelude()
            "extern fn djehuti_cad_motion_lifecycle(command: String, step_ms: f64) -> i64;\n"
            "extern fn djehuti_cad_ik(command: String, args_json: String) -> String;\n"
            "extern fn djehuti_cad_list_faces(feature: String) -> String;\n"
+           "extern fn djehuti_cad_workspace(args_json: String) -> String;\n"
            "extern fn djehuti_cad_export(args_json: String) -> String;\n"
            "extern fn djehuti_cad_create_face_sketch(feature: String, face: String) -> String;\n"
            "extern fn djehuti_cad_set_grounded(instance: String, grounded: i64) -> i64;\n"
@@ -719,7 +734,7 @@ const std::vector<std::string>& cadHostFunctions()
         "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
         "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
-        "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik", "djehuti_cad_list_faces", "djehuti_cad_create_face_sketch", "djehuti_cad_export"
+        "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik", "djehuti_cad_list_faces", "djehuti_cad_create_face_sketch", "djehuti_cad_export", "djehuti_cad_workspace"
     };
     return names;
 }

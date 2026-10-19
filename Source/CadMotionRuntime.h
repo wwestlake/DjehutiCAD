@@ -24,6 +24,10 @@ struct CadAxisMarker
     juce::String jointId;
     std::array<float, 3> origin {}, direction {};
     bool linear = false;
+    juce::String name, role;
+    std::array<float,16> parentFrame {}, movingFrame {};
+    double coordinate=0, reference=0, lower=0, upper=0;
+    bool hasLimits=false, hardLimits=false;
 };
 
 // A world-millimetre line drawn over the model (IK desired/achieved markers and the drag plane).
@@ -48,6 +52,7 @@ struct CadPoseSnapshot
     std::vector<CadPoseInstance> instances;
     std::set<juce::String> instancedFeatures;   // bodies drawn only through their instances
     std::vector<CadAxisMarker> axes;
+    std::vector<CadLocalFrame> localFrames;
     float axisLength = 20.0f;
     std::vector<CadOverlayLine> overlay;
     CadDragHandle dragHandle;

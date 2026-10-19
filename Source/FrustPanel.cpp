@@ -7,7 +7,7 @@ namespace
 juce::File sourceFile()
 {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("DjehutiElectronicsLab").getChildFile("frust_panel.frust");
+        .getChildFile("DjehutiCAD").getChildFile("frust_panel.frust");
 }
 
 const char* starterSource =
@@ -15,7 +15,7 @@ const char* starterSource =
     "// run() is called; print_line adds a line of output; what run returns is shown.\n"
     "\n"
     "pub fn run() -> String = {\n"
-    "    print_line(\"Frust is running inside Djehuti Electronics Lab\");\n"
+    "    print_line(\"Frust is running inside DjehutiCAD\");\n"
     "    \"ok\"\n"
     "}\n";
 
@@ -26,7 +26,7 @@ void styleButton(juce::TextButton& b, bool primary)
 }
 }
 
-FrustPanel::FrustPanel()
+FrustPanel::FrustPanel(bool saveSourceEnabled) : persistSource(saveSourceEnabled)
 {
     editor = std::make_unique<juce::CodeEditorComponent>(document, &tokeniser);
     editor->setFont(juce::Font("Consolas", 14.0f, juce::Font::plain));
@@ -55,10 +55,17 @@ FrustPanel::FrustPanel()
     editor->setColourScheme(scheme);
     addAndMakeVisible(*editor);
 
-    const auto saved = sourceFile().loadFileAsString();
+    auto saved = persistSource ? sourceFile().loadFileAsString() : juce::String();
+    // Read the old shared autosave once when migrating; never write into DEWB's storage.
+    if (persistSource && !sourceFile().existsAsFile())
+        saved = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("DjehutiElectronicsLab").getChildFile("frust_panel.frust").loadFileAsString();
     document.replaceAllContent(saved.trim().isNotEmpty() ? saved : juce::String(starterSource));
     document.clearUndoHistory();
 
+    addAndMakeVisible(workspaceMenu);
+    workspaceMenu.sections = [this] { return std::vector<WorkspaceMenu::Section>{{"Run",{{1,"Run",runButton.isEnabled()},{2,"Check",checkButton.isEnabled()},{3,"Stop",stopButton.isEnabled()}}}}; };
+    workspaceMenu.invoke = [this](int id) { auto* b = id==1 ? &runButton : id==2 ? &checkButton : &stopButton; if (b->isEnabled() && b->onClick) b->onClick(); };
     styleButton(runButton, true);
     styleButton(checkButton, false);
     runButton.setTooltip("Compile with the embedded Frust compiler and run run()");
@@ -113,6 +120,7 @@ juce::String FrustPanel::getSource() const
 
 void FrustPanel::saveSource() const
 {
+    if (!persistSource) return;
     sourceFile().getParentDirectory().createDirectory();
     sourceFile().replaceWithText(document.getAllContent());
 }
@@ -230,14 +238,9 @@ void FrustPanel::paint(juce::Graphics& g)
 void FrustPanel::resized()
 {
     auto area = getLocalBounds().reduced(6);
-    auto bar = area.removeFromTop(32);
-    runButton.setBounds(bar.removeFromLeft(90).reduced(0, 2));
-    bar.removeFromLeft(6);
-    checkButton.setBounds(bar.removeFromLeft(90).reduced(0, 2));
-    bar.removeFromLeft(6);
-    stopButton.setBounds(bar.removeFromLeft(70).reduced(0, 2));
-    bar.removeFromLeft(10);
-    status.setBounds(bar);
+    workspaceMenu.setBounds(area.removeFromTop(30));
+    status.setBounds(area.removeFromTop(24));
+    runButton.setVisible(false); checkButton.setVisible(false); stopButton.setVisible(false);
     area.removeFromTop(4);
     output.setBounds(area.removeFromBottom(juce::jlimit(80, 260, area.getHeight() / 3)));
     area.removeFromBottom(4);

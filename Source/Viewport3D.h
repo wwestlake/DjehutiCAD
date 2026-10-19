@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "WorkspaceMenu.h"
 #include "FrameResourceRing.h"
 #include "CadDocument.h"
 #include "CadMotionRuntime.h"
@@ -9,6 +10,7 @@
 #include <atomic>
 
 bool runViewportCameraCheck(juce::String& detail);
+bool runViewportInteractionCheck(juce::String& detail);
 
 class Viewport3D final : public juce::Component,
                          private juce::OpenGLRenderer,
@@ -19,6 +21,7 @@ public:
     ~Viewport3D() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -29,6 +32,11 @@ public:
     void setSelection(std::shared_ptr<djehuti::cad::CadSelection> next) { selection = std::move(next); markDirty(); }
     // Visible geometry under a view position, using the drawn transforms (assembly instances at their pose).
     djehuti::cad::CadPick pick(juce::Point<float> position, djehuti::cad::CadSelection::Mode mode) const;
+    std::function<void(const juce::String&, const djehuti::cad::CadPick&)> onContextCommand;
+    bool guideEnabled(const juce::String& name) const;
+    void toggleGuide(const juce::String& name);
+    juce::var viewState() const;
+    void restoreViewState(const juce::var& state);
     void resetCamera();
     // Publishes a frame and requests one render only when the camera, pose, geometry, highlights or visibility
     // changed; returns true if it did. Hidden and minimised views do nothing.
@@ -54,6 +62,16 @@ public:
     std::function<void(const juce::String& targetId, const std::array<float, 3>& point, bool finished)> onTargetDragged;
 
 private:
+    friend bool runViewportInteractionCheck(juce::String&);
+    void drawReferenceGuides(juce::Graphics&);
+    void updateReferenceGuides();
+    std::vector<djehuti::cad::CadOverlayLine> glGuides;
+    float gridSpacing=10.0f;
+    std::vector<djehuti::cad::CadPick> pickRegion(juce::Point<float> start, juce::Point<float> end, bool circle) const;
+    void showContextMenu(const juce::MouseEvent&);
+    bool selectingRegion = false;
+    juce::Point<float> regionEnd;
+    bool showFloor = true, showWorld = false, showLocal = false, showJoints = false;
     bool rayThrough(juce::Point<float> position, std::array<float, 3>& origin, std::array<float, 3>& direction) const;
     bool toScreen(const std::array<float, 3>& point, juce::Point<float>& screen) const;
     bool dragPoint(juce::Point<float> position, std::array<float, 3>& point) const;
@@ -102,6 +120,7 @@ private:
     struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; int faceIndex = -1; };
     std::shared_ptr<djehuti::cad::CadSelection> selection;
     std::uint64_t shownSelectionSerial = 0;
+    std::vector<djehuti::cad::CadPick> glChosen;
     djehuti::cad::CadPick glHover, glSelected;   // guarded by highlightLock
     std::vector<MeshRange> meshRanges;
     std::atomic<bool> glReady { false };   // written on the GL thread
@@ -112,7 +131,7 @@ private:
     bool hasFrame = false;
     int lastSlot = -1;
     std::shared_ptr<const djehuti::cad::CadRenderSnapshot> pendingSnapshot;
-    std::uint64_t uploadedGeometryRevision = 0;
+    std::uint64_t uploadedGeometryRevision = 0, uploadedGeometryDocument = 0;
     GLsizei geometryIndexCount = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Viewport3D)
@@ -123,13 +142,18 @@ class ThreeDViewsPanel final : public juce::Component, private juce::Timer
 public:
     explicit ThreeDViewsPanel(std::shared_ptr<djehuti::cad::CadCommandService> service);
     ~ThreeDViewsPanel() override;
+    void setContextCommand(std::function<void(const juce::String&,const djehuti::cad::CadPick&)> callback);
+    juce::String viewState() const;
+    void restoreViewState(const juce::String&);
     bool addView();
+    WorkspaceMenu workspaceMenu;
     void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source);
     void setSelection(std::shared_ptr<djehuti::cad::CadSelection> next);
     void resized() override;
     void paint(juce::Graphics&) override;
 
 private:
+    std::function<void(const juce::String&,const djehuti::cad::CadPick&)> contextCommand;
     void timerCallback() override;
     void closeView(int viewId);
     bool publishFrames();

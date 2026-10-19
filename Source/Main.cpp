@@ -457,6 +457,23 @@ public:
 
     void initialise(const juce::String& commandLine) override
     {
+        if (commandLine.startsWith("--cad-workspace-check"))
+        {
+            // Use JUCE's normal event loop and shutdown path. std::exit inside initialise bypasses
+            // JUCE cleanup while the floating-window check has created shared GL resources.
+            juce::MessageManager::callAsync([this]
+            {
+                auto workspace=std::make_unique<DjehutiCAD>(true); auto report=workspace->runWorkspaceCheck();
+                const auto result=juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-workspace-check.result.json");
+                report.getDynamicObject()->setProperty("stage","checksComplete");
+                result.replaceWithText(juce::JSON::toString(report,false));
+                const bool ok=report.getProperty("ok",false); workspace.reset();
+                report.getDynamicObject()->setProperty("stage","componentShutdownComplete");
+                result.replaceWithText(juce::JSON::toString(report,false));
+                setApplicationReturnValue(ok?0:1); quit();
+            });
+            return;
+        }
         if (commandLine.startsWith("--cad-ik-check"))
         {
             const auto args = juce::StringArray::fromTokens(commandLine, true);

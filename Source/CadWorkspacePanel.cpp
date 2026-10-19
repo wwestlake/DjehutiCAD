@@ -416,6 +416,26 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     taskTitle.setFont(juce::Font(17.0f, juce::Font::bold)); taskTitle.setColour(juce::Label::textColourId, textColour);
     taskInstruction.setColour(juce::Label::textColourId, dimTextColour); taskInstruction.setJustificationType(juce::Justification::topLeft); taskInstruction.setMinimumHorizontalScale(1.0f);
     messageLabel.setJustificationType(juce::Justification::topLeft); messageLabel.setMinimumHorizontalScale(1.0f);
+    addAndMakeVisible(workspaceMenu);
+    workspaceMenu.sections = [this]
+    {
+        using E = WorkspaceMenu::Entry; using S = WorkspaceMenu::Section;
+        const bool sketching = editingSketchId.isNotEmpty();
+        return std::vector<S> {
+            { "Edit", { E{1,"Undo"}, E{2,"Redo"} } },
+            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
+            { "Modify", { E{6,"Extrude...",!sketching}, E{7,"Cut sketch...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
+            { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching} } },
+            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
+        };
+    };
+    workspaceMenu.invoke = [this](int id)
+    {
+        const juce::StringArray names { "undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views" };
+        if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
+        else if (id >= 30 && id <= 33) modelView.toggleGuide(juce::StringArray{"floor","world","local","joints"}[id-30]);
+    };
     addAndMakeVisible(modeLabel); addAndMakeVisible(statusLabel); addAndMakeVisible(unitsLabel);
 
     struct ToolSpec { juce::TextButton* button; const char* tip; };
@@ -480,6 +500,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     addAndMakeVisible(treeHeading); addAndMakeVisible(tree); addAndMakeVisible(leftBar); addAndMakeVisible(centre); addAndMakeVisible(rightBar); addAndMakeVisible(side);
     centre.addAndMakeVisible(modelView); centre.addChildComponent(*sketchCanvas);
     modelView.setTitle("Perspective  |  Model  (drag to orbit, Shift/right-drag to pan, wheel to zoom, click to select)");
+    modelView.onContextCommand = [this](const juce::String& command,const djehuti::cad::CadPick& pick) { viewContextCommand(command,pick); };
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
     modelView.onFrameRequested = [this] { wakeFrames(); };
     modelView.wantsBodyPick = [this] { return isCommandTask(); };
@@ -523,43 +544,22 @@ void CadWorkspacePanel::restoreLayoutState(const juce::String& state)
 void CadWorkspacePanel::paint(juce::Graphics& g)
 {
     g.fillAll(backgroundColour);
-    g.setColour(toolbarColour); g.fillRect(0, 0, getWidth(), 92);
-    g.setColour(borderColour); g.drawHorizontalLine(46, 0.0f, (float) getWidth()); g.drawHorizontalLine(92, 0.0f, (float) getWidth());
-    g.setColour(panelColour); g.fillRect(tree.getX(), 92, tree.getWidth(), getHeight() - 92 - 28); g.fillRect(side.getX(), 92, side.getWidth(), getHeight() - 92 - 28);
+    g.setColour(toolbarColour); g.fillRect(0, 0, getWidth(), 58);
+    g.setColour(borderColour); g.drawHorizontalLine(30, 0.0f, (float) getWidth()); g.drawHorizontalLine(58, 0.0f, (float) getWidth());
+    g.setColour(panelColour); g.fillRect(tree.getX(), 58, tree.getWidth(), getHeight() - 58 - 28); g.fillRect(side.getX(), 58, side.getWidth(), getHeight() - 58 - 28);
     g.setColour(borderColour); g.drawHorizontalLine(getHeight() - 28, 0.0f, (float) getWidth());
-    if (editingSketchId.isNotEmpty()) { g.setColour(accentColour.withAlpha(0.35f)); g.fillRect(0, 0, 6, 92); }
+    if (editingSketchId.isNotEmpty()) { g.setColour(accentColour.withAlpha(0.35f)); g.fillRect(0, 30, 4, 28); }
 }
 
 void CadWorkspacePanel::resized()
 {
     auto area = getLocalBounds();
-    auto header = area.removeFromTop(46).reduced(12, 7);
-    auto toolbar = area.removeFromTop(46).reduced(12, 7);
+    workspaceMenu.setBounds(area.removeFromTop(30));
+    auto context = area.removeFromTop(28).reduced(10, 2);
+    finishSketchButton.setBounds(context.removeFromRight(140));
+    modeLabel.setBounds(context);
     auto status = area.removeFromBottom(28).reduced(12, 2);
     unitsLabel.setBounds(status.removeFromRight(260)); statusLabel.setBounds(status);
-
-    auto place = [](juce::Rectangle<int>& row, juce::TextButton& b, bool fromRight = false) { const auto w = juce::jmax(56, juce::roundToInt(juce::Font(15.0f).getStringWidthFloat(b.getButtonText())) + 26); b.setBounds(fromRight ? row.removeFromRight(w) : row.removeFromLeft(w)); if (fromRight) row.removeFromRight(6); else row.removeFromLeft(6); };
-    auto headerRight = header;
-    place(headerRight, redoButton, true); place(headerRight, undoButton, true);
-    if (editingSketchId.isEmpty()) { headerRight.removeFromRight(10); place(headerRight, viewsButton, true); place(headerRight, resetViewButton, true); place(headerRight, fitButton, true); }
-    else { headerRight.removeFromRight(10); place(headerRight, fitSketchButton, true); }
-    modeLabel.setBounds(headerRight);
-
-    auto row = toolbar;
-    if (editingSketchId.isEmpty())
-    {
-        place(row, sketchButton); place(row, boxButton); place(row, cylinderButton); row.removeFromLeft(14);
-        place(row, extrudeButton); place(row, cutButton); row.removeFromLeft(14);
-        place(row, subtractButton); place(row, unionButton); place(row, intersectButton); row.removeFromLeft(14);
-        place(row, instanceButton); place(row, jointButton); place(row, couplingButton); place(row, linkButton); place(row, ikButton);
-        place(row, edgeModeButton, true); place(row, faceModeButton, true); place(row, bodyModeButton, true);
-    }
-    else
-    {
-        place(row, selectToolButton); place(row, lineButton); place(row, rectangleButton); place(row, circleButton); row.removeFromLeft(14);
-        place(row, constrainButton);
-        finishSketchButton.setBounds(row.removeFromRight(juce::jmax(140, row.getWidth() / 5)));
-    }
 
     juce::Component* items[] = { &tree, &leftBar, &centre, &rightBar, &side };
     columns.layOutComponents(items, 5, area.getX(), area.getY(), area.getWidth(), area.getHeight(), false, true);
@@ -695,6 +695,13 @@ void CadWorkspacePanel::syncTreeSelection()
 void CadWorkspacePanel::featureClicked(const juce::String& id)
 {
     if (isCommandTask() && task != Task::link) { assignRole(id); return; }
+    if (selection != nullptr)
+    {
+        djehuti::cad::CadPick picked;
+        if (const auto* instance = service->document().mechanicsData().findInstance(id)) picked = { id, instance->featureId, -1, -1 };
+        else if (isSolid(id)) picked = { id, id, -1, -1 };
+        selection->setSelected(picked);
+    }
     selectFeature(id);
 }
 
@@ -1437,6 +1444,7 @@ void CadWorkspacePanel::updateToolbar()
     if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + (sketch->onFace() ? "on " + supportText(*sketch) : sketch->plane + " plane"), juce::dontSendNotification);
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
+    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton,&cutButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
     resized(); repaint();
 }
 
@@ -2421,4 +2429,60 @@ void CadWorkspacePanel::ikTargetDragged(const juce::String& targetId, const std:
         else { ikSolvePending = true; if (finished) setMessage("Target moved to " + juce::String(local.X(), 2) + ", " + juce::String(local.Y(), 2) + ", " + juce::String(local.Z(), 2) + " mm. Solving; the document is unchanged.", 0); }
         return;
     }
+}
+
+// Menus, Toolbox and view context actions use the same modeling handlers as before.
+bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
+{
+    if (!uiCommandEnabled(command)) return false;
+    if (command == "pointer" || command == "boxSelect" || command == "circleSelect")
+    {
+        if (selection != nullptr) selection->setTool(command == "pointer" ? djehuti::cad::CadSelection::Tool::pointer : command == "boxSelect" ? djehuti::cad::CadSelection::Tool::box : djehuti::cad::CadSelection::Tool::circle);
+        return true;
+    }
+    if (command == "export") { showExportDialog(); return true; }
+    const std::pair<const char*,juce::TextButton*> commands[] = {
+        {"undo",&undoButton},{"redo",&redoButton},{"sketch",&sketchButton},{"box",&boxButton},{"cylinder",&cylinderButton},
+        {"extrude",&extrudeButton},{"cut",&cutButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
+        {"sketchSelect",&selectToolButton},{"line",&lineButton},{"rectangle",&rectangleButton},{"circle",&circleButton},{"constrain",&constrainButton},
+        {"fitSketch",&fitSketchButton},{"finishSketch",&finishSketchButton},{"instance",&instanceButton},{"joint",&jointButton},{"coupling",&couplingButton},
+        {"link",&linkButton},{"ik",&ikButton},{"fit",&fitButton},{"reset",&resetViewButton},{"views",&viewsButton},
+        {"bodyMode",&bodyModeButton},{"faceMode",&faceModeButton},{"edgeMode",&edgeModeButton}
+    };
+    for (const auto& entry : commands) if (command == entry.first) { if (entry.second->onClick) entry.second->onClick(); return true; }
+    return false;
+}
+bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
+{
+    const bool sketch = editingSketchId.isNotEmpty();
+    if (juce::StringArray{"sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
+    if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect"}.contains(command)) return !sketch;
+    return true;
+}
+bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
+{
+    if (editingSketchId.isNotEmpty()) return command == (sketchCanvas->tool() == "select" ? juce::String("sketchSelect") : sketchCanvas->tool());
+    if (selection == nullptr) return false;
+    using Sel = djehuti::cad::CadSelection;
+    if (command == "pointer") return selection->tool() == Sel::Tool::pointer;
+    if (command == "boxSelect") return selection->tool() == Sel::Tool::box;
+    if (command == "circleSelect") return selection->tool() == Sel::Tool::circle;
+    if (command == "bodyMode") return selection->mode() == Sel::Mode::body;
+    if (command == "faceMode") return selection->mode() == Sel::Mode::face;
+    if (command == "edgeMode") return selection->mode() == Sel::Mode::edge;
+    return false;
+}
+
+void CadWorkspacePanel::viewContextCommand(const juce::String& command,const djehuti::cad::CadPick& pick)
+{
+    if (command == "inspectRegion" && !pick.valid()) { selectFeature({}); return; }
+    if (pick.valid())
+    {
+        if (selection != nullptr && command != "inspectRegion") selection->setSelected(pick);
+        if (pick.face < 0 && pick.edge < 0) selectFeature(pick.drawId);
+    }
+    if (command == "inspect" || command == "inspectRegion") return;
+    if (command == "hide" && pick.valid()) toggleVisibility(pick.drawId);
+    else if (command == "delete" && pick.valid()) deleteFeature(pick.drawId);
+    else executeUiCommand(command);
 }

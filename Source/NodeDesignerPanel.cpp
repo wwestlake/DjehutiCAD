@@ -2159,6 +2159,7 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
         { "cad_face_sketch", "CAD Face Sketch", "CAD", juce::Colour(0xff4b8fc8), 0, { in("feature", "string"), in("face", "string") }, { out("sketch", "string") } },
         // Manufacturing export: args json as for the cad_export agent tool ({"format":"3mf","path":"D:/out/part.3mf"}).
         { "cad_export", "CAD Export", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_workspace", "CAD Workspace", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         // A FRust programmable component's electrical interface (Workbench):
         // values are f64 volts, amps, seconds; each names a pin, parameter
         // or state variable of the component.
@@ -2192,6 +2193,9 @@ NodeDesignerPanel::NodeDesignerPanel()
     componentPanel = std::make_unique<ComponentPanel>(*this);
     addChildComponent(*componentPanel);
 
+    addAndMakeVisible(workspaceMenu);
+    workspaceMenu.sections = [] { return std::vector<WorkspaceMenu::Section>{ {"Graph",{{1,"New"},{2,"Open..."},{3,"Save..."},{6,"Export FRust source..."}}}, {"Build",{{4,"Validate"},{5,"Compile"},{7,"Debug"}}} }; };
+    workspaceMenu.invoke = [this](int id) { juce::TextButton* bs[] = {&newButton,&openButton,&saveButton,&validateButton,&compileButton,&saveSourceButton,&debugButton}; if (id>=1 && id<=7 && bs[id-1]->isEnabled() && bs[id-1]->onClick) bs[id-1]->onClick(); };
     titleLabel.setFont(juce::Font(16.0f, juce::Font::bold));
     titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff7fffd4));
     addAndMakeVisible(titleLabel);
@@ -2295,14 +2299,10 @@ void NodeDesignerPanel::paint(juce::Graphics& g)
 void NodeDesignerPanel::resized()
 {
     auto b = getLocalBounds().reduced(8);
+    workspaceMenu.setBounds(b.removeFromTop(30));
     auto header = b.removeFromTop(30);
-    titleLabel.setBounds(header.removeFromLeft(230));
-    for (auto* button : { &newButton, &openButton, &saveButton, &validateButton, &compileButton, &saveSourceButton, &debugButton })
-    {
-        header.removeFromLeft(5);
-        button->setBounds(header.removeFromLeft(button == &validateButton || button == &saveSourceButton ? 80 : (button == &compileButton || button == &debugButton ? 64 : 56)));
-    }
-    header.removeFromLeft(14);
+    titleLabel.setVisible(false);
+    for (auto* button : {&newButton,&openButton,&saveButton,&validateButton,&compileButton,&saveSourceButton,&debugButton}) button->setVisible(false);
     diagramTypeLabel.setBounds(header.removeFromLeft(58));
     diagramTypeSelector.setBounds(header.removeFromLeft(150));
     header.removeFromLeft(8);

@@ -842,6 +842,13 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
     auto next = std::make_shared<CadRenderSnapshot>();
     next->revision = documentRevision;
     next->documentInstance = instanceId;
+    for (const auto& f : items) if (f.visible && !f.shape.IsNull())
+    {
+        CadLocalFrame local; local.id=f.id; local.name=f.name; const auto transform=placement(f);
+        for (int c=0;c<4;++c) for (int row=0;row<3;++row) local.matrix[(size_t)(c*4+row)]=(float)transform.Value(row+1,c+1);
+        local.matrix[15]=1; next->localFrames.push_back(std::move(local));
+    }
+
     for (const auto& f : items)
         if (f.visible && !f.shape.IsNull())
         {

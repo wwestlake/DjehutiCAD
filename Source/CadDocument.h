@@ -92,11 +92,18 @@ struct CadPolyline
     std::vector<float> points;   // x, y, z triples
 };
 
+struct CadLocalFrame
+{
+    juce::String id, name;
+    std::array<float,16> matrix {};
+};
+
 struct CadRenderSnapshot
 {
     std::uint64_t revision = 0;
     std::uint64_t documentInstance = 0;   // which document (New/Open) the meshes belong to
     std::vector<CadMesh> meshes;
+    std::vector<CadLocalFrame> localFrames;
     std::vector<CadPolyline> edges;           // model edges, for edge picking and highlighting
     std::vector<CadPolyline> sketchOutlines;  // visible sketches drawn in their resolved 3-D plane
 };

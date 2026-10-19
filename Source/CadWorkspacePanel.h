@@ -6,6 +6,7 @@
 #include "CadMotionRuntime.h"
 #include "MotionLink.h"
 #include "CadSelection.h"
+#include "WorkspaceMenu.h"
 
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
@@ -30,6 +31,13 @@ public:
     void setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link);
     void setSelection(std::shared_ptr<djehuti::cad::CadSelection> shared);
     std::function<void()> onOpenViews;
+    WorkspaceMenu workspaceMenu;
+    juce::String viewState() const { return juce::JSON::toString(modelView.viewState()); }
+    void restoreViewState(const juce::String& json) { modelView.restoreViewState(juce::JSON::parse(json)); }
+    void viewContextCommand(const juce::String&, const djehuti::cad::CadPick&);
+    bool executeUiCommand(const juce::String& command);
+    bool uiToolActive(const juce::String& command) const;
+    bool uiCommandEnabled(const juce::String& command) const;
 
 private:
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape };

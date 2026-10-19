@@ -8,6 +8,7 @@
 #include "CadDocument.h"
 #include "CadMotionRuntime.h"
 #include "MotionLink.h"
+#include <CreationDock/DockManager.h>
 
 class FrustPanel;
 class NodeDesignerPanel;
@@ -19,7 +20,8 @@ class DjehutiCAD final : public juce::Component,
                          private juce::MenuBarModel
 {
 public:
-    DjehutiCAD();
+    explicit DjehutiCAD(bool diagnostic = false);
+    juce::var runWorkspaceCheck();
     ~DjehutiCAD() override;
 
     void paint(juce::Graphics&) override;
@@ -29,23 +31,27 @@ public:
     void confirmCloseThen(std::function<void()> closeCallback);
 
 private:
+    bool diagnosticMode = false;
+    static std::string runWorkspaceCommand(const juce::Component::SafePointer<DjehutiCAD>&, const juce::String&);
     juce::StringArray getMenuBarNames() override;
     juce::PopupMenu getMenuForIndex(int, const juce::String&) override;
     void menuItemSelected(int commandId, int) override;
 
     void restoreSettings();
     void saveSettings();
+    void applyWorkspaceLayout(const juce::var&);
 
     juce::ApplicationProperties properties;
     DesktopAuthSession authSession { "djehuti-cad" };
     ProfileAvatarComponent profileAvatar { authSession };
     DjehutiMenuBarComponent menuBar { this };
-    juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
-    std::unique_ptr<FrustPanel> frustPanel;
-    std::unique_ptr<NodeDesignerPanel> nodePanel;
-    std::unique_ptr<DjehutiAgentPanel> agentPanel;
-    std::unique_ptr<ThreeDViewsPanel> viewsPanel;
-    std::unique_ptr<CadWorkspacePanel> cadWorkspace;
+    std::unique_ptr<CreationDock::DockManager> dockManager;
+    juce::var defaultDockLayout;
+    FrustPanel* frustPanel = nullptr; // owned by DockManager
+    NodeDesignerPanel* nodePanel = nullptr; // owned by DockManager
+    DjehutiAgentPanel* agentPanel = nullptr; // owned by DockManager
+    ThreeDViewsPanel* viewsPanel = nullptr; // owned by DockManager
+    CadWorkspacePanel* cadWorkspace = nullptr; // owned by DockManager
     std::shared_ptr<djehuti::cad::CadCommandService> cadService;
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
     static std::string runFaceCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const std::string& name, const juce::String& arguments);
