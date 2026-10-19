@@ -34,6 +34,27 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Z-up camera correction — October 18, 2026
+
+Bill's screenshot showed the XY floor looking like a wall. The camera still used a Y-up look-at frame
+and Y-axis elevation, although modeling, sketches and reference geometry use Z-up coordinates.
+
+- The shared camera now orbits about world Z, uses Z as its up direction and starts/resets at a
+  45-degree azimuth / 35.264-degree elevation isometric view. Rendering, picking and target dragging
+  consume that same view matrix; no model transform or authored part placement was changed.
+- An empty document starts at a useful millimetre scale (200 mm viewing distance, 50 mm reference
+  radius), rather than the old rotating-cube scale that produced a 0.1 mm default floor grid.
+- The single-worker Debug application build passed. Only `--cad-camera-check` was run: it passed and
+  exited normally in 1.19 seconds. It now checks that world Z projects vertically upward with no roll,
+  alongside the existing basis, handedness, target-centering and distance-preservation checks.
+- Native visual verification is pending; passing the math check is not a claim about observed pixels.
+
+Bill wants to WATCH a part being designed through the CAD UI. A generated model file loaded into the
+app is not the requested demo. Desktop capture/click control previously failed; reading accessibility
+text did work. Do not substitute a generated/imported part for interactive Sketch/Extrude/Cut actions.
+Bill has stepped away and explicitly asked that the live demo WAIT until he returns. No part has been
+created through the app UI by Codex in this demonstration, and no generated bracket was loaded.
+
 ## Workspace menus, Toolbox and reference guides — October 18, 2026
 
 Bill authorized Codex to take over implementation temporarily while Claude's session allowance resets.

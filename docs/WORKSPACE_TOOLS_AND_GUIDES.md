@@ -23,6 +23,7 @@ Right-click a 3D view for Fit/Reset and its guide visibility. A selected solid b
 ## Reference geometry
 
 - Floor: a fixed XY world grid at Z=0, with adaptive 1/2/5 millimeter spacing. It is visible by default.
+- Camera: world Z is up; the default/reset isometric view looks down onto the XY floor. Orbit changes the view around the shared model.
 - World planes: optional bounded XY/XZ/YZ grids and labeled axes at the world origin.
 - Selected local planes: optional grids and XYZ axes at the selected part's authored local origin, or the selected instance's solved local frame. A local origin is not a computed geometric center.
 - Joint frames and limits: optional parent/reference and moving XYZ triads, a local rotation-plane grid, current coordinate and role, and configured limits. Revolute joints show an angular guide and current radial direction. Prismatic joints show the travel axis and limit ticks. Labels distinguish hard from advisory limits. Selected joints are emphasized by showing their guides; otherwise all supported moving joints are shown.

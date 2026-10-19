@@ -99,9 +99,11 @@ private:
     std::unique_ptr<juce::OpenGLShaderProgram::Attribute> normalAttribute;
     GLuint vao = 0, vbo = 0, ibo = 0, axisVao = 0, axisVbo = 0;
     DjehutiFrameResourceRing frames;
-    float yaw = 0.55f, pitch = 0.35f, distance = 4.0f, panX = 0.0f, panY = 0.0f;
+    static constexpr float homeYaw = 0.785398163f, homePitch = 0.615479709f;
+    static constexpr float homeDistance = 200.0f, emptySceneRadius = 50.0f;
+    float yaw = homeYaw, pitch = homePitch, distance = homeDistance, panX = 0.0f, panY = 0.0f;
     float targetX = 0.0f, targetY = 0.0f, targetZ = 0.0f;
-    float sceneCenterX = 0.0f, sceneCenterY = 0.0f, sceneCenterZ = 0.0f, sceneRadius = 1.0f;
+    float sceneCenterX = 0.0f, sceneCenterY = 0.0f, sceneCenterZ = 0.0f, sceneRadius = emptySceneRadius;
     bool hasSceneBounds = false, fitPending = true, userCameraChanged = false;
     std::uint64_t boundsRevision = 0, boundsDocument = 0, fitDocument = 0;
     std::atomic<bool> renderDirty { true };   // set from the GL thread too (context recreation)
@@ -114,7 +116,7 @@ private:
     std::shared_ptr<const djehuti::cad::CadPoseSnapshot> pose, glPose;
     struct Bounds { float min[3] {}, max[3] {}; };
     std::map<juce::String, Bounds> featureBounds;
-    float clipRadius = 1.0f;
+    float clipRadius = emptySceneRadius;
     juce::SpinLock highlightLock;
     std::vector<std::pair<juce::String, juce::Colour>> highlights;
     struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; int faceIndex = -1; };

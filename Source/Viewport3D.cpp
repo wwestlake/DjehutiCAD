@@ -22,9 +22,10 @@ M4 camera(float yaw, float pitch, float distance, float targetX, float targetY, 
 {
     const auto cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
     const V3 target {targetX, targetY, targetZ};
-    const V3 eye = add(target, {distance * cp * sy, distance * sp, distance * cp * cy});
+    // CAD coordinates are Z-up: yaw turns about world Z and pitch is elevation above XY.
+    const V3 eye = add(target, {distance * cp * sy, -distance * cp * cy, distance * sp});
     const auto forward = normalized(sub(target, eye));
-    const auto referenceUp = V3 {0.0f, 1.0f, 0.0f};
+    const auto referenceUp = V3 {0.0f, 0.0f, 1.0f};
     const auto right = normalized(cross(forward, referenceUp));
     const auto up = cross(right, forward);
     M4 m = identity();
@@ -55,7 +56,7 @@ bool runViewportCameraCheck(juce::String& detail)
         if (!ok) detail = message;
         return ok;
     };
-    const std::array<std::array<float, 3>, 3> cases {{{0.55f, 0.35f, 4.0f}, {juce::MathConstants<float>::halfPi, 0.0f, 4.0f}, {0.30f, -0.20f, 12.0f}}};
+    const std::array<std::array<float, 3>, 3> cases {{{0.785398163f, 0.615479709f, 200.0f}, {juce::MathConstants<float>::halfPi, 0.0f, 4.0f}, {0.30f, -0.20f, 12.0f}}};
     const V3 target {13.0f, -7.0f, 29.0f};
     for (const auto& item : cases)
     {
@@ -65,13 +66,14 @@ bool runViewportCameraCheck(juce::String& detail)
         if (!check(close(dot(right, up), 0.0f, 1.0e-4f) && close(dot(right, back), 0.0f, 1.0e-4f) && close(dot(up, back), 0.0f, 1.0e-4f), "Camera basis is not orthogonal.")) return false;
         const auto determinant = dot(right, cross(up, back));
         if (!check(close(determinant, 1.0f, 1.0e-4f), "Camera basis is reflected.")) return false;
+        if (!check(close(right.z, 0.0f, 1.0e-4f) && up.z > 0.0f, "World Z must project vertically upward without camera roll.")) return false;
         const V3 targetInView {dot(right, target) + m.v[12], dot(up, target) + m.v[13], dot(back, target) + m.v[14]};
         if (!check(close(targetInView.x, 0.0f, 1.0e-3f) && close(targetInView.y, 0.0f, 1.0e-3f) && close(targetInView.z, -item[2], 1.0e-3f), "Camera target does not map to view center.")) return false;
         const V3 vector {1.25f, -2.0f, 0.75f};
         const V3 transformed {dot(right, vector), dot(up, vector), dot(back, vector)};
         if (!check(close(length(transformed), length(vector), 1.0e-4f), "Camera view changes world-space distance.")) return false;
     }
-    detail = "Camera basis, determinant, target mapping, and distance preservation passed.";
+    detail = "Z-up/no-roll orientation, camera basis, determinant, target mapping, and distance preservation passed.";
     return true;
 }
 
@@ -302,7 +304,7 @@ void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelD
     const auto maximumDistance = juce::jmax(1000.0f, sceneRadius * 100000.0f);
     distance = juce::jlimit(minimumDistance, maximumDistance, distance * std::exp(-w.deltaY * 0.5f)); cameraChanged();
 }
-void Viewport3D::resetCamera() { yaw = 0.55f; pitch = 0.35f; panX = panY = 0.0f; userCameraChanged = false; if (hasSceneBounds) frameScene(); else fitPending = true; markDirty(); }
+void Viewport3D::resetCamera() { yaw = homeYaw; pitch = homePitch; panX = panY = 0.0f; userCameraChanged = false; if (hasSceneBounds) frameScene(); else { distance = homeDistance; targetX = targetY = targetZ = 0.0f; fitPending = true; } markDirty(); }
 void Viewport3D::fitAll() { userCameraChanged = false; if (hasSceneBounds) frameScene(); else fitPending = true; markDirty(); }
 void Viewport3D::requestFit(std::uint64_t documentInstance) { fitPending = true; fitDocument = documentInstance; userCameraChanged = false; tryPendingFit(); markDirty(); }
 // The user moved the camera: their view wins over any fit still waiting for geometry.
@@ -363,7 +365,7 @@ void Viewport3D::updatePosedBounds()
         sceneRadius = juce::jmax(0.001f, 0.5f * std::sqrt(dx * dx + dy * dy + dz * dz));
         tryPendingFit();
     }
-    else if (fitPending) { targetX = targetY = targetZ = 0.0f; sceneRadius = 1.0f; }   // empty document: neutral view
+    else if (fitPending) { targetX = targetY = targetZ = 0.0f; sceneRadius = emptySceneRadius; distance = homeDistance; }   // empty document: millimetre-scale working area
     clipRadius = sceneRadius;
     for (const auto& c : corners) clipRadius = juce::jmax(clipRadius, length(sub(c, { targetX, targetY, targetZ })));
 }
