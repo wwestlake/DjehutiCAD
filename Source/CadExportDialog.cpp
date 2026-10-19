@@ -49,6 +49,7 @@ public:
         format.addItem("3MF - preferred for 3-D printing", 1);
         format.addItem("Binary STL - one file per part", 2);
         format.addItem("STEP AP214 - exact solids for CAD exchange", 3);
+        format.addItem("glTF 2.0 Binary (GLB) - game-ready mesh export", 4);
         format.setSelectedId(1, juce::dontSendNotification);
         format.onChange = [this] { formatChanged(); };
         addAndMakeVisible(format);
@@ -135,7 +136,7 @@ public:
     }
 
 private:
-    CadExportFormat currentFormat() const { return format.getSelectedId() == 2 ? CadExportFormat::stl : format.getSelectedId() == 3 ? CadExportFormat::step : CadExportFormat::threeMF; }
+    CadExportFormat currentFormat() const { return format.getSelectedId() == 2 ? CadExportFormat::stl : format.getSelectedId() == 3 ? CadExportFormat::step : format.getSelectedId() == 4 ? CadExportFormat::glb : CadExportFormat::threeMF; }
 
     static double number(const juce::TextEditor& editor)
     {
@@ -164,6 +165,7 @@ private:
         for (juce::Component* c : { (juce::Component*) &quality, (juce::Component*) &qualityLabel, (juce::Component*) &chordal, (juce::Component*) &angular, (juce::Component*) &chordalUnit, (juce::Component*) &angularUnit }) c->setVisible(mesh);
         formatNote.setText(f == CadExportFormat::threeMF ? "Millimetre units; one named object per part, placed by its build transform. Slicer settings stay in the slicer."
                            : f == CadExportFormat::stl ? "Binary STL has no units: coordinates are millimetres. Several parts give one file per part (<name>-<part>.stl); use 3MF to keep an assembly in one file."
+                           : f == CadExportFormat::glb ? "glTF 2.0 Binary: metre units (converted from mm), indexed triangles, vertex normals, separate named nodes, assembly hierarchy and joint pivot frames preserved."
                            : "Exact B-rep solids in millimetres with part names and placements. Feature history, scripts, constraints and simulation are not transferred.", juce::dontSendNotification);
         const auto current = juce::File::isAbsolutePath(path.getText().trim()) ? juce::File(path.getText().trim()) : juce::File();
         if (current != juce::File()) path.setText(current.withFileExtension(exporting::extension(f)).getFullPathName(), juce::dontSendNotification);

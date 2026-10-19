@@ -12,15 +12,15 @@ namespace djehuti::cad
 class CadDocument;
 
 // Manufacturing export of evaluated CAD solids: 3MF (lib3mf), binary STL (OCCT StlAPI) and STEP (OCCT
-// STEPCAFControl). Export is a read operation: plan() copies the chosen B-rep geometry on the message thread
+// STEPCAFControl) and glTF 2.0 binary (.glb). Export is a read operation: plan() copies the chosen B-rep geometry on the message thread
 // without touching the document, and run() meshes, checks and writes those copies on any thread.
-enum class CadExportFormat { threeMF, stl, step };
+enum class CadExportFormat { threeMF, stl, step, glb };
 
-// Printing-mesh tolerances. chordalMm is the largest distance between the mesh and the true surface;
+// Printing and real-time mesh tolerances. chordalMm is the largest distance between the mesh and the true surface;
 // angularDeg is the largest angle between neighbouring facet normals along a curve.
 struct CadMeshQuality
 {
-    juce::String preset = "standard";   // "standard", "fine" or "custom"
+    juce::String preset = "standard";   // "standard", "fine", "low", "medium", "high" or "custom"
     double chordalMm = 0.05, angularDeg = 15.0;
 };
 
@@ -40,6 +40,10 @@ struct CadExportPart
     bool instance = false;
     gp_Trsf placement;
     double min[3] {}, max[3] {};   // placed bounds, mm
+    // Hierarchical assembly & pivot representation (especially for glTF / game-ready export)
+    bool hasPivot = false;
+    gp_Trsf pivotFrame;           // world frame of pivot/joint (mm)
+    juce::String parentPartId;    // empty if parent is root / world
 };
 
 struct CadExportSource

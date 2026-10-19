@@ -200,6 +200,7 @@ public:
     bool exportJson(const juce::File& file, juce::String& error) const;
     bool makeRepresentativeReference(const juce::String& featureId, CadPersistentReference& reference, juce::String& error);
     bool resolveReference(const CadPersistentReference& reference, juce::String& error) const;
+    bool referenceWorld(const juce::String& instanceId, gp_Trsf& world, juce::String& error) const;
 
     std::shared_ptr<const CadRenderSnapshot> snapshot() const;
     // Maps a body's evaluated shape (which already carries its authored placement) onto an instance of it whose
@@ -241,7 +242,6 @@ private:
     bool deserializeSketches(const juce::String& json, juce::String& error);
     bool restoreMechanicsFromOCAF(juce::String& error);
     bool loadFile(const juce::File& file, juce::String& error);
-    bool referenceWorld(const juce::String& instanceId, gp_Trsf& world, juce::String& error) const;
     bool jointFramesFromRequest(const CadJointRequest& request, CadJoint& joint, juce::String& error) const;
     CadSketch* mutableSketch(const juce::String& id);
     bool solveSketch(CadSketch& sketch, juce::String& error) const;
