@@ -10,6 +10,7 @@
 #include "MotionLink.h"
 #include <CreationDock/DockManager.h>
 
+class LocalAgentApi;
 class FrustPanel;
 class NodeDesignerPanel;
 class DjehutiAgentPanel;
@@ -31,6 +32,10 @@ public:
     void confirmCloseThen(std::function<void()> closeCallback);
 
 private:
+    std::unique_ptr<LocalAgentApi> localApi;
+    // Runs one agent/API tool to completion on the message thread and returns its structured result. Off the
+    // message thread it waits for the outcome: up to 120 s, or while keepWaiting() holds when it is given.
+    static std::string runToolCommand(const juce::Component::SafePointer<DjehutiCAD>&, const std::string&, const juce::String&, std::function<bool()> keepWaiting = {});
     bool diagnosticMode = false;
     static std::string runWorkspaceCommand(const juce::Component::SafePointer<DjehutiCAD>&, const juce::String&);
     juce::StringArray getMenuBarNames() override;

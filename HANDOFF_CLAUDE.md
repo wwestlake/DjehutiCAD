@@ -34,6 +34,88 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Local automation API for paced demonstrations — October 18, 2026
+
+Reference: `docs/LOCAL_AUTOMATION_API.md`. Code:
+- `Source/LocalAgentApi.*` (server);
+- `DjehutiCAD::runToolCommand` (the shared dispatcher used by the API and the BYOK agent);
+- `CadWorkspacePanel::automation/automationState` (`cad_ui`);
+- `Viewport3D::controlCamera`.
+
+Client and checks are in `tools/cad_api/`: `client.py`, `step.py`, `inspect_state.py`, `smoke.py`,
+`semantics_check.py`.
+
+### Recovered state
+
+An interrupted session left the work uncommitted on `feat/local-cad-api` (at main's tip), and I continued it
+there. It had already:
+- added the loopback server with discovery, a bearer token, request ids, and the `/v1/status`, `/v1/tools`,
+  `/v1/state`, `/v1/tools/call` and `/v1/requests/{id}` endpoints;
+- added the `cad_ui` tool (state, command, set, click, select, sketch begin/update/commit/cancel, camera,
+  document);
+- added camera control for the model view and the 3D views;
+- replaced the agent path's "Operation scheduled in DjehutiCAD." with real synchronous results;
+- added the Help item;
+- added the client and smoke scripts.
+
+That code was unbuilt and unverified.
+
+### Completed in this pass
+
+- **Execution model:** requests run one at a time, in order, on a single worker (`juce::ThreadPool(1)`). The
+  worker hands each step to the message thread through `runToolCommand` and waits for its outcome.
+  - Statuses: `queued`/`running` (202), `completed` (200), `failed` (409), `cancelled` (200).
+  - `POST /v1/requests/{id}/cancel` cancels queued work. Started work answers 409.
+  - Export now writes on the worker instead of the UI thread.
+  - Shutdown cannot deadlock: `keepWaiting` turns false and queued jobs are dropped.
+  - The agent path's 120 s limit now reports "pending, may still complete" instead of a false failure.
+- **Real bug fixed:** OCAF string fields were read back as Latin-1 (`juce::String(const char*)`), so
+  non-ASCII names typed in the UI or sent through the API were corrupted on the next rebuild. `readString`
+  now decodes UTF-8. This affected every OCAF string, not just the API.
+- Removed a duplicated `ui` branch in `runWorkspaceCommand`.
+- Wrote the API doc that the Help item already pointed to.
+- Added the semantics check and the one-step client helpers.
+
+### Verification
+
+The Debug build passed.
+
+Live HTTP checks against the running app:
+- `smoke.py`: 17/17. It covers:
+  - discovery and auth (a bad token gets 401; unknown tools get 400);
+  - Create Sketch through the task panel;
+  - a rectangle preview held without geometry, then committed as four edges;
+  - Apply for extrude and cut through all;
+  - camera moves without a document revision change;
+  - a UTF-8 rename;
+  - request-id replay that does not repeat an undo;
+  - a truthful modeling failure, refusal of an invalid field, and protection of an unsaved document;
+  - native save and reopen.
+- `semantics_check.py`: 10/10. A slow export answers 202; the next request stays queued and is cancelled;
+  status shows the export still running; the process reports Responding during it; cancelling the running
+  export gets 409; completion returns the real result (7944 triangles per part); the cancelled request never
+  ran; the document revision is unchanged.
+- Discovery file: a 64-character token and a loopback URL. It is removed on clean exit.
+
+Observed on screen while driving `step.py` one call at a time:
+- The held rectangle preview (55 × 35 mm label) stayed visible between calls.
+- Commit, Finish Sketch and Extrude (Distance 8) via `set` and `apply` worked.
+- After the camera call (yaw −30°, pitch 25°, distance 160) and selection, the selected body showed magenta
+  with its task panel.
+- A wrong id was refused ("Unknown model tree id.") with the revision unchanged. An out-of-range pitch was
+  refused with the camera unchanged.
+- 3D view 0's camera was set through `view: 0`.
+
+### Limits
+
+- One controlling client at a time; calls are serialised.
+- No pick-by-screen-coordinate. Faces are reached through `cad_list_faces` and `cad_create_face_sketch`.
+- File-chooser and alert dialogs aren't driven; use the `document` action.
+- A started step cannot be cancelled.
+- No named view presets: yaw and pitch are in degrees.
+- Not exercised live: the BYOK agent path (needs a provider key), FRust and nodes. They reach `cad_ui` through
+  `cad_workspace` action `ui`, which uses the same dispatcher.
+
 ## Z-up camera correction — October 18, 2026
 
 Bill's screenshot showed the XY floor looking like a wall. The camera still used a Y-up look-at frame

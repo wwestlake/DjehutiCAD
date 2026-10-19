@@ -63,6 +63,8 @@ set_target_properties(DjehutiCAD PROPERTIES OUTPUT_NAME "djehuti_cad")
 target_sources(DjehutiCAD PRIVATE
     Source/Main.cpp
     Source/DjehutiCAD.h
+    Source/LocalAgentApi.cpp
+    Source/LocalAgentApi.h
     Source/DjehutiCAD.cpp
     Source/DjehutiMenuBarComponent.h
     Source/DjehutiMenuBarComponent.cpp

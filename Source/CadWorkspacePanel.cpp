@@ -2,6 +2,7 @@
 #include "CadExportDialog.h"
 
 #include <deque>
+#include <cstdlib>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 
@@ -152,6 +153,63 @@ public:
         }
     }
 
+
+    juce::var describe() const
+    {
+        juce::Array<juce::var> result;
+        for (const auto& row : rows)
+        {
+            if (row.key.isEmpty() || !row.visible || !row.control) continue;
+            auto* item = new juce::DynamicObject(); item->setProperty("id", row.key);
+            item->setProperty("label", row.caption ? row.caption->getText() : row.key);
+            item->setProperty("enabled", row.control->isEnabled());
+            if (auto* e = dynamic_cast<juce::TextEditor*>(row.control.get()))
+            { item->setProperty("type", row.unit ? "number" : "text"); item->setProperty("value", e->getText()); if (row.unit) item->setProperty("unit", row.unit->getText()); }
+            else if (auto* t = dynamic_cast<juce::ToggleButton*>(row.control.get()))
+            { item->setProperty("type", "toggle"); item->setProperty("label", t->getButtonText()); item->setProperty("value", t->getToggleState()); }
+            else if (auto* c = dynamic_cast<juce::ComboBox*>(row.control.get()))
+            {
+                item->setProperty("type", "choice"); item->setProperty("value", c->getText());
+                juce::Array<juce::var> options; for (int i = 0; i < c->getNumItems(); ++i) options.add(c->getItemText(i)); item->setProperty("options", options);
+            }
+            else if (auto* b = dynamic_cast<juce::TextButton*>(row.control.get()))
+            { item->setProperty("type", "button"); item->setProperty("text", b->getButtonText()); }
+            result.add(item);
+        }
+        return result;
+    }
+    bool assign(const juce::String& key, const juce::var& value, juce::String& error)
+    {
+        auto* c = control(key);
+        if (!c || !rowVisible(key) || !c->isEnabled()) { error = "Field is absent, hidden or disabled: " + key; return false; }
+        std::function<void()> changed;
+        if (auto* e = dynamic_cast<juce::TextEditor*>(c))
+        {
+            bool numeric = false; for (const auto& row : rows) if (row.key == key) numeric = row.unit != nullptr;
+            if (numeric)
+            {
+                // Consume the whole value: JUCE's getDoubleValue alone accepts trailing garbage.
+                const auto text = value.toString().trim().toStdString(); char* end = nullptr;
+                const auto number = std::strtod(text.c_str(), &end);
+                if (text.empty() || end != text.c_str() + text.size() || !std::isfinite(number)) { error = "Expected a finite number for " + key; return false; }
+                e->setText(juce::String(number, 8), false);
+            }
+            else { if (!value.isString()) { error = "Expected text for " + key; return false; } e->setText(value.toString(), false); }
+            changed = e->onTextChange;
+        }
+        else if (auto* b = dynamic_cast<juce::ToggleButton*>(c))
+        { if (!value.isBool()) { error = "Expected a boolean for " + key; return false; } b->setToggleState((bool)value, juce::dontSendNotification); changed = b->onClick; }
+        else if (auto* b = dynamic_cast<juce::ComboBox*>(c))
+        {
+            int index = -1;
+            for (int i = 0; i < b->getNumItems(); ++i) if (b->getItemText(i) == value.toString()) index = i;
+            if (index < 0) { error = "Choose a listed option for " + key; return false; }
+            b->setSelectedItemIndex(index, juce::dontSendNotification); changed = b->onChange;
+        }
+        else { error = "Use click for buttons."; return false; }
+        if (changed) changed(); // Copy before invoking: a callback may rebuild and destroy this form.
+        return true;
+    }
     int preferredHeight() const { int h = 4; for (const auto& row : rows) if (row.visible) h += row.height + 4; return h + 4; }
     void resized() override
     {
@@ -355,12 +413,42 @@ public:
         const auto endSnap = mode == "line" ? nearestSnap(fromPoint(e.position)) : Snap { fromPoint(e.position), {} };
         const auto end = endSnap.point; snapTarget.clear();
         if ((toPoint(end.x, end.y) - toPoint(start.x, start.y)).getDistanceFromOrigin() < 3.0f) { repaint(); return; }
-        juce::String entityId, error; bool ok = false;
+        juce::String error; commitDrawing(end.x, end.y, endSnap.target, error);
+    }
+    bool commitDrawing(double x, double y, const juce::String& endConnection, juce::String& error)
+    {
+        const juce::Point<double> end(x, y);
+        juce::String entityId; bool ok = false;
         if (mode == "rectangle") ok = owner.service->addSketchRectangle(sketchId, std::min(start.x, end.x), std::min(start.y, end.y), std::abs(end.x - start.x), std::abs(end.y - start.y), entityId, error);
         else if (mode == "circle") ok = owner.service->addSketchCircle(sketchId, start.x, start.y, std::hypot(end.x - start.x, end.y - start.y), entityId, error);
-        else if (mode == "line") ok = owner.service->addSketchLine(sketchId, start.x, start.y, end.x, end.y, entityId, error, startConnection, endSnap.target);
+        else if (mode == "line") ok = owner.service->addSketchLine(sketchId, start.x, start.y, end.x, end.y, entityId, error, startConnection, endConnection);
         if (ok) owner.sketchGeometryAdded(mode); else owner.showError(error);
         repaint();
+        return ok;
+    }
+    bool automateGesture(const juce::var& args, juce::String& error)
+    {
+        const auto phase = args.getProperty("phase", "").toString();
+        if (phase == "cancel") { cancelGesture(); return true; }
+        if (mode == "select") { error = "Choose Line, Rectangle or Circle first."; return false; }
+        for (const auto* key : { "x", "y" })
+        { const auto n = args.getProperty(key, {}); if (!(n.isInt() || n.isInt64() || n.isDouble()) || !std::isfinite((double)n)) { error = "Sketch x/y must be finite millimetre coordinates."; return false; } }
+        const auto x = (double)args["x"], y = (double)args["y"];
+        const auto snap = mode == "line" ? nearestSnap({x,y}) : Snap{{x,y},{}};
+        if (phase == "begin") { if (gestureActive) { error = "Finish or cancel the active gesture first."; return false; } start = current = snap.point; startConnection = snap.target; gestureActive = true; }
+        else if (phase == "update" || phase == "commit")
+        {
+            if (!gestureActive) { error = "Begin a sketch gesture first."; return false; }
+            current = snap.point;
+            if (phase == "commit") { gestureActive = false; snapTarget.clear(); return commitDrawing(current.x, current.y, snap.target, error); }
+        }
+        else { error = "Unknown sketch phase."; return false; }
+        snapTarget = snap.target; snapPoint = snap.point; repaint(); return true;
+    }
+    juce::var gestureState() const
+    {
+        auto* o = new juce::DynamicObject(); o->setProperty("active", gestureActive); o->setProperty("tool", mode);
+        o->setProperty("startX", start.x); o->setProperty("startY", start.y); o->setProperty("x", current.x); o->setProperty("y", current.y); return o;
     }
     void mouseMove(const juce::MouseEvent& e) override { updateCursor(e.position); }
     void mouseExit(const juce::MouseEvent&) override { hasCursor = false; repaint(); }
@@ -780,7 +868,7 @@ void CadWorkspacePanel::addSubshapePanel(juce::String& title, juce::String& inst
         juce::String reason;
         djehuti::cad::CadFaceInfo support;
         if (selectedSupport(support, reason))
-            form->addButton("faceSketch", "Create Sketch on this face", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::createSketch); }); },
+            form->addButton("faceSketch", "Create Sketch on this face", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::createSketch); }); },
                             "Start a sketch attached to this face; it follows the face when the body changes.");
         else form->addNote({}, reason, 2);
     }
@@ -790,7 +878,7 @@ void CadWorkspacePanel::addSubshapePanel(juce::String& title, juce::String& inst
         title = "Edge of " + body; instruction = "Hover highlights, click selects.";
         form->addNote({}, service->describeEdge(picked.featureId, picked.edge, text, error) ? text : error, 2);
     }
-    form->addButton("clearPick", "Clear selection", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr && safe->selection != nullptr) safe->selection->clear(); }); }, "Clear the face or edge selection.");
+    form->addButton("clearPick", "Clear selection", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr && safe->selection != nullptr) safe->selection->clear(); }); }, "Clear the face or edge selection.");
 }
 
 void CadWorkspacePanel::setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link)
@@ -949,9 +1037,9 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("z", placement + "Z", f->z, "mm", "World Z position.");
             form->addHeader("Actions");
             const auto id = selectedId;
-            form->addButton("visibility", f->visible ? "Hide" : "Show", [this, id] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->toggleVisibility(id); }); }, "Toggle visibility in the model view.");
-            if (isSolid(selectedId)) form->addButton("subtractFrom", "Subtract from this body...", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::boolean, "subtract"); }); }, "Start Subtract with this body as the Target.");
-            form->addButton("delete", "Delete", [this, id] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->deleteFeature(id); }); }, "Delete this feature (Undo restores it).");
+            form->addButton("visibility", f->visible ? "Hide" : "Show", [this, id] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->toggleVisibility(id); }); }, "Toggle visibility in the model view.");
+            if (isSolid(selectedId)) form->addButton("subtractFrom", "Subtract from this body...", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::boolean, "subtract"); }); }, "Start Subtract with this body as the Target.");
+            form->addButton("delete", "Delete", [this, id] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->deleteFeature(id); }); }, "Delete this feature (Undo restores it).");
             break;
         }
         case Task::sketch:
@@ -961,13 +1049,13 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             accept = "Edit Sketch"; showCancel = false;
             form->addHeader("Sketch");
             form->addText("name", "Name", f->name, "Friendly sketch name.");
-            form->addButton("rename", "Rename", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe == nullptr || safe->form == nullptr) return; juce::String e; if (!safe->service->rename(safe->selectedId, safe->form->text("name"), e)) safe->showError(e); else { safe->refreshFromDocument(true); safe->rebuildTaskPanel(false); safe->setMessage("Sketch renamed.", 0); } }); }, "Apply the new sketch name.");
+            form->addButton("rename", "Rename", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe == nullptr || safe->form == nullptr) return; juce::String e; if (!safe->service->rename(safe->selectedId, safe->form->text("name"), e)) safe->showError(e); else { safe->refreshFromDocument(true); safe->rebuildTaskPanel(false); safe->setMessage("Sketch renamed.", 0); } }); }, "Apply the new sketch name.");
             if (sketch != nullptr) form->addNote({}, (sketch->onFace() ? "On " + supportText(*sketch) : sketch->plane + " plane  |  offset " + juce::String(sketch->offset) + " mm") + "  |  " + juce::String((int) sketch->entities.size()) + " entities", sketch->onFace() ? 2 : 1);
             form->addHeader("Use sketch");
-            form->addButton("extrude", "Extrude...", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::extrude); }); }, "Extrude this sketch's closed profile.");
-            form->addButton("cut", "Cut Sketch...", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::cut); }); }, "Cut this sketch's profile from a body.");
+            form->addButton("extrude", "Extrude...", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::extrude); }); }, "Extrude this sketch's closed profile.");
+            form->addButton("cut", "Cut Sketch...", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::cut); }); }, "Cut this sketch's profile from a body.");
             const auto id = selectedId;
-            form->addButton("delete", "Delete", [this, id] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->deleteFeature(id); }); }, "Delete this sketch (Undo restores it).");
+            form->addButton("delete", "Delete", [this, id] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->deleteFeature(id); }); }, "Delete this sketch (Undo restores it).");
             break;
         }
         case Task::createSketch:
@@ -978,7 +1066,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
                 form->addHeader("Face");
                 if (selectedSupport(support, reason))
                     form->addSlot("planeFACE", "Selected face", sketchPlane == "FACE" ? "Selected" : "Choose", targetColour, sketchPlane == "FACE",
-                                  [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { safe->sketchPlane = "FACE"; safe->rebuildTaskPanel(true); } }); },
+                                  [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { safe->sketchPlane = "FACE"; safe->rebuildTaskPanel(true); } }); },
                                   "Attach the sketch to " + support.token + " of " + featureName(support.featureId) + "; it follows that face when the body changes.");
                 else form->addNote({}, reason + " Switch to Face mode and click a planar face to sketch on it.", 2);
             }
@@ -987,7 +1075,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             {
                 const auto tip = plane == "XY" ? "Sketch on the XY plane (normal along Z)." : plane == "XZ" ? "Sketch on the XZ plane (normal along Y)." : "Sketch on the YZ plane (normal along X).";
                 form->addSlot("plane" + plane, plane + " plane", sketchPlane == plane ? "Selected" : "Choose", targetColour, sketchPlane == plane,
-                              [this, plane] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), plane] { if (safe != nullptr) { safe->sketchPlane = plane; safe->rebuildTaskPanel(true); } }); }, tip);
+                              [this, plane] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), plane] { if (safe != nullptr) { safe->sketchPlane = plane; safe->rebuildTaskPanel(true); } }); }, tip);
             }
             form->addNumber("offset", "Offset", 0.0, "mm", "Distance of the sketch plane from the origin along its normal.");
             break;
@@ -1026,7 +1114,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             auto& typeBox = form->addChoice("constraintType", "Type", types, 0, "Constraint to add to the selected entity.");
             form->addNumber("constraintValue", "Value", 0.0, "mm", "Value for the dimensional constraint.");
             form->addNote("second", "Second entity: " + (sketchSecondEntityId.isEmpty() ? juce::String("none (Shift-click another entity)") : friendlyEntity(sketchSecondEntityId)), 1);
-            form->addButton("addConstraint", "Add Constraint", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->addConstraint(); }); }, "Add the chosen constraint.");
+            form->addButton("addConstraint", "Add Constraint", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->addConstraint(); }); }, "Add the chosen constraint.");
             const auto length = std::hypot(entity->x2 - entity->x1, entity->y2 - entity->y1), radius = entity->radius;
             auto syncValue = [this, length, radius, circle]
             {
@@ -1082,10 +1170,10 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             const auto first = subtract ? "Target" : "First body", second = subtract ? "Tool" : "Second body";
             form->addHeader("Bodies");
             form->addSlot("target", first, slotText(targetId, subtract ? "Select the body to keep" : "Select a body"), targetColour, activeRole == 0,
-                          [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { safe->activeRole = 0; safe->rebuildTaskPanel(true); } }); }, "Click, then pick the body in the tree or the view.");
+                          [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { safe->activeRole = 0; safe->rebuildTaskPanel(true); } }); }, "Click, then pick the body in the tree or the view.");
             form->addSlot("tool", second, slotText(toolId, subtract ? "Select the cutting body" : "Select a body"), toolColour, activeRole == 1,
-                          [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { safe->activeRole = 1; safe->rebuildTaskPanel(true); } }); }, "Click, then pick the body in the tree or the view.");
-            form->addButton("swap", "Swap", [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { std::swap(safe->targetId, safe->toolId); safe->updateHighlights(); safe->rebuildTaskPanel(true); } }); }, "Exchange the two roles.");
+                          [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { safe->activeRole = 1; safe->rebuildTaskPanel(true); } }); }, "Click, then pick the body in the tree or the view.");
+            form->addButton("swap", "Swap", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) { std::swap(safe->targetId, safe->toolId); safe->updateHighlights(); safe->rebuildTaskPanel(true); } }); }, "Exchange the two roles.");
             form->addNote({}, subtract ? "Both source bodies stay in the feature history and are hidden after the operation. Undo restores them." : "Both source bodies stay in the feature history and are hidden after the operation.", 3);
             break;
         }
@@ -1533,7 +1621,7 @@ void CadWorkspacePanel::addMotionPanels(juce::String& title, juce::String& instr
     using namespace djehuti;
     const auto& document = service->document();
     const auto& model = document.mechanicsData();
-    const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
+    const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
     const bool simulationOwns = motionRuntime != nullptr && motionRuntime->driver() == cad::CadMotionRuntime::Driver::simulation;
 
     if (task == Task::instance)
@@ -1912,7 +2000,7 @@ void CadWorkspacePanel::addCouplingFields(const djehuti::cad::CadCoupling* exist
     if (existing != nullptr) form->addNote({}, "A (input): " + featureName(a) + "\nB (coupled): " + featureName(b), 2);
     else
     {
-        const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
+        const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
         form->addSlot("jointA", "Joint A", a.isEmpty() ? juce::String("Select the input joint") : featureName(a), targetColour, activeRole == 0, async([](CadWorkspacePanel& p) { p.activeRole = 0; p.rebuildTaskPanel(true); }), "Input side of the coupling.");
         form->addSlot("jointB", "Joint B", b.isEmpty() ? juce::String("Select the coupled joint") : featureName(b), toolColour, activeRole == 1, async([](CadWorkspacePanel& p) { p.activeRole = 1; p.rebuildTaskPanel(true); }), "Coupled side of the coupling.");
     }
@@ -2179,7 +2267,7 @@ void CadWorkspacePanel::addIkPanel(juce::String& title, juce::String& instructio
     if (ikDraft == nullptr) loadIkDraft({});
     auto& draft = *ikDraft;
     const auto& model = service->document().mechanicsData();
-    const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
+    const auto async = [this](std::function<void(CadWorkspacePanel&)> fn) { return [this, fn] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), fn] { if (safe != nullptr) fn(*safe); }); }; };
     const bool simulationOwns = motionRuntime != nullptr && motionRuntime->driver() == cad::CadMotionRuntime::Driver::simulation;
     title = "Inverse Kinematics";
     instruction = "Choose the driver joints the solve may move and the endpoint targets, then Solve. A pose is shown only if the mechanism and every target hold.";
@@ -2485,4 +2573,127 @@ void CadWorkspacePanel::viewContextCommand(const juce::String& command,const dje
     if (command == "hide" && pick.valid()) toggleVisibility(pick.drawId);
     else if (command == "delete" && pick.valid()) deleteFeature(pick.drawId);
     else executeUiCommand(command);
+}
+
+
+juce::var CadWorkspacePanel::automationState()
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    refreshFromDocument(); handleUpdateNowIfNeeded();
+    const auto& document = service->document();
+    auto* state = new juce::DynamicObject();
+    state->setProperty("documentRevision", (juce::int64)document.revision());
+    state->setProperty("documentInstance", (juce::int64)document.documentInstance());
+    state->setProperty("modified", document.modified()); state->setProperty("file", document.file().getFullPathName());
+    state->setProperty("showing", isShowing()); state->setProperty("mode", editingSketchId.isEmpty() ? "model" : "sketch");
+    state->setProperty("task", taskTitle.getText()); state->setProperty("instruction", taskInstruction.getText());
+    state->setProperty("message", messageLabel.getText()); state->setProperty("selected", selectedId);
+    state->setProperty("editingSketch", editingSketchId); state->setProperty("selectedEntity", sketchEntityId);
+    state->setProperty("profile", profileId); state->setProperty("target", targetId); state->setProperty("tool", toolId);
+    state->setProperty("fields", form ? form->describe() : juce::var());
+    state->setProperty("applyLabel", acceptButton.getButtonText()); state->setProperty("canApply", acceptButton.isVisible() && acceptButton.isEnabled());
+    state->setProperty("canCancel", cancelButton.isVisible() && cancelButton.isEnabled());
+    state->setProperty("camera", modelView.cameraState()); state->setProperty("guides", modelView.viewState());
+    state->setProperty("renderStatus", modelView.diagnostics()); state->setProperty("gesture", sketchCanvas->gestureState());
+    juce::Array<juce::var> commands;
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode"})
+    { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
+    state->setProperty("commands", commands);
+    juce::Array<juce::var> features;
+    for (const auto& f : document.features())
+    {
+        auto* o = new juce::DynamicObject(); o->setProperty("id", f.id); o->setProperty("name", f.name); o->setProperty("type", f.type); o->setProperty("visible", f.visible);
+        o->setProperty("x", f.x); o->setProperty("y", f.y); o->setProperty("z", f.z);
+        if (const auto* sketch = document.findSketch(f.id))
+        {
+            o->setProperty("plane", sketch->plane); o->setProperty("offset", sketch->offset);
+            juce::Array<juce::var> entities;
+            for (const auto& e : sketch->entities)
+            { auto* item = new juce::DynamicObject(); item->setProperty("id", e.id); item->setProperty("type", e.type); item->setProperty("x1",e.x1); item->setProperty("y1",e.y1); item->setProperty("x2",e.x2); item->setProperty("y2",e.y2); item->setProperty("radius",e.radius); entities.add(item); }
+            o->setProperty("entities", entities);
+        }
+        features.add(o);
+    }
+    state->setProperty("features", features);
+    return state;
+}
+
+juce::var CadWorkspacePanel::automation(const juce::var& args)
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    const juce::ScopedValueSetter<bool> executing(automationInProgress, true);
+    refreshFromDocument(); handleUpdateNowIfNeeded();
+    juce::String error;
+    const auto action = args.getProperty("action", "state").toString();
+    if (!args.isObject()) error = "Arguments must be an object.";
+    else if (action == "state") {}
+    else if (action == "command")
+    {
+        commandMessage.clear(); commandSeverity = 0;
+        if (!executeUiCommand(args.getProperty("command", "").toString())) error = "Unknown or unavailable command.";
+    }
+    else if (action == "set")
+    {
+        if (!form) error = "No task form is open.";
+        else form->assign(args.getProperty("field", "").toString(), args.getProperty("value", {}), error);
+    }
+    else if (action == "click")
+    {
+        const auto key = args.getProperty("button", "").toString();
+        juce::Button* button = key == "apply" ? &acceptButton : key == "cancel" ? &cancelButton : form ? dynamic_cast<juce::Button*>(form->control(key)) : nullptr;
+        if (!button || !button->isEnabled() || !button->isVisible()) error = "Button is absent, hidden or disabled: " + key;
+        else { auto click = button->onClick; commandMessage.clear(); commandSeverity = 0; if (click) click(); else error = "Button has no action."; }
+    }
+    else if (action == "select")
+    {
+        commandMessage.clear(); commandSeverity = 0;
+        const auto id = args.getProperty("id", "").toString(), entity = args.getProperty("entity", "").toString();
+        if (entity.isNotEmpty())
+        {
+            const auto* sketch = service->document().findSketch(editingSketchId); bool found = false;
+            if (sketch) for (const auto& e : sketch->entities) if (e.id == entity) found = true;
+            if (!found) error = "Entity is not in the active sketch.";
+            else selectSketchEntity(entity, (bool)args.getProperty("second", false));
+        }
+        else if (id.isNotEmpty() && !service->document().find(id) && !isInstance(id) && !isJoint(id) && !isCoupling(id) && !isIkTask(id)) error = "Unknown model tree id.";
+        else featureClicked(id);
+    }
+    else if (action == "sketch")
+    {
+        if (editingSketchId.isEmpty()) error = "Open a sketch before drawing.";
+        else { commandMessage.clear(); commandSeverity = 0; sketchCanvas->automateGesture(args, error); }
+    }
+    else if (action == "camera") { commandMessage.clear(); commandSeverity = 0; modelView.controlCamera(args, error); }
+    else if (action == "document")
+    {
+        commandMessage.clear(); commandSeverity = 0;
+        const auto op = args.getProperty("operation", "").toString();
+        const auto path = args.getProperty("path", "").toString();
+        if ((op == "new" || op == "open") && service->document().modified() && !(bool)args.getProperty("discard", false)) error = "Save the modified document first, or explicitly set discard=true.";
+        else if (op == "new") newDocument();
+        else if (op == "open" || op == "save")
+        {
+            if (!juce::File::isAbsolutePath(path)) error = "An absolute document path is required.";
+            else
+            {
+                const juce::File file(path);
+                if (op == "save")
+                {
+                    if (!file.hasFileExtension("djo")) error = "Save native documents with a .djo extension.";
+                    else if (file.existsAsFile() && !(bool)args.getProperty("overwrite", false)) error = "File exists; explicitly set overwrite=true.";
+                    else if (service->save(file,error)) { service->document().setFile(file); service->document().markSaved(); }
+                }
+                else if (service->load(file,error))
+                { editingSketchId.clear(); sketchCanvas->setVisible(false); modelView.setVisible(true); refreshFromDocument(true); selectFeature({}); modelView.fitAll(); }
+            }
+        }
+        else error = "Document operation must be new, open or save.";
+    }
+    else error = "Unknown UI action.";
+    handleUpdateNowIfNeeded();
+    if (error.isEmpty() && commandSeverity == 2 && action != "state" && action != "set") error = commandMessage;
+    if (error.isNotEmpty()) showError(error);
+    auto* reply = new juce::DynamicObject(); reply->setProperty("ok", error.isEmpty()); if (error.isNotEmpty()) reply->setProperty("error", error);
+    reply->setProperty("state", automationState()); wakeFrames(); repaint();
+    return reply;
 }
