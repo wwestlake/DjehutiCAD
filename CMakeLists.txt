@@ -109,6 +109,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadWorkspacePanel.cpp
     Source/CadExport.h
     Source/CadExport.cpp
+    Source/CadInterference.h
+    Source/CadInterference.cpp
     Source/CadExportDialog.h
     Source/CadExportDialog.cpp
 )

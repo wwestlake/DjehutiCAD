@@ -13,6 +13,8 @@ namespace
 const juce::Colour backgroundColour(0xff11161b), panelColour(0xff141a1f), toolbarColour(0xff161d23), borderColour(0xff26323a);
 const juce::Colour textColour(0xffdce9ee), dimTextColour(0xff8fa4ad), accentColour(0xff2a8c99);
 const juce::Colour selectedColour(0xffffb86b), targetColour(0xff63d48a), toolColour(0xffff7b72);
+const juce::Colour interferenceColour(0xffe0303a);           // parts of an interfering pair
+constexpr juce::uint32 interferenceRegionArgb = 0xffffe14d;  // outline of the common volume
 
 bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "cut" || type == "union" || type == "subtract" || type == "intersect"; }
 bool isPrimitiveType(const juce::String& type) { return type == "box" || type == "cylinder"; }
@@ -514,7 +516,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
             { "Modify", { E{6,"Extrude...",!sketching}, E{7,"Cut sketch...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
-            { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching} } },
+            { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
         };
     };
@@ -522,6 +524,8 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     {
         const juce::StringArray names { "undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views" };
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
+        else if (id == 26) executeUiCommand("interference");
+        else if (id == 27) executeUiCommand("clearInterference");
         else if (id >= 30 && id <= 33) modelView.toggleGuide(juce::StringArray{"floor","world","local","joints"}[id-30]);
     };
     addAndMakeVisible(modeLabel); addAndMakeVisible(statusLabel); addAndMakeVisible(unitsLabel);
@@ -709,6 +713,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
     }
     if (!force && document.revision() == shownRevision) return;
     shownRevision = document.revision();
+    if (interferenceActive && (document.revision() != interferenceReport.documentRevision || document.documentInstance() != interferenceReport.documentInstance)) markInterferenceStale();
     modelView.setSnapshot(service->snapshot());
     auto missing = [&](const juce::String& id) { return id.isNotEmpty() && document.find(id) == nullptr && document.mechanicsData().findInstance(id) == nullptr && document.mechanicsData().findJoint(id) == nullptr && document.mechanicsData().findCoupling(id) == nullptr && document.mechanicsData().findIkTask(id) == nullptr; };
     if (missing(selectedId)) selectedId.clear();
@@ -986,7 +991,9 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     if (task != Task::ik && ikMarkersShown && motionRuntime != nullptr) { motionRuntime->setIkDisplay(nullptr); ikMarkersShown = false; }
     modelView.setTargetDragEnabled(task == Task::ik && ikDragEnabled);
     if (task == Task::subshape && (selection == nullptr || !selection->selected().valid())) task = Task::none;
-    if (task == Task::subshape) { addSubshapePanel(title, instruction); showAccept = false; showCancel = false; }
+    if (task == Task::interference && !interferenceActive) task = Task::none;
+    if (task == Task::interference) { addInterferencePanel(title, instruction); showAccept = false; showCancel = false; }
+    else if (task == Task::subshape) { addSubshapePanel(title, instruction); showAccept = false; showCancel = false; }
     else if (task == Task::ik) addIkPanel(title, instruction, accept, showAccept, showCancel);
     else if (task == Task::instance || task == Task::joint || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::coupling || task == Task::newCoupling)
         addMotionPanels(title, instruction, accept, showAccept, showCancel);
@@ -1545,6 +1552,8 @@ void CadWorkspacePanel::updateHighlights()
     if (!command && !subshapePicked && selectedId.isNotEmpty()) highlights.push_back({ selectedId, selectedColour });
     if (!command && isJoint(selectedId)) if (const auto* joint = service->document().mechanicsData().findJoint(selectedId)) { if (joint->parentInstance.isNotEmpty()) highlights.push_back({ joint->parentInstance, targetColour }); highlights.push_back({ joint->childInstance, toolColour }); }
     if (command && targetId.isNotEmpty()) highlights.push_back({ targetId, targetColour });
+    if (interferenceActive && !interferenceStale)
+        for (const auto& pair : interferenceReport.interferences) { highlights.push_back({ pair.firstId, interferenceColour }); highlights.push_back({ pair.secondId, interferenceColour }); }
     if (command && toolId.isNotEmpty()) highlights.push_back({ toolId, toolColour });
     if (command && instanceBodyId.isNotEmpty()) highlights.push_back({ instanceBodyId, selectedColour });
     if (command && jointParentId.isNotEmpty()) highlights.push_back({ jointParentId, targetColour });
@@ -2062,6 +2071,7 @@ void CadWorkspacePanel::addMechanismStatus()
 void CadWorkspacePanel::mechanismChanged()
 {
     if (motionRuntime == nullptr) return;
+    if (interferenceActive && !interferenceStale) if (const auto pose = motionRuntime->pose(); pose != nullptr && pose->serial != interferenceReport.poseSerial) markInterferenceStale();
     wakeFrames();   // a new pose was published (preview, IK, DEWB): draw it without waiting for a slow tick
     linkChanged();
     // Rebuild the panel only when the solve outcome changes, not for every streamed pose.
@@ -2529,6 +2539,8 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
         return true;
     }
     if (command == "export") { showExportDialog(); return true; }
+    if (command == "interference") { checkInterference(false); return true; }
+    if (command == "clearInterference") { clearInterference(); return true; }
     const std::pair<const char*,juce::TextButton*> commands[] = {
         {"undo",&undoButton},{"redo",&redoButton},{"sketch",&sketchButton},{"box",&boxButton},{"cylinder",&cylinderButton},
         {"extrude",&extrudeButton},{"cut",&cutButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
@@ -2544,7 +2556,8 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
 {
     const bool sketch = editingSketchId.isNotEmpty();
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
-    if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect"}.contains(command)) return !sketch;
+    if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","interference"}.contains(command)) return !sketch;
+    if (command == "clearInterference") return interferenceActive;
     return true;
 }
 bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
@@ -2596,7 +2609,7 @@ juce::var CadWorkspacePanel::automationState()
     state->setProperty("camera", modelView.cameraState()); state->setProperty("guides", modelView.viewState());
     state->setProperty("renderStatus", modelView.diagnostics()); state->setProperty("gesture", sketchCanvas->gestureState());
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -2696,4 +2709,85 @@ juce::var CadWorkspacePanel::automation(const juce::var& args)
     auto* reply = new juce::DynamicObject(); reply->setProperty("ok", error.isEmpty()); if (error.isNotEmpty()) reply->setProperty("error", error);
     reply->setProperty("state", automationState()); wakeFrames(); repaint();
     return reply;
+}
+
+//==============================================================================
+// Interference inspection: one shared operation for the Assembly menu, the toolbar command and automation.
+juce::var CadWorkspacePanel::checkInterference(bool referencePose)
+{
+    if (motionRuntime != nullptr) motionRuntime->synchronize();   // the pose must belong to the current document state
+    const auto pose = motionRuntime != nullptr ? motionRuntime->pose() : nullptr;
+    const bool usePose = !referencePose && motionRuntime != nullptr;
+    auto report = djehuti::cad::interference::check(service->document(), usePose ? &motionRuntime->shownInstanceWorld() : nullptr, pose != nullptr ? pose->serial : 0);
+    if (usePose && pose != nullptr && (pose->documentRevision != service->document().revision() || pose->documentInstance != service->document().documentInstance()))
+    { report = {}; report.pose = "shown"; report.error = "The mechanism pose does not match the current model yet (it may not be solved). Resolve the mechanism, then check again."; }
+    if (!referencePose)
+    {
+        interferenceReport = report;
+        interferenceActive = report.error.isEmpty();
+        interferenceStale = false;
+        std::vector<djehuti::cad::CadOverlayLine> lines;
+        for (const auto& pair : report.interferences)
+            for (const auto& s : pair.regionEdges) lines.push_back({ { s[0], s[1], s[2] }, { s[3], s[4], s[5] }, interferenceRegionArgb });
+        modelView.setInspectionLines(std::move(lines));
+        if (report.error.isNotEmpty()) showError("Interference check: " + report.error);
+        else setMessage(!report.completed ? "Interference check incomplete: " + juce::String((int) report.failures.size()) + " pair(s) could not be evaluated."
+                        : report.interferences.empty() ? "No interference: " + juce::String(report.components) + " components, no overlapping solid volume."
+                        : juce::String((int) report.interferences.size()) + " interfering pair(s) found.", report.error.isNotEmpty() || !report.completed ? 2 : report.interferences.empty() ? 0 : 1);
+        if (interferenceActive) { if (editingSketchId.isEmpty()) task = Task::interference; }
+        rebuildTaskPanel(false);
+        updateHighlights();
+        wakeFrames();
+    }
+    return report.toVar();
+}
+
+void CadWorkspacePanel::clearInterference()
+{
+    interferenceActive = false; interferenceStale = false; interferenceReport = {};
+    modelView.setInspectionLines({});
+    if (task == Task::interference) task = Task::none;
+    rebuildTaskPanel(false);
+    updateHighlights();
+    wakeFrames();
+}
+
+void CadWorkspacePanel::markInterferenceStale()
+{
+    interferenceStale = true;
+    modelView.setInspectionLines({});
+    updateHighlights();
+    if (task == Task::interference) rebuildTaskPanel(true);
+}
+
+void CadWorkspacePanel::addInterferencePanel(juce::String& title, juce::String& instruction)
+{
+    const auto& r = interferenceReport;
+    title = "Interference Check";
+    instruction = "Solid overlap between assembly parts in the pose shown. Shared faces (contact) are not interference.";
+    if (interferenceStale) form->addNote({}, "Out of date: the pose or the model changed after this check. Press Check again.", 2);
+    form->addHeader("Result");
+    juce::String summary = juce::String(r.components) + " components, " + juce::String(r.pairs) + " pairs (" + juce::String(r.candidatePairs) + " with overlapping bounds) at pose " + juce::String((juce::int64) r.poseSerial) + ".\n";
+    summary += !r.completed ? "Incomplete: some pairs could not be evaluated."
+             : r.interferences.empty() ? "No interference found." : juce::String((int) r.interferences.size()) + " interfering pair(s).";
+    form->addNote({}, summary, 2);
+    int index = 0;
+    for (const auto& pair : r.interferences)
+    {
+        form->addHeader(pair.firstName + "  /  " + pair.secondName);
+        form->addNote({}, "Common volume " + juce::String(pair.volumeMm3, 2) + " mm3" + (pair.detail.isNotEmpty() ? "\n" + pair.detail : juce::String()), pair.detail.isNotEmpty() ? 2 : 1);
+        for (int side = 0; side < 2; ++side)
+        {
+            const auto id = side == 0 ? pair.firstId : pair.secondId;
+            form->addButton("pair" + juce::String(index) + (side == 0 ? "a" : "b"), "Select " + (side == 0 ? pair.firstName : pair.secondName),
+                            [this, id] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) { safe->selectedId = id; safe->updateHighlights(); } }); },
+                            "Highlight this part (the check stays open).");
+        }
+        ++index;
+    }
+    for (const auto& pair : r.failures) form->addNote({}, pair.firstName + " / " + pair.secondName + ": " + pair.detail, 2);
+    for (const auto& s : r.skipped) form->addNote({}, "Not inspected: " + s, 1);
+    form->addHeader("Actions");
+    form->addButton("recheck", "Check again", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->checkInterference(false); }); }, "Inspect the pose shown now.");
+    form->addButton("clearInterference", "Clear", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->clearInterference(); }); }, "Remove the highlights and close the check.");
 }

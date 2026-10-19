@@ -63,6 +63,8 @@ All agent tools are available:
 - assembly and motion: `cad_create_instance`, `cad_create_joint`, couplings, roles, `cad_motion_*`;
 - IK: `cad_ik_*`;
 - faces and export: `cad_list_faces`, `cad_create_face_sketch`, `cad_export`;
+- inspection: `cad_check_interference` (`pose`: `shown`/`reference`, `clear`), which is the same operation as
+  Assembly > Check interference;
 - workspace: `cad_workspace`, `open_*`.
 
 The `cad_ui` tool operates the visible workspace like a person does, so a recording shows the same task panels:

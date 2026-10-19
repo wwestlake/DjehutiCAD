@@ -3,6 +3,8 @@
 #include "DjehutiCAD.h"
 #include "FrustExecution.h"
 #include "CadDocument.h"
+#include "CadInterference.h"
+#include "CadMotionRuntime.h"
 #include "CadIkCommands.h"
 #include "Viewport3D.h"
 
@@ -33,6 +35,94 @@ namespace
 // build/export-check for inspection.
 // Focused rebuild check: a chain of dependent unions plus an independent body, compared with a direct OCCT fuse
 // computed outside the document; upstream edit, undo/redo, save/reopen, and mutation timings on ~50 features.
+// Focused interference check: separated, overlapping, face-contact and contained boxes; a single body built from
+// overlapping features; and a jointed assembly whose interference state follows the shown (preview) pose.
+bool runCadInterferenceCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto item = new juce::DynamicObject(); item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        return ok;
+    };
+    const auto summary = [](const CadInterferenceReport& r)
+    {
+        juce::String s = juce::String(r.components) + " components, " + juce::String((int) r.interferences.size()) + " interference(s)";
+        for (const auto& p : r.interferences) s << "; " << p.firstName << "/" << p.secondName << " " << juce::String(p.volumeMm3, 3) << " mm3 " << p.detail;
+        if (r.error.isNotEmpty()) s << "; error " << r.error;
+        return s;
+    };
+    // Two 10 mm boxes, the second at x offset dx (plus an optional third box).
+    const auto twoBoxes = [&](double dx, CadCommandService& svc)
+    {
+        juce::String e, a, b;
+        return svc.createBox(10, 10, 10, a, e) && svc.createBox(10, 10, 10, b, e) && svc.setPlacement(b, dx, 0, 0, 0, 0, 0, e);
+    };
+    {
+        CadCommandService svc; twoBoxes(20, svc);
+        const auto r = interference::check(svc.document(), nullptr, 0);
+        record(r.completed && r.components == 2 && r.interferences.empty() && r.candidatePairs == 0, "separated boxes: no interference (rejected by bounding boxes)", summary(r));
+    }
+    {
+        CadCommandService svc; twoBoxes(5, svc);
+        const auto r = interference::check(svc.document(), nullptr, 0);
+        record(r.completed && r.interferences.size() == 1 && std::abs(r.interferences[0].volumeMm3 - 500.0) < 1.0e-6 && !r.interferences[0].regionEdges.empty(),
+               "overlapping boxes: one pair, common volume 500 mm3, region outlined", summary(r));
+    }
+    {
+        CadCommandService svc; twoBoxes(10, svc);
+        const auto r = interference::check(svc.document(), nullptr, 0);
+        record(r.completed && r.candidatePairs == 1 && r.interferences.empty(), "boxes sharing a face: contact, not interference", summary(r));
+    }
+    {
+        CadCommandService svc; juce::String e, big, small;
+        svc.createBox(20, 20, 20, big, e); svc.createBox(4, 4, 4, small, e); svc.setPlacement(small, 8, 8, 8, 0, 0, 0, e);
+        const auto r = interference::check(svc.document(), nullptr, 0);
+        record(r.completed && r.interferences.size() == 1 && std::abs(r.interferences[0].volumeMm3 - 64.0) < 1.0e-6 && r.interferences[0].detail.contains("entirely inside"),
+               "contained box: interference of its whole volume, reported as contained", summary(r));
+    }
+    {
+        CadCommandService svc; juce::String e, a, b, u;
+        twoBoxes(5, svc);
+        svc.booleanOp("union", "box-1", "box-2", u, e);
+        const auto r = interference::check(svc.document(), nullptr, 0);
+        record(r.completed && r.components == 1 && r.pairs == 0 && r.interferences.empty(), "overlapping features inside one finished body are not compared", summary(r));
+    }
+    {
+        // Assembly: grounded block and a slider 5 mm away on a prismatic X joint. Moving it 10 mm makes them overlap.
+        auto svc = std::make_shared<CadCommandService>();
+        juce::String e, block, slider, groundInst, sliderInst, joint;
+        bool built = svc->createBox(20, 20, 20, block, e) && svc->createBox(10, 10, 10, slider, e) && svc->setPlacement(slider, 25, 5, 5, 0, 0, 0, e)
+                     && svc->createInstance(block, "Block", groundInst, e) && svc->createInstance(slider, "Slider", sliderInst, e) && svc->setInstanceGrounded(groundInst, true, e);
+        CadJointRequest request; request.name = "Slide"; request.type = "prismatic"; request.parentInstance = groundInst; request.childInstance = sliderInst;
+        request.originX = 25; request.originY = 10; request.originZ = 10; request.axisX = -1; request.axisY = 0; request.axisZ = 0;
+        built = built && svc->createJoint(request, joint, e);
+        if (!record(built, "assembly: grounded block, slider 5 mm away on a prismatic joint", e)) return false;
+        CadMotionRuntime runtime(svc);
+        runtime.synchronize();
+        const auto revision = svc->document().revision();
+        const bool modified = svc->document().modified();
+        const auto atRest = interference::check(svc->document(), &runtime.shownInstanceWorld(), runtime.pose()->serial);
+        record(atRest.completed && atRest.components == 2 && atRest.interferences.empty(), "reference pose: no interference", summary(atRest));
+        const bool moved = runtime.setPreviewCoordinate(joint, 0.010, e);
+        const auto shown = interference::check(svc->document(), &runtime.shownInstanceWorld(), runtime.pose()->serial);
+        record(moved && shown.completed && shown.interferences.size() == 1 && std::abs(shown.interferences[0].volumeMm3 - 500.0) < 1.0e-6 && shown.poseSerial != atRest.poseSerial,
+               "preview 10 mm into the block: 500 mm3 interference at the shown pose", summary(shown));
+        const auto saved = interference::check(svc->document(), nullptr, 0);
+        record(saved.completed && saved.interferences.empty(), "the saved reference placements are still interference-free (preview not committed)", summary(saved));
+        const bool contact = runtime.setPreviewCoordinate(joint, 0.005, e);
+        const auto touching = interference::check(svc->document(), &runtime.shownInstanceWorld(), runtime.pose()->serial);
+        record(contact && touching.completed && touching.interferences.empty(), "preview 5 mm: faces touch after a joint transform, still contact only", summary(touching));
+        record(svc->document().revision() == revision && svc->document().modified() == modified && svc->document().mechanicsData().joints.size() == 1,
+               "inspection did not change the document, joints or revision");
+    }
+    return passed;
+}
+
 bool runCadRebuildCheck(juce::var& report)
 {
     using namespace djehuti::cad;
@@ -560,6 +650,13 @@ public:
             const bool ok = runCadIkCheck(examples, report);
             const auto result = juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-ik-check.result.json");
             result.replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-interference-check"))
+        {
+            juce::var report;
+            const bool ok = runCadInterferenceCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-interference-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-rebuild-check"))

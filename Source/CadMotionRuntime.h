@@ -71,6 +71,11 @@ public:
     ~CadMotionRuntime() override;
 
     std::shared_ptr<const CadPoseSnapshot> pose() const;
+    // Double-precision world frames of the instances in the pose currently shown (the frames the published
+    // snapshot was built from). Message thread.
+    const std::map<juce::String, gp_Trsf>& shownInstanceWorld() const { return shownWorld; }
+    // Applies any pending document change to the pose now (what the periodic check would do next tick).
+    void synchronize() { timerCallback(); }
     Driver driver() const { return currentDriver; }
     void setDriver(Driver next);
     bool setPreviewCoordinate(const juce::String& jointId, double value, juce::String& error);
