@@ -38,6 +38,25 @@ juce::String ikCommandForTool(const std::string& name)
 }
 }
 
+// Physical material library and part assignments (shared command service); synchronous structured result.
+std::string DjehutiCAD::runMaterialCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const std::string& name, const juce::String& arguments)
+{
+    const auto run = [safe, name, arguments]() -> std::string
+    {
+        if (safe == nullptr || safe->cadService == nullptr) return R"({"ok": false, "error": "DjehutiCAD is closing."})";
+        const auto parsed = juce::JSON::parse(arguments.isEmpty() ? juce::String("{}") : arguments);
+        const auto reply = safe->cadService->materialCommand(juce::String(name), parsed.isObject() ? parsed : juce::var(new juce::DynamicObject()));
+        if (safe->cadWorkspace != nullptr) safe->cadWorkspace->repaint();
+        return juce::JSON::toString(reply, true).toStdString();
+    };
+    if (juce::MessageManager::getInstance()->isThisTheMessageThread()) return run();
+    auto done = std::make_shared<juce::WaitableEvent>();
+    auto output = std::make_shared<std::string>(R"({"ok": false, "error": "DjehutiCAD did not answer within 20 s."})");
+    juce::MessageManager::callAsync([run, done, output] { *output = run(); done->signal(); });
+    done->wait(20000);
+    return *output;
+}
+
 // Runs one shared IK command on the message thread and waits for its structured result, so automation
 // receives the actual outcome rather than a "scheduled" acknowledgement.
 // Face references for automation: list a body's named faces, or attach a sketch to one (synchronous result).
@@ -140,6 +159,7 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
         }
         if (name == "cad_export") return runExportCommand(safeThis, arguments);
         if (name == "cad_list_faces" || name == "cad_create_face_sketch") return runFaceCommand(safeThis, name, arguments);
+        if (name.rfind("cad_material_", 0) == 0) return runMaterialCommand(safeThis, name, arguments);
         if (const auto ik = ikCommandForTool(name); ik.isNotEmpty()) return runIkCommand(safeThis, ik, arguments);
         if (name == "cad_motion_status")
         {

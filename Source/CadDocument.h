@@ -23,6 +23,7 @@
 #include <gp_Trsf.hxx>
 
 #include "CadMechanics.h"
+#include "CadMaterials.h"
 #include "CadExport.h"
 
 #include <cstdint>
@@ -193,6 +194,12 @@ public:
     bool createIkTask(const CadIkTask& task, juce::String& id, juce::String& error);
     bool updateIkTask(const juce::String& id, const CadIkTask& task, juce::String& error);
     bool removeIkTask(const juce::String& id, juce::String& error);
+    // Physical materials (CadMaterials.h). Each call is one undoable document command; none changes geometry.
+    bool createMaterial(const CadMaterial& definition, juce::String& id, juce::String& error);
+    bool updateMaterial(const juce::String& id, const CadMaterial& definition, juce::String& error);   // id kept, revision advances
+    bool removeMaterial(const juce::String& id, bool clearAssignments, juce::String& error);            // refused while assigned unless clearAssignments
+    bool assignMaterial(const juce::String& featureId, const juce::String& materialId, juce::String& error);
+    bool clearMaterialAssignment(const juce::String& featureId, juce::String& error);
     bool undo(juce::String& error);
     bool redo(juce::String& error);
     bool save(const juce::File& file, juce::String& error);
@@ -211,6 +218,7 @@ public:
     const CadSketch* findSketch(const juce::String& id) const;
     const std::vector<CadSketch>& sketchData() const { return sketches; }
     const CadMechanics& mechanicsData() const { return mechanics; }
+    const CadMaterials& materialsData() const { return materials; }
     std::uint64_t revision() const { return documentRevision; }
     // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
     std::uint64_t documentInstance() const { return instanceId; }
@@ -241,6 +249,8 @@ private:
     juce::String serializeSketches() const;
     bool deserializeSketches(const juce::String& json, juce::String& error);
     bool restoreMechanicsFromOCAF(juce::String& error);
+    bool restoreMaterialsFromOCAF(juce::String& error);
+    bool materialAssignmentsResolve(juce::String& error) const;
     bool loadFile(const juce::File& file, juce::String& error);
     bool jointFramesFromRequest(const CadJointRequest& request, CadJoint& joint, juce::String& error) const;
     CadSketch* mutableSketch(const juce::String& id);
@@ -263,6 +273,7 @@ private:
     std::vector<CadSketch> sketches;
     std::map<juce::String, CadSketchFrame> sketchFrames;   // derived on rebuild
     CadMechanics mechanics;
+    CadMaterials materials;
     std::vector<CadPersistentReference> references;
     std::vector<CadTopologyEvolution> operationHistory;
     Handle(TDocStd_Application) ocafApplication;
@@ -335,6 +346,14 @@ public:
     bool createIkTask(const CadIkTask& task, juce::String& id, juce::String& error) { return model.createIkTask(task, id, error); }
     bool updateIkTask(const juce::String& id, const CadIkTask& task, juce::String& error) { return model.updateIkTask(id, task, error); }
     bool removeIkTask(const juce::String& id, juce::String& error) { return model.removeIkTask(id, error); }
+    bool createMaterial(const CadMaterial& definition, juce::String& id, juce::String& error) { return model.createMaterial(definition, id, error); }
+    bool updateMaterial(const juce::String& id, const CadMaterial& definition, juce::String& error) { return model.updateMaterial(id, definition, error); }
+    bool removeMaterial(const juce::String& id, bool clearAssignments, juce::String& error) { return model.removeMaterial(id, clearAssignments, error); }
+    bool assignMaterial(const juce::String& featureId, const juce::String& materialId, juce::String& error) { return model.assignMaterial(featureId, materialId, error); }
+    bool clearMaterialAssignment(const juce::String& featureId, juce::String& error) { return model.clearMaterialAssignment(featureId, error); }
+    // Material library and assignment tools (cad_material_list/create/update/delete/assign/clear) for the agent
+    // and the local API: arguments use explicit unit names; the reply is { ok, error?, id?, ... }.
+    juce::var materialCommand(const juce::String& tool, const juce::var& args);
     bool undo(juce::String& error) { return model.undo(error); }
     bool redo(juce::String& error) { return model.redo(error); }
     bool makeRepresentativeReference(const juce::String& id, CadPersistentReference& reference, juce::String& error) { return model.makeRepresentativeReference(id, reference, error); }

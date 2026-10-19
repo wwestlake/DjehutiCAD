@@ -30,6 +30,7 @@
 #include <gp_Mat.hxx>
 #include <gp_Pln.hxx>
 #include <cstdlib>
+#include <tuple>
 
 namespace
 {
@@ -241,6 +242,161 @@ bool runCadGeometryCheck(juce::var& report)
         record(geomprops::ofShape(solid, scaled).status == "nonRigidTransform" && geomprops::ofShape(solid, mirrored).status == "nonRigidTransform",
                "scaling and mirroring transforms: refused");
     }
+    return passed;
+}
+
+// Focused physical-material check through the shared command service (the same entry point as the agent and
+// local API tools): library create/read/edit/delete, part assignment, undo/redo, native save/reopen, documents
+// without material data, and refusal of invalid values and broken references. The two materials are
+// illustrative test values, not a materials database. Files stay in build/material-check.
+bool runCadMaterialCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto item = new juce::DynamicObject(); item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-material-check.result.json").replaceWithText(juce::JSON::toString(report, false));   // progress survives a crash
+        return ok;
+    };
+    const auto args = [](const juce::String& json) { return juce::JSON::parse(json); };
+    const auto text = [](const juce::var& v) { return juce::JSON::toString(v, true); };
+    const auto prop = [](const juce::var& material, const char* key) { return material.getProperty("properties", {}).getProperty(key, {}); };
+    const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/material-check");
+    folder.createDirectory();
+
+    CadCommandService svc; juce::String e, box, sketch;
+    svc.createBox(40, 20, 10, box, e); svc.createSketch("XY", 0, sketch, e);
+    const auto mechanicsBefore = text(mech::toJson(svc.document().mechanicsData()));
+
+    // 1. Create and retrieve.
+    auto steel = svc.materialCommand("cad_material_create", args(R"({"name":"Illustrative steel - test only","densityKgPerM3":7850,"youngsModulusMPa":200000,"poissonsRatio":0.3,"yieldStrengthMPa":250,"note":"validation value"})"));
+    auto pla = svc.materialCommand("cad_material_create", args(R"({"name":"Illustrative PLA - test only","densityKgPerM3":1240,"youngsModulusMPa":3500,"poissonsRatio":0.36})"));
+    const auto steelId = steel.getProperty("id", "").toString(), plaId = pla.getProperty("id", "").toString();
+    const auto gotSteel = svc.materialCommand("cad_material_list", args(R"({"material":")" + steelId + R"("})")).getProperty("material", {});
+    record((bool) steel.getProperty("ok", false) && steelId == "mat-1" && plaId == "mat-2" && (double) prop(gotSteel, "density").getProperty("value", 0) == 7850.0
+               && prop(gotSteel, "density").getProperty("unit", "").toString() == "kg/m^3" && prop(gotSteel, "youngsModulus").getProperty("unit", "").toString() == "MPa"
+               && (double) prop(gotSteel, "poissonsRatio").getProperty("value", 0) == 0.3 && (int) gotSteel.getProperty("revision", 0) == 1,
+           "create and retrieve: stable ids mat-1, mat-2; values with explicit units", text(gotSteel));
+    const auto gotPla = svc.materialCommand("cad_material_list", args(R"({"material":"mat-2"})")).getProperty("material", {});
+    record(gotPla.getProperty("properties", {}).hasProperty("density") && !gotPla.getProperty("properties", {}).hasProperty("yieldStrength"),
+           "unspecified yield strength is absent, not zero", text(gotPla));
+
+    // 2. Edit without changing identity.
+    auto edited = svc.materialCommand("cad_material_update", args(R"({"material":"mat-1","name":"Illustrative steel S - test only","youngsModulusMPa":210000,"clear":["yieldStrength"]})"));
+    const auto afterEdit = edited.getProperty("material", {});
+    record((bool) edited.getProperty("ok", false) && afterEdit.getProperty("id", "").toString() == "mat-1" && (int) afterEdit.getProperty("revision", 0) == 2
+               && (double) prop(afterEdit, "youngsModulus").getProperty("value", 0) == 210000.0 && (double) prop(afterEdit, "density").getProperty("value", 0) == 7850.0
+               && !afterEdit.getProperty("properties", {}).hasProperty("yieldStrength") && svc.document().materialsData().materials.size() == 2,
+           "edit keeps id mat-1, revision 2, untouched fields kept, cleared field unspecified", text(afterEdit));
+
+    // 3. Assign and clear; geometry untouched.
+    const auto shapeBefore = svc.document().find(box)->shape;
+    const auto volumeBefore = geomprops::ofFeature(svc.document(), box).volumeMm3;
+    auto assigned = svc.materialCommand("cad_material_assign", args(R"({"feature":")" + box + R"(","material":"mat-1"})"));
+    const auto lookup = svc.materialCommand("cad_material_list", args(R"({"feature":")" + box + R"("})")).getProperty("assignment", {});
+    record((bool) assigned.getProperty("ok", false) && lookup.getProperty("material", "").toString() == "mat-1" && lookup.getProperty("featureName", "").toString() == "Box 1",
+           "assign mat-1 to Box 1 and retrieve it", text(lookup));
+    record(svc.document().find(box)->shape.IsSame(shapeBefore) && std::abs(geomprops::ofFeature(svc.document(), box).volumeMm3 - volumeBefore) < 1.0e-9,
+           "assignment did not change the part's geometry (same shape, same volume)");
+    svc.materialCommand("cad_material_assign", args(R"({"feature":")" + box + R"(","material":"mat-2"})"));
+    record(svc.document().materialsData().assignments.size() == 1 && svc.document().materialsData().assignmentFor(box)->materialId == "mat-2", "re-assigning replaces the material (one per part)");
+    auto cleared = svc.materialCommand("cad_material_clear", args(R"({"feature":")" + box + R"("})"));
+    const auto none = svc.materialCommand("cad_material_list", args(R"({"feature":")" + box + R"("})"));
+    record((bool) cleared.getProperty("ok", false) && none.hasProperty("assignment") && none.getProperty("assignment", {}).isVoid(), "clear: the part has no material (null)", text(none));
+
+    // 4. Undo / redo.
+    juce::String ue;
+    svc.undo(ue);
+    const bool undoClear = svc.document().materialsData().assignmentFor(box) != nullptr && svc.document().materialsData().assignmentFor(box)->materialId == "mat-2";
+    svc.undo(ue); svc.undo(ue);
+    const bool undoAssign = svc.document().materialsData().assignments.empty();
+    svc.undo(ue);
+    const auto* reverted = svc.document().materialsData().find("mat-1");
+    const bool undoEdit = reverted != nullptr && reverted->revision == 1 && reverted->youngsModulusMPa == 200000.0 && reverted->yieldStrengthMPa == 250.0;
+    svc.redo(ue); svc.redo(ue); svc.redo(ue);
+    const bool redone = svc.document().materialsData().find("mat-1")->revision == 2 && svc.document().materialsData().assignmentFor(box) != nullptr && svc.document().materialsData().assignmentFor(box)->materialId == "mat-2";
+    record(undoClear && undoAssign && undoEdit && redone, "undo restores clear, both assignments and the edit; redo re-applies them",
+           juce::String("undoClear ") + (undoClear ? "y" : "n") + " undoAssign " + (undoAssign ? "y" : "n") + " undoEdit " + (undoEdit ? "y" : "n") + " redo " + (redone ? "y" : "n"));
+
+    // 5. Native save and reopen.
+    const auto file = folder.getChildFile("materials.djo");
+    const auto libraryBefore = text(matl::toJson(svc.document().materialsData()));
+    const bool saved = svc.save(file, e);
+    CadCommandService reopened; const bool loaded = reopened.load(file, e);
+    const auto libraryAfter = text(matl::toJson(reopened.document().materialsData()));
+    record(saved && loaded && libraryAfter == libraryBefore && reopened.document().materialsData().assignmentFor(box) != nullptr,
+           "save and reopen keep definitions, revisions, assignments and numbering", libraryAfter + (loaded ? "" : " load: " + e));
+    juce::String third; reopened.createMaterial({ {}, "Third (test only)", 1, "isotropic", 1000.0, 1000.0, 0.25, {}, {} }, third, e);
+    record(third == "mat-3", "after reopen, a new material gets the next unused id", third);
+    record(text(mech::toJson(svc.document().mechanicsData())) == mechanicsBefore && text(mech::toJson(reopened.document().mechanicsData())) == mechanicsBefore,
+           "mechanics serialization unchanged by material edits, save and reopen");
+
+    // 6. Documents without material data.
+    {
+        CadCommandService plain; juce::String pe, pbox;
+        plain.createBox(10, 10, 10, pbox, pe);
+        const auto plainFile = folder.getChildFile("no-materials.djo"), plainJson = folder.getChildFile("no-materials.json");
+        const bool ok = plain.save(plainFile, pe) && plain.save(plainJson, pe);
+        CadCommandService back; const bool open = back.load(plainFile, pe);
+        record(ok && open && back.document().materialsData().empty() && !plainJson.loadFileAsString().contains("\"materials\""),
+               "a document without materials saves no material data and reopens with an empty library", pe);
+        const auto demo = juce::File("D:/000 Electronics Lab Development/CAD Demonstrations/Articulated Robot Arm - Assemblies and Joints.djo");
+        if (demo.existsAsFile())
+        {
+            CadCommandService old; juce::String oe;
+            const bool opened = old.load(demo, oe);
+            record(opened && old.document().materialsData().empty() && old.document().mechanicsData().joints.size() == 4 && old.document().mechanicsData().instances.size() == 5,
+                   "an existing assembly document (saved before materials existed) opens unchanged: 5 instances, 4 joints, no materials", oe);
+        }
+        else record(true, "existing assembly document not present on this machine; skipped");
+    }
+
+    // 7. Rejections.
+    const auto refused = [&](const juce::String& tool, const juce::String& json, const juce::String& expect)
+    {
+        const auto r = svc.materialCommand(tool, args(json));
+        return !(bool) r.getProperty("ok", true) && r.getProperty("error", "").toString().containsIgnoreCase(expect) ? juce::String() : text(r);
+    };
+    const auto count = svc.document().materialsData().materials.size();
+    juce::StringArray failures;
+    for (const auto& [tool, json, expect] : std::vector<std::tuple<juce::String, juce::String, juce::String>> {
+             { "cad_material_create", R"({"name":"Bad","densityKgPerM3":-1,"youngsModulusMPa":1,"poissonsRatio":0.3})", "density" },
+             { "cad_material_create", R"({"name":"Bad","densityKgPerM3":0,"youngsModulusMPa":1,"poissonsRatio":0.3})", "density" },
+             { "cad_material_create", R"({"name":"Bad","densityKgPerM3":1,"youngsModulusMPa":1,"poissonsRatio":0.5})", "Poisson" },
+             { "cad_material_create", R"({"name":"Bad","densityKgPerM3":1,"poissonsRatio":0.3})", "Young" },
+             { "cad_material_create", R"({"name":"","densityKgPerM3":1,"youngsModulusMPa":1,"poissonsRatio":0.3})", "name" },
+             { "cad_material_create", R"({"name":"Bad","densityKgPerM3":"heavy","youngsModulusMPa":1,"poissonsRatio":0.3})", "number" },
+             { "cad_material_create", R"({"name":"Bad","model":"orthotropic","densityKgPerM3":1,"youngsModulusMPa":1,"poissonsRatio":0.3})", "model" },
+             { "cad_material_create", R"({"name":"Bad","densityKgPerM3":1,"youngsModulusMPa":1,"poissonsRatio":0.3,"yieldStrengthMPa":0})", "yield" },
+             { "cad_material_update", R"({"material":"mat-1","clear":["density"]})", "density" },
+             { "cad_material_update", R"({"material":"mat-99","name":"x"})", "Unknown material" },
+             { "cad_material_assign", R"({"feature":"box-99","material":"mat-1"})", "Unknown part" },
+             { "cad_material_assign", R"({"feature":")" + sketch + R"(","material":"mat-1"})", "sketch" },
+             { "cad_material_assign", R"({"feature":")" + box + R"(","material":"mat-99"})", "Unknown material" },
+             { "cad_material_delete", R"({"material":"mat-2"})", "assigned" } })
+        if (const auto f = refused(tool, json, expect); f.isNotEmpty()) failures.add(tool + " " + json + " -> " + f);
+    record(failures.isEmpty() && svc.document().materialsData().materials.size() == count && svc.document().materialsData().assignmentFor(box)->materialId == "mat-2",
+           "invalid values, unknown model, broken references and deleting a used material are refused without changes", failures.joinIntoString(" | "));
+    {
+        CadMaterials bad; juce::String be;
+        const bool wrongUnit = !matl::fromJson(args(R"({"schemaVersion":1,"nextNumber":2,"materials":[{"id":"mat-1","name":"X","revision":1,"model":"isotropic","properties":{"density":{"value":7.85,"unit":"g/cm^3"},"youngsModulus":{"value":1,"unit":"MPa"},"poissonsRatio":{"value":0.3,"unit":"1"}}}],"assignments":[]})"), bad, be) && be.contains("kg/m^3");
+        const bool newer = !matl::fromJson(args(R"({"schemaVersion":2,"materials":[],"assignments":[]})"), bad, be) && be.contains("schema");
+        const bool dangling = !matl::fromJson(args(R"({"schemaVersion":1,"nextNumber":1,"materials":[],"assignments":[{"feature":"box-1","material":"mat-7"}]})"), bad, be) && be.contains("missing material");
+        record(wrongUnit && newer && dangling, "stored data with a wrong unit, a newer schema or a dangling assignment is refused");
+    }
+    auto removed = svc.materialCommand("cad_material_delete", args(R"({"material":"mat-2","clearAssignments":true})"));
+    record((bool) removed.getProperty("ok", false) && svc.document().materialsData().find("mat-2") == nullptr && svc.document().materialsData().assignments.empty(),
+           "delete with clearAssignments removes the material and its assignments", text(removed));
+    svc.materialCommand("cad_material_assign", args(R"({"feature":")" + box + R"(","material":"mat-1"})"));
+    const bool partDeleted = svc.remove(box, e);
+    record(partDeleted && svc.document().materialsData().assignments.empty() && svc.document().materialsData().find("mat-1") != nullptr,
+           "deleting a part removes its assignment and keeps the material", e);
+    svc.undo(ue);
+    record(svc.document().find(box) != nullptr && svc.document().materialsData().assignmentFor(box) != nullptr, "undoing the part deletion restores the part and its assignment");
     return passed;
 }
 
@@ -785,6 +941,13 @@ public:
             juce::var report;
             const bool ok = runCadGeometryCheck(report);
             juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-geometry-check.result.json").replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-material-check"))
+        {
+            juce::var report;
+            const bool ok = runCadMaterialCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-material-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-rebuild-check"))
