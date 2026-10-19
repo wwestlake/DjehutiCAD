@@ -3,6 +3,7 @@
 #include "DjehutiCAD.h"
 #include "FrustExecution.h"
 #include "CadDocument.h"
+#include "CadGeometricProperties.h"
 #include "CadInterference.h"
 #include "CadMotionRuntime.h"
 #include "CadIkCommands.h"
@@ -18,9 +19,16 @@
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 #include "lib3mf_implicit.hpp"
+#include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepGProp.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRep_Builder.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
+#include <TopoDS_Compound.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Mat.hxx>
+#include <gp_Pln.hxx>
 #include <cstdlib>
 
 namespace
@@ -119,6 +127,119 @@ bool runCadInterferenceCheck(juce::var& report)
         record(contact && touching.completed && touching.interferences.empty(), "preview 5 mm: faces touch after a joint transform, still contact only", summary(touching));
         record(svc->document().revision() == revision && svc->document().modified() == modified && svc->document().mechanicsData().joints.size() == 1,
                "inspection did not change the document, joints or revision");
+    }
+    return passed;
+}
+
+// Focused geometric-property check: an analytic box, a translated and rotated assembly instance (centroid
+// c' = R c + t, tensor I' = R I R^T), a rotated body placement, and explicit refusal of non-solid geometry.
+bool runCadGeometryCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto item = new juce::DynamicObject(); item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        return ok;
+    };
+    using Tensor = std::array<std::array<double, 3>, 3>;
+    const auto close = [](double a, double b, double scale) { return std::abs(a - b) <= 1.0e-9 * juce::jmax(1.0, scale); };
+    const auto tensorError = [](const Tensor& a, const Tensor& b) { double e = 0.0; for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) e = juce::jmax(e, std::abs(a[(size_t) i][(size_t) j] - b[(size_t) i][(size_t) j])); return e; };
+    const auto describe = [](const CadGeometricProperties& p)
+    {
+        if (!p.ok()) return p.status + ": " + p.message;
+        juce::String s = "V " + juce::String(p.volumeMm3, 6) + " mm3, c (" + juce::String(p.centroidMm.X(), 6) + ", " + juce::String(p.centroidMm.Y(), 6) + ", " + juce::String(p.centroidMm.Z(), 6) + ") mm, I [";
+        for (const auto& r : p.inertiaMm5) s << " (" << juce::String(r[0], 3) << " " << juce::String(r[1], 3) << " " << juce::String(r[2], 3) << ")";
+        return s + " ] mm5";
+    };
+    // Box a x b x c (mm): V = abc, central tensor diag(V(b2+c2)/12, V(a2+c2)/12, V(a2+b2)/12).
+    const double a = 40.0, b = 20.0, c = 10.0, V = a * b * c;
+    const Tensor boxTensor { { { V * (b * b + c * c) / 12.0, 0.0, 0.0 }, { 0.0, V * (a * a + c * c) / 12.0, 0.0 }, { 0.0, 0.0, V * (a * a + b * b) / 12.0 } } };
+    const double scale = boxTensor[2][2];
+
+    // 1. Rectangular solid placed with its corner at (5, -3, 2).
+    {
+        CadCommandService svc; juce::String e, box;
+        const bool built = svc.createBox(a, b, c, box, e) && svc.setPlacement(box, 5, -3, 2, 0, 0, 0, e);
+        const auto p = geomprops::ofFeature(svc.document(), box);
+        record(built && p.ok() && p.frame == "world" && p.solids == 1 && close(p.volumeMm3, V, V)
+                   && close(p.centroidMm.X(), 25.0, 1.0) && close(p.centroidMm.Y(), 7.0, 1.0) && close(p.centroidMm.Z(), 7.0, 1.0)
+                   && tensorError(p.inertiaMm5, boxTensor) <= 1.0e-9 * scale,
+               "box 40 x 20 x 10 at (5,-3,2): V 8000 mm3, centroid (25,7,7) mm, central tensor diag(333333.33, 1133333.33, 1333333.33) mm5", describe(p) + (built ? "" : " build: " + e));
+        record(p.ok() && close(p.principalMomentsMm5[0], boxTensor[0][0], scale) && close(p.principalMomentsMm5[1], boxTensor[1][1], scale) && close(p.principalMomentsMm5[2], boxTensor[2][2], scale)
+                   && std::abs(std::abs(p.principalAxes[0][0]) - 1.0) < 1.0e-9 && std::abs(std::abs(p.principalAxes[2][2]) - 1.0) < 1.0e-9,
+               "box principal moments ascending along X, Y, Z", juce::String(p.principalMomentsMm5[0], 3) + ", " + juce::String(p.principalMomentsMm5[1], 3) + ", " + juce::String(p.principalMomentsMm5[2], 3));
+    }
+    // 2. Assembly instance of a box modelled at the origin, placed at (100, 50, 20) rotated 20, -35, 30 deg (extrinsic XYZ).
+    {
+        CadCommandService svc; juce::String e, box, inst;
+        bool built = svc.createBox(a, b, c, box, e) && svc.createInstance(box, "Moved box", inst, e);
+        const auto placement = mech::frameFromEulerDegrees(100, 50, 20, 20, -35, 30);
+        built = built && svc.setInstancePlacement(inst, placement, e);
+        const auto revision = svc.document().revision(); const bool modified = svc.document().modified();
+        const auto p = geomprops::ofInstance(svc.document(), inst);
+        const auto trsf = placement.toTrsf();
+        const auto expectedCentroid = gp_Pnt(a / 2, b / 2, c / 2).Transformed(trsf);
+        const gp_Mat R = trsf.VectorialPart();
+        Tensor expected {};
+        for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) { double s = 0.0; for (int k = 0; k < 3; ++k) s += R.Value(i + 1, k + 1) * boxTensor[(size_t) k][(size_t) k] * R.Value(j + 1, k + 1); expected[(size_t) i][(size_t) j] = s; }
+        double offDiagonal = 0.0; for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) if (i != j) offDiagonal = juce::jmax(offDiagonal, std::abs(p.inertiaMm5[(size_t) i][(size_t) j]));
+        record(built && p.ok() && close(p.volumeMm3, V, V) && expectedCentroid.Distance(p.centroidMm) < 1.0e-9 * 100.0,
+               "rotated, translated instance: volume unchanged, centroid = R c + t", describe(p) + " expected c (" + juce::String(expectedCentroid.X(), 6) + ", " + juce::String(expectedCentroid.Y(), 6) + ", " + juce::String(expectedCentroid.Z(), 6) + ")" + (built ? "" : " build: " + e));
+        record(p.ok() && tensorError(p.inertiaMm5, expected) <= 1.0e-9 * scale && offDiagonal > 1.0e3,
+               "rotated instance tensor = R I R^T (with non-zero products of inertia)", "max error " + juce::String(tensorError(p.inertiaMm5, expected), 9) + " mm5, largest product " + juce::String(offDiagonal, 3) + " mm5");
+        record(p.ok() && close(p.principalMomentsMm5[0], boxTensor[0][0], scale) && close(p.principalMomentsMm5[1], boxTensor[1][1], scale) && close(p.principalMomentsMm5[2], boxTensor[2][2], scale),
+               "principal moments are invariant under the rotation", juce::String(p.principalMomentsMm5[0], 3) + ", " + juce::String(p.principalMomentsMm5[1], 3) + ", " + juce::String(p.principalMomentsMm5[2], 3));
+        const auto direct = geomprops::ofShape(svc.document().find(box)->shape, trsf);
+        record(direct.ok() && direct.centroidMm.Distance(p.centroidMm) < 1.0e-9 && tensorError(direct.inertiaMm5, p.inertiaMm5) <= 1.0e-9 * scale,
+               "ofShape with the same rigid transform matches ofInstance", describe(direct));
+        std::map<juce::String, gp_Trsf> pose; gp_Trsf shifted = trsf; shifted.SetTranslationPart(gp_Vec(0, 0, 500)); pose[inst] = shifted;
+        const auto atPose = geomprops::ofInstance(svc.document(), inst, &pose);
+        record(atPose.ok() && atPose.centroidMm.Distance(gp_Pnt(a / 2, b / 2, c / 2).Transformed(shifted)) < 1.0e-9 * 500.0 && tensorError(atPose.inertiaMm5, p.inertiaMm5) <= 1.0e-9 * scale,
+               "a supplied pose moves the centroid only (same rotation, same tensor)", describe(atPose));
+        record(svc.document().revision() == revision && svc.document().modified() == modified, "property queries did not change the document");
+    }
+    // A body placement rotated 90 deg about Z swaps the X and Y moments.
+    {
+        CadCommandService svc; juce::String e, box;
+        const bool built = svc.createBox(a, b, c, box, e) && svc.setPlacement(box, 10, 0, 0, 0, 0, 90, e);
+        const auto p = geomprops::ofFeature(svc.document(), box);
+        Bnd_Box bounds; BRepBndLib::Add(svc.document().find(box)->shape, bounds); double x0, y0, z0, x1, y1, z1; bounds.Get(x0, y0, z0, x1, y1, z1);
+        const gp_Pnt middle((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+        const Tensor swapped { { { boxTensor[1][1], 0.0, 0.0 }, { 0.0, boxTensor[0][0], 0.0 }, { 0.0, 0.0, boxTensor[2][2] } } };
+        record(built && p.ok() && close(p.volumeMm3, V, V) && p.centroidMm.Distance(middle) < 1.0e-6 && tensorError(p.inertiaMm5, swapped) <= 1.0e-9 * scale,
+               "body placed with Rotate Z 90: I_xx and I_yy swap, centroid at the bounding-box centre", describe(p) + (built ? "" : " build: " + e));
+    }
+    // 3. Unsupported or invalid geometry fails explicitly.
+    {
+        CadCommandService svc; juce::String e, sketch, box, inst;
+        svc.createSketch("XY", 0, sketch, e); svc.createBox(10, 10, 10, box, e); svc.createInstance(box, "Box", inst, e);
+        const auto ofSketch = geomprops::ofFeature(svc.document(), sketch);
+        record(!ofSketch.ok() && ofSketch.status == "nullShape" && ofSketch.volumeMm3 == 0.0, "sketch feature (no solid): refused", describe(ofSketch));
+        const auto unknown = geomprops::ofFeature(svc.document(), "box-999");
+        const auto unknownInstance = geomprops::ofInstance(svc.document(), "inst-999");
+        record(unknown.status == "unknownFeature" && unknownInstance.status == "unknownInstance", "unknown feature and instance ids: refused", describe(unknown) + " | " + describe(unknownInstance));
+        record(geomprops::ofShape(TopoDS_Shape()).status == "nullShape", "null shape: refused");
+        const auto face = geomprops::ofShape(BRepBuilderAPI_MakeFace(gp_Pln(), 0, 10, 0, 10).Face());
+        record(face.status == "notSolid", "planar face: refused as not solid", describe(face));
+        const auto shell = geomprops::ofShape(BRepPrimAPI_MakeBox(10, 10, 10).Shell());
+        record(shell.status == "notSolid", "closed shell without a solid: refused as not solid", describe(shell));
+        TopoDS_Compound mixed; BRep_Builder builder; builder.MakeCompound(mixed);
+        builder.Add(mixed, BRepPrimAPI_MakeBox(10, 10, 10).Solid()); builder.Add(mixed, BRepBuilderAPI_MakeFace(gp_Pln(), 20, 30, 0, 10).Face());
+        const auto mix = geomprops::ofShape(mixed);
+        record(mix.status == "notSolid", "solid plus a loose face: refused instead of integrating part of it", describe(mix));
+        TopoDS_Compound twoSolids; builder.MakeCompound(twoSolids);
+        builder.Add(twoSolids, BRepPrimAPI_MakeBox(10, 10, 10).Solid()); builder.Add(twoSolids, BRepPrimAPI_MakeBox(gp_Pnt(20, 0, 0), 10, 10, 10).Solid());
+        const auto both = geomprops::ofShape(twoSolids);
+        record(both.ok() && both.solids == 2 && close(both.volumeMm3, 2000.0, 2000.0) && close(both.centroidMm.X(), 15.0, 1.0), "compound of two solids: supported, combined", describe(both));
+        gp_Trsf scaled; scaled.SetScale(gp_Pnt(), 2.0);
+        gp_Trsf mirrored; mirrored.SetMirror(gp_Ax2(gp_Pnt(), gp_Dir(1, 0, 0)));
+        const auto solid = svc.document().find(box)->shape;
+        record(geomprops::ofShape(solid, scaled).status == "nonRigidTransform" && geomprops::ofShape(solid, mirrored).status == "nonRigidTransform",
+               "scaling and mirroring transforms: refused");
     }
     return passed;
 }
@@ -657,6 +778,13 @@ public:
             juce::var report;
             const bool ok = runCadInterferenceCheck(report);
             juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-interference-check.result.json").replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-geometry-check"))
+        {
+            juce::var report;
+            const bool ok = runCadGeometryCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-geometry-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-rebuild-check"))
