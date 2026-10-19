@@ -38,14 +38,15 @@ juce::String ikCommandForTool(const std::string& name)
 }
 }
 
-// Physical material library and part assignments (shared command service); synchronous structured result.
-std::string DjehutiCAD::runMaterialCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const std::string& name, const juce::String& arguments)
+// Physical materials and structural analysis cases (shared command service); synchronous structured result.
+std::string DjehutiCAD::runEngineeringCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const std::string& name, const juce::String& arguments)
 {
     const auto run = [safe, name, arguments]() -> std::string
     {
         if (safe == nullptr || safe->cadService == nullptr) return R"({"ok": false, "error": "DjehutiCAD is closing."})";
         const auto parsed = juce::JSON::parse(arguments.isEmpty() ? juce::String("{}") : arguments);
-        const auto reply = safe->cadService->materialCommand(juce::String(name), parsed.isObject() ? parsed : juce::var(new juce::DynamicObject()));
+        const auto args = parsed.isObject() ? parsed : juce::var(new juce::DynamicObject());
+        const auto reply = name.rfind("cad_analysis_", 0) == 0 ? safe->cadService->analysisCommand(juce::String(name), args) : safe->cadService->materialCommand(juce::String(name), args);
         if (safe->cadWorkspace != nullptr) safe->cadWorkspace->repaint();
         return juce::JSON::toString(reply, true).toStdString();
     };
@@ -159,7 +160,7 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
         }
         if (name == "cad_export") return runExportCommand(safeThis, arguments);
         if (name == "cad_list_faces" || name == "cad_create_face_sketch") return runFaceCommand(safeThis, name, arguments);
-        if (name.rfind("cad_material_", 0) == 0) return runMaterialCommand(safeThis, name, arguments);
+        if (name.rfind("cad_material_", 0) == 0 || name.rfind("cad_analysis_", 0) == 0) return runEngineeringCommand(safeThis, name, arguments);
         if (const auto ik = ikCommandForTool(name); ik.isNotEmpty()) return runIkCommand(safeThis, ik, arguments);
         if (name == "cad_motion_status")
         {

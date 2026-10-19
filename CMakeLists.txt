@@ -115,6 +115,10 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadGeometricProperties.cpp
     Source/CadMaterials.h
     Source/CadMaterials.cpp
+    Source/CadEngineeringUnits.h
+    Source/CadEngineeringUnits.cpp
+    Source/CadAnalysisCases.h
+    Source/CadAnalysisCases.cpp
     Source/CadExportDialog.h
     Source/CadExportDialog.cpp
 )

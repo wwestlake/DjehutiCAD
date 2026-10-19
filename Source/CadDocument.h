@@ -24,6 +24,7 @@
 
 #include "CadMechanics.h"
 #include "CadMaterials.h"
+#include "CadAnalysisCases.h"
 #include "CadExport.h"
 
 #include <cstdint>
@@ -200,6 +201,11 @@ public:
     bool removeMaterial(const juce::String& id, bool clearAssignments, juce::String& error);            // refused while assigned unless clearAssignments
     bool assignMaterial(const juce::String& featureId, const juce::String& materialId, juce::String& error);
     bool clearMaterialAssignment(const juce::String& featureId, juce::String& error);
+    // Structural analysis cases (CadAnalysisCases.h): definitions only, one undoable command each. Create and update
+    // refuse cases whose references do not resolve now; later breakage is reported by analysis::referenceProblems.
+    bool createAnalysisCase(const CadAnalysisCase& definition, juce::String& id, juce::String& error);
+    bool updateAnalysisCase(const juce::String& id, const CadAnalysisCase& definition, juce::String& error);   // id kept, revision advances
+    bool removeAnalysisCase(const juce::String& id, juce::String& error);
     bool undo(juce::String& error);
     bool redo(juce::String& error);
     bool save(const juce::File& file, juce::String& error);
@@ -219,6 +225,7 @@ public:
     const std::vector<CadSketch>& sketchData() const { return sketches; }
     const CadMechanics& mechanicsData() const { return mechanics; }
     const CadMaterials& materialsData() const { return materials; }
+    const CadAnalysisCases& analysisData() const { return analysisCases; }
     std::uint64_t revision() const { return documentRevision; }
     // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
     std::uint64_t documentInstance() const { return instanceId; }
@@ -250,6 +257,7 @@ private:
     bool deserializeSketches(const juce::String& json, juce::String& error);
     bool restoreMechanicsFromOCAF(juce::String& error);
     bool restoreMaterialsFromOCAF(juce::String& error);
+    bool restoreAnalysisFromOCAF(juce::String& error);
     bool materialAssignmentsResolve(juce::String& error) const;
     bool loadFile(const juce::File& file, juce::String& error);
     bool jointFramesFromRequest(const CadJointRequest& request, CadJoint& joint, juce::String& error) const;
@@ -274,6 +282,7 @@ private:
     std::map<juce::String, CadSketchFrame> sketchFrames;   // derived on rebuild
     CadMechanics mechanics;
     CadMaterials materials;
+    CadAnalysisCases analysisCases;
     std::vector<CadPersistentReference> references;
     std::vector<CadTopologyEvolution> operationHistory;
     Handle(TDocStd_Application) ocafApplication;
@@ -354,6 +363,8 @@ public:
     // Material library and assignment tools (cad_material_list/create/update/delete/assign/clear) for the agent
     // and the local API: arguments use explicit unit names; the reply is { ok, error?, id?, ... }.
     juce::var materialCommand(const juce::String& tool, const juce::var& args);
+    // Analysis-case tools (cad_analysis_list/create/update/delete); each listed case carries status and problems.
+    juce::var analysisCommand(const juce::String& tool, const juce::var& args);
     bool undo(juce::String& error) { return model.undo(error); }
     bool redo(juce::String& error) { return model.redo(error); }
     bool makeRepresentativeReference(const juce::String& id, CadPersistentReference& reference, juce::String& error) { return model.makeRepresentativeReference(id, reference, error); }

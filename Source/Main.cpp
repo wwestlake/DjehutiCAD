@@ -3,6 +3,7 @@
 #include "DjehutiCAD.h"
 #include "FrustExecution.h"
 #include "CadDocument.h"
+#include "CadEngineeringUnits.h"
 #include "CadGeometricProperties.h"
 #include "CadInterference.h"
 #include "CadMotionRuntime.h"
@@ -397,6 +398,204 @@ bool runCadMaterialCheck(juce::var& report)
            "deleting a part removes its assignment and keeps the material", e);
     svc.undo(ue);
     record(svc.document().find(box) != nullptr && svc.document().materialsData().assignmentFor(box) != nullptr, "undoing the part deletion restores the part and its assignment");
+    return passed;
+}
+
+// Focused analysis-case check: unit conversions; case create/edit through the shared command service with mixed
+// input units; stored SI values; reference validation (refused on create, reported after a geometry or assembly
+// change, never re-attached); undo/redo; native save/reopen; documents without analysis data. No solving.
+bool runCadAnalysisCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto item = new juce::DynamicObject(); item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-analysis-check.result.json").replaceWithText(juce::JSON::toString(report, false));
+        return ok;
+    };
+    const auto args = [](const juce::String& json) { return juce::JSON::parse(json); };
+    const auto text = [](const juce::var& v) { return juce::JSON::toString(v, true); };
+    const auto approx = [](double a, double b) { return std::abs(a - b) <= 1.0e-12 * juce::jmax(1.0, std::abs(b)); };
+    const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/analysis-check");
+    folder.createDirectory();
+
+    // 1. Units.
+    {
+        juce::String e; double v = 0.0; juce::StringArray bad;
+        const auto si = [&](const char* q, double x, const char* u, double expect) { if (!units::toSI(q, x, u, v, e) || !approx(v, expect)) bad.add(juce::String(q) + " " + juce::String(x) + " " + u + " -> " + juce::String(v, 12) + " " + e); };
+        si("force", 2.5, "kN", 2500.0); si("force", 1.0, "lbf", 4.4482216152605); si("moment", 1500.0, "N*mm", 1.5); si("moment", 2.0, "kN*m", 2000.0);
+        si("length", 250.0, "mm", 0.25); si("length", 1.0, "in", 0.0254); si("mass", 1.5, "t", 1500.0); si("mass", 500.0, "g", 0.5);
+        si("stress", 210000.0, "MPa", 2.1e11); si("stress", 1.0, "N/mm^2", 1.0e6); si("density", 7.85, "g/cm^3", 7850.0);
+        si("acceleration", -1.0, "g0", -9.80665); si("area", 100.0, "mm^2", 1.0e-4); si("secondMomentOfArea", 1.0e6, "mm^4", 1.0e-6); si("volume", 1.0e9, "mm^3", 1.0);
+        double back = 0.0; units::fromSI("moment", 1.5, "N*mm", back, e); if (!approx(back, 1500.0)) bad.add("fromSI N*mm");
+        if (!approx(units::massKg(7850.0, 1.0e6), 7.85) || !approx(units::mm5ToM5(1.0e15), 1.0) || !approx(units::mpaToPa(200000.0), 2.0e11) || !approx(units::nmmToNm(1000.0), 1.0)) bad.add("fixed helpers");
+        record(bad.isEmpty(), "unit conversions to and from SI (force, moment, length, mass, stress, density, acceleration, area, I, volume)", bad.joinIntoString(" | "));
+        juce::String e1, e2; double x = 0.0;
+        record(!units::toSI("length", 1.0, "kN", x, e1) && e1.contains("not a length unit") && !units::toSI("speed", 1.0, "m/s", x, e2) && e2.contains("Unknown quantity"),
+               "wrong unit for a quantity and unknown quantities are refused", e1 + " | " + e2);
+    }
+
+    // Model: a beam (box 200 x 20 x 20) with an instance, and a union of two boxes for face invalidation.
+    CadCommandService svc; juce::String e, beam, inst, a, b, u;
+    svc.createBox(200, 20, 20, beam, e); svc.createInstance(beam, "Beam", inst, e);
+    svc.createBox(20, 20, 20, a, e); svc.createBox(10, 10, 10, b, e); svc.setPlacement(b, 15, 5, 5, 0, 0, 0, e); svc.booleanOp("union", a, b, u, e);
+    std::vector<CadFaceInfo> faces; svc.listFaces(beam, faces, e);
+    juce::String endFace, startFace;
+    for (const auto& f : faces) { if (f.normal.X() > 0.9) endFace = f.token; if (f.normal.X() < -0.9) startFace = f.token; }
+    juce::String unionFace;
+    for (const auto& [shape, tokens] : svc.document().find(u)->faceOrigins) for (const auto& t : tokens) if (t.startsWith(b + "/")) unionFace = t;
+    record(endFace.isNotEmpty() && startFace.isNotEmpty() && unionFace.isNotEmpty(), "test model with persistent face tokens", endFace + ", " + startFace + ", " + unionFace + " " + e);
+    const auto mechanicsBefore = text(mech::toJson(svc.document().mechanicsData()));
+    const auto materialsBefore = text(matl::toJson(svc.document().materialsData()));
+
+    // 2. Create with mixed input units.
+    const auto createJson = R"({"name":"Cantilever tip load","description":"illustrative test case","parts":[{"feature":")" + beam + R"("}],
+        "loads":[{"name":"Tip force","type":"force","target":{"feature":")" + beam + R"(","face":")" + endFace + R"("},"frame":"world","direction":[0,0,-2],"magnitude":{"value":2,"unit":"kN"},"point":{"value":[0.2,0.01,0.02],"unit":"m"}},
+                 {"name":"Tip torque","type":"moment","target":{"feature":")" + beam + R"(","face":")" + endFace + R"("},"frame":")" + inst + R"(","direction":[1,0,0],"magnitude":{"value":1500,"unit":"N*mm"}}],
+        "supports":[{"name":"Root","target":{"feature":")" + beam + R"(","face":")" + startFace + R"("},"kind":"fixed"}],
+        "gravity":{"acceleration":{"value":[0,0,-1],"unit":"g0"}},
+        "settings":{"analysisType":"linearStatic","options":{"note":"future solver options are kept"}}})";
+    auto created = svc.analysisCommand("cad_analysis_create", args(createJson));
+    const auto c1 = created.getProperty("case", {});
+    const auto load1 = c1.getProperty("loads", {})[0], load2 = c1.getProperty("loads", {})[1], support = c1.getProperty("supports", {})[0];
+    record((bool) created.getProperty("ok", false) && created.getProperty("id", "").toString() == "case-1" && c1.getProperty("status", "").toString() == "valid"
+               && (double) load1.getProperty("magnitude", {}).getProperty("value", 0) == 2000.0 && load1.getProperty("magnitude", {}).getProperty("unit", "").toString() == "N"
+               && (double) load1.getProperty("direction", {})[2] == -1.0 && (double) load1.getProperty("point", {}).getProperty("value", {})[0] == 200.0 && load1.getProperty("point", {}).getProperty("unit", "").toString() == "mm"
+               && approx((double) load2.getProperty("magnitude", {}).getProperty("value", 0), 1.5) && load2.getProperty("magnitude", {}).getProperty("unit", "").toString() == "N*m" && load2.getProperty("frame", "").toString() == inst
+               && support.getProperty("fixed", {}).size() == 6 && approx((double) c1.getProperty("gravity", {}).getProperty("acceleration", {}).getProperty("value", {})[2], -9.80665)
+               && load1.getProperty("id", "").toString() == "load-1" && load2.getProperty("id", "").toString() == "load-2" && support.getProperty("id", "").toString() == "support-3",
+           "create: case-1 valid; 2 kN -> 2000 N, 1500 N*mm -> 1.5 N*m, 0.2 m -> 200 mm, unit direction, fixed support, gravity 1 g0 -> 9.80665 m/s^2", text(created));
+    record(c1.getProperty("settings", {}).getProperty("options", {}).getProperty("note", "").toString() == "future solver options are kept", "free-form settings options are kept");
+
+    // 3. Modify.
+    auto updated = svc.analysisCommand("cad_analysis_update", args(R"({"case":"case-1","name":"Cantilever tip load 3 kN","loads":[{"id":"load-1","type":"force","target":{"feature":")" + beam + R"(","face":")" + endFace + R"("},"direction":[0,0,-1],"magnitude":{"value":3,"unit":"kN"}},{"type":"force","target":{"feature":")" + beam + R"("},"direction":[0,1,0],"magnitude":{"value":100,"unit":"N"}}],"gravity":null})"));
+    const auto c2 = updated.getProperty("case", {});
+    record((bool) updated.getProperty("ok", false) && c2.getProperty("id", "").toString() == "case-1" && (int) c2.getProperty("revision", 0) == 2 && c2.getProperty("name", "").toString() == "Cantilever tip load 3 kN"
+               && (double) c2.getProperty("loads", {})[0].getProperty("magnitude", {}).getProperty("value", 0) == 3000.0 && c2.getProperty("loads", {})[1].getProperty("id", "").toString() == "load-4"
+               && !c2.hasProperty("gravity") && c2.getProperty("supports", {}).size() == 1,
+           "edit: same id, revision 2, loads replaced (kept id load-1, new id load-4), gravity removed, supports kept", text(c2));
+
+    // 4. Serialization round trip.
+    {
+        CadAnalysisCases copy; juce::String re;
+        const auto stored = analysis::toJson(svc.document().analysisData());
+        const bool ok = analysis::fromJson(juce::JSON::parse(text(stored)), copy, re) && text(analysis::toJson(copy)) == text(stored);
+        record(ok, "stored loads, supports, frames and units survive a JSON round trip unchanged", re);
+    }
+
+    // 5. Invalid input and references are refused without changing the document.
+    {
+        const auto revision = svc.document().revision();
+        juce::StringArray failures;
+        const auto base = [&](const juce::String& load, const juce::String& supportJson = {}) { return R"({"name":"Bad","parts":[{"feature":")" + beam + R"("}],"loads":[)" + load + R"(],"supports":[)" + supportJson + "]}"; };
+        const auto okLoad = [&](const juce::String& target) { return R"({"type":"force","target":)" + target + R"(,"direction":[0,0,-1],"magnitude":{"value":1,"unit":"N"}})"; };
+        for (const auto& [json, expect] : std::vector<std::pair<juce::String, juce::String>> {
+                 { R"({"name":"Bad","parts":[{"feature":"box-99"}]})", "does not exist" },
+                 { base(okLoad(R"({"feature":")" + beam + R"(","face":")" + beam + R"(/nonexistent"})")), "face" },
+                 { base(okLoad(R"({"feature":")" + a + R"("})")), "not one of the case's parts" },
+                 { base(R"({"type":"force","target":{"feature":")" + beam + R"("},"frame":"inst-99","direction":[0,0,-1],"magnitude":{"value":1,"unit":"N"}})"), "frame" },
+                 { base(R"({"type":"force","target":{"feature":")" + beam + R"("},"direction":[0,0,0],"magnitude":{"value":1,"unit":"N"}})"), "zero" },
+                 { base(R"({"type":"force","target":{"feature":")" + beam + R"("},"direction":[0,0,1],"magnitude":{"value":1,"unit":"kg"}})"), "not a force unit" },
+                 { base(R"({"type":"force","target":{"feature":")" + beam + R"("},"direction":[0,0,1],"magnitude":{"value":0,"unit":"N"}})"), "greater than zero" },
+                 { base(R"({"type":"pressure","target":{"feature":")" + beam + R"("},"direction":[0,0,1],"magnitude":{"value":1,"unit":"N"}})"), "type" },
+                 { base(okLoad(R"({"feature":")" + beam + R"(","instance":")" + inst + R"("})")), "exactly one" },
+                 { base(okLoad(R"({"feature":")" + beam + R"("})"), R"({"target":{"feature":")" + beam + R"("},"fixed":["ux","uw"]})"), "degree of freedom" },
+                 { base(okLoad(R"({"feature":")" + beam + R"("})"), R"({"target":{"feature":")" + beam + R"("},"fixed":[]})"), "fixes no" },
+                 { R"({"name":"Bad","settings":{"analysisType":"modal"}})", "analysis type" },
+                 { R"({"name":"Bad","parts":[{"feature":")" + beam + R"(","face":")" + endFace + R"("}]})", "faces belong" },
+                 { R"({"name":""})", "name" } })
+        {
+            const auto r = svc.analysisCommand("cad_analysis_create", args(json));
+            if ((bool) r.getProperty("ok", true) || !r.getProperty("error", "").toString().containsIgnoreCase(expect)) failures.add(json.substring(0, 80) + " -> " + text(r).substring(0, 200));
+        }
+        record(failures.isEmpty() && svc.document().revision() == revision && svc.document().analysisData().cases.size() == 1,
+               "14 invalid cases (missing part/face/frame, out-of-scope target, bad direction/unit/magnitude/type/dof, unknown analysis type) refused, document unchanged", failures.joinIntoString(" | "));
+    }
+
+    // 6. A later geometry or assembly change is reported, not re-attached.
+    {
+        auto onUnion = svc.analysisCommand("cad_analysis_create", args(R"({"name":"Union face support","parts":[{"feature":")" + u + R"("}],"supports":[{"target":{"feature":")" + u + R"(","face":")" + unionFace + R"("},"kind":"pinned"}]})"));
+        auto onInstance = svc.analysisCommand("cad_analysis_create", args(R"({"name":"Instance case","parts":[{"instance":")" + inst + R"("}],"loads":[{"type":"force","target":{"instance":")" + inst + R"("},"frame":")" + inst + R"(","direction":[0,0,-1],"magnitude":{"value":10,"unit":"N"}}]})"));
+        const auto unionId = onUnion.getProperty("id", "").toString(), instId = onInstance.getProperty("id", "").toString();
+        record((bool) onUnion.getProperty("ok", false) && (bool) onInstance.getProperty("ok", false) && onUnion.getProperty("case", {}).getProperty("status", "").toString() == "valid",
+               "cases on a union face and on an assembly instance are valid", text(onUnion).substring(0, 300));
+        svc.setPlacement(b, 5, 5, 5, 0, 0, 0, e);   // the second box now lies inside the first: its faces leave the union
+        const auto listed = svc.analysisCommand("cad_analysis_list", args(R"({"case":")" + unionId + R"("})")).getProperty("case", {});
+        const auto problems = listed.getProperty("problems", {});
+        record(listed.getProperty("status", "").toString() == "invalid" && problems.size() == 1 && problems[0].toString().contains(unionFace) && problems[0].toString().contains("not moved")
+                   && listed.getProperty("supports", {})[0].getProperty("target", {}).getProperty("face", "").toString() == unionFace,
+               "geometry edit that removes a referenced face: case reported invalid, reference kept as authored", text(problems));
+        svc.removeInstance(inst, e);
+        const auto lost = svc.analysisCommand("cad_analysis_list", args(R"({"case":")" + instId + R"("})")).getProperty("case", {});
+        record(lost.getProperty("status", "").toString() == "invalid" && text(lost.getProperty("problems", {})).contains("does not exist"),
+               "deleting a referenced assembly instance: case reported invalid", text(lost.getProperty("problems", {})));
+        const auto stillValid = svc.analysisCommand("cad_analysis_list", args(R"({"case":"case-1"})")).getProperty("case", {});
+        record(stillValid.getProperty("status", "").toString() == "valid", "a case that does not reference the deleted instance stays valid", text(stillValid.getProperty("problems", {})));
+        juce::String ue; svc.undo(ue); svc.undo(ue);
+        record(svc.analysisCommand("cad_analysis_list", args(R"({"case":")" + unionId + R"("})")).getProperty("case", {}).getProperty("status", "").toString() == "valid"
+                   && svc.analysisCommand("cad_analysis_list", args(R"({"case":"case-1"})")).getProperty("case", {}).getProperty("status", "").toString() == "valid",
+               "undoing the geometry and instance changes makes the cases valid again");
+    }
+
+    // 7. Undo / redo of case edits.
+    {
+        juce::String ue;
+        svc.undo(ue); svc.undo(ue);   // remove the two extra cases
+        svc.undo(ue);                 // revert the update
+        const auto* c = svc.document().analysisData().find("case-1");
+        const bool undone = c != nullptr && c->revision == 1 && c->gravity.has_value() && c->loads.size() == 2 && c->loads[0].magnitude == 2000.0;
+        svc.redo(ue);
+        const auto* r = svc.document().analysisData().find("case-1");
+        const bool redone = r != nullptr && r->revision == 2 && !r->gravity.has_value() && r->loads[0].magnitude == 3000.0;
+        auto deleted = svc.analysisCommand("cad_analysis_delete", args(R"({"case":"case-1"})"));
+        const bool gone = (bool) deleted.getProperty("ok", false) && svc.document().analysisData().find("case-1") == nullptr;
+        svc.undo(ue);
+        record(undone && redone && gone && svc.document().analysisData().find("case-1") != nullptr, "undo/redo of create, edit and delete",
+               juce::String("undone ") + (undone ? "y" : "n") + " redone " + (redone ? "y" : "n") + " deleted " + (gone ? "y" : "n"));
+        record(text(mech::toJson(svc.document().mechanicsData())) == mechanicsBefore && text(matl::toJson(svc.document().materialsData())) == materialsBefore,
+               "assembly and material serialization unchanged by analysis-case edits");
+    }
+
+    // 8. Native save and reopen.
+    {
+        const auto file = folder.getChildFile("analysis.djo");
+        const auto before = text(analysis::toJson(svc.document().analysisData()));
+        juce::String se; const bool saved = svc.save(file, se);
+        CadCommandService reopened; const bool loaded = reopened.load(file, se);
+        const auto after = text(analysis::toJson(reopened.document().analysisData()));
+        const auto listed = reopened.analysisCommand("cad_analysis_list", args("{}"));
+        record(saved && loaded && after == before && listed.getProperty("cases", {})[0].getProperty("status", "").toString() == "valid",
+               "save and reopen keep cases, loads, supports, units and numbering; references still valid", se + " " + after.substring(0, 300));
+        auto next = reopened.analysisCommand("cad_analysis_create", args(R"({"name":"After reopen"})"));
+        record(next.getProperty("id", "").toString() == "case-2", "after reopen a new case gets the next unused id", next.getProperty("id", "").toString());
+    }
+
+    // 9. Documents without analysis data.
+    {
+        CadCommandService plain; juce::String pe, pbox;
+        plain.createBox(10, 10, 10, pbox, pe);
+        const auto plainFile = folder.getChildFile("no-analysis.djo"), plainJson = folder.getChildFile("no-analysis.json");
+        const bool ok = plain.save(plainFile, pe) && plain.save(plainJson, pe);
+        CadCommandService back; const bool open = back.load(plainFile, pe);
+        record(ok && open && back.document().analysisData().empty() && !plainJson.loadFileAsString().contains("analysisCases"),
+               "a document without analysis cases stores none and reopens normally", pe);
+        const auto demo = juce::File("D:/000 Electronics Lab Development/CAD Demonstrations/Articulated Robot Arm - Assemblies and Joints.djo");
+        if (demo.existsAsFile())
+        {
+            CadCommandService old; juce::String oe;
+            const bool opened = old.load(demo, oe);
+            record(opened && old.document().analysisData().empty() && old.document().mechanicsData().joints.size() == 4, "an existing assembly document opens normally with no analysis cases", oe);
+        }
+        else record(true, "existing assembly document not present on this machine; skipped");
+        CadAnalysisCases bad; juce::String be;
+        const bool newer = !analysis::fromJson(args(R"({"schemaVersion":2,"cases":[]})"), bad, be) && be.contains("schema");
+        const bool wrongUnit = !analysis::fromJson(args(R"({"schemaVersion":1,"nextNumber":2,"cases":[{"id":"case-1","name":"X","parts":[{"feature":"box-1"}],"loads":[{"id":"load-1","type":"force","target":{"feature":"box-1"},"direction":[0,0,1],"magnitude":{"value":1,"unit":"kg"}}]}]})"), bad, be);
+        record(newer && wrongUnit, "stored data with a newer schema or an invalid unit is refused");
+    }
     return passed;
 }
 
@@ -948,6 +1147,13 @@ public:
             juce::var report;
             const bool ok = runCadMaterialCheck(report);
             juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-material-check.result.json").replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-analysis-check"))
+        {
+            juce::var report;
+            const bool ok = runCadAnalysisCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-analysis-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-rebuild-check"))

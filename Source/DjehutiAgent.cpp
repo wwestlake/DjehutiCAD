@@ -66,6 +66,12 @@ std::vector<ai_provider::ToolDefinition> tools()
     const auto materialDelete = R"({"type":"object","properties":{"material":{"type":"string"},"clearAssignments":{"type":"boolean"}},"required":["material"],"additionalProperties":false})";
     const auto materialAssign = R"({"type":"object","properties":{"feature":{"type":"string"},"material":{"type":"string"}},"required":["feature","material"],"additionalProperties":false})";
     const auto materialClear = R"({"type":"object","properties":{"feature":{"type":"string"}},"required":["feature"],"additionalProperties":false})";
+    // Analysis cases: nested objects are described in the tool text; quantities are {"value": ..., "unit": "..."}.
+    const auto analysisFields = std::string(R"("name":{"type":"string"},"description":{"type":"string"},"parts":{"type":"array","items":{"type":"object"}},"loads":{"type":"array","items":{"type":"object"}},"supports":{"type":"array","items":{"type":"object"}},"gravity":{"type":["object","null"]},"settings":{"type":"object"})");
+    static const std::string analysisCreate = R"({"type":"object","properties":{)" + analysisFields + R"(},"required":["name"],"additionalProperties":false})";
+    static const std::string analysisUpdate = R"({"type":"object","properties":{"case":{"type":"string"},)" + analysisFields + R"(},"required":["case"],"additionalProperties":false})";
+    const auto analysisCaseOnly = R"({"type":"object","properties":{"case":{"type":"string"}},"required":["case"],"additionalProperties":false})";
+    const auto analysisList = R"({"type":"object","properties":{"case":{"type":"string"}},"additionalProperties":false})";
     const auto fillet = R"({"type":"object","properties":{"target":{"type":"string"},"edges":{"type":"array","items":{"type":"integer"}},"radius":{"type":"number"}},"required":["target","edges","radius"],"additionalProperties":false})";
     return {
         { "open_cad_workspace", "Open the CAD workspace.", emptyObject },
@@ -119,7 +125,11 @@ std::vector<ai_provider::ToolDefinition> tools()
         { "cad_material_update", "Edit a material definition; its id stays the same and its revision advances. Omitted fields keep their values; clear lists properties to make unspecified.", materialUpdate.c_str() },
         { "cad_material_delete", "Delete a material. Refused while parts use it unless clearAssignments is true (which also removes those assignments).", materialDelete },
         { "cad_material_assign", "Assign a material to a solid part (feature id); replaces any previous assignment. Does not change geometry.", materialAssign },
-        { "cad_material_clear", "Remove a part's material assignment.", materialClear }
+        { "cad_material_clear", "Remove a part's material assignment.", materialClear },
+        { "cad_analysis_list", "List structural analysis cases (definitions only, no results). Each case reports status valid/invalid and problems: references to parts, instances or faces that no longer exist are reported, never re-attached. With case: one case.", analysisList },
+        { "cad_analysis_create", "Create a structural analysis case (a problem definition; nothing is solved). parts: [{feature} or {instance}]. loads: [{type force|moment, target {feature|instance, face?}, frame \"world\" or an instance id, direction [x,y,z], magnitude {value, unit N|kN|lbf or N*m|N*mm|kN*m}, point? {value [x,y,z], unit mm|m|in}}]. supports: [{target, frame, kind fixed|pinned or fixed [ux,uy,uz,rx,ry,rz]}]. gravity?: {acceleration {value [x,y,z], unit m/s^2|g0}}. settings?: {analysisType linearStatic, options {}}. Stored in SI (N, N*m, m/s^2), points in mm. Faces use persistent tokens from cad_list_faces.", analysisCreate.c_str() },
+        { "cad_analysis_update", "Edit an analysis case: given fields replace the stored ones (whole lists), others are kept; gravity null removes gravity. The id stays, the revision advances. References must resolve.", analysisUpdate.c_str() },
+        { "cad_analysis_delete", "Delete an analysis case by id.", analysisCaseOnly }
     };
 }
 }
