@@ -38,6 +38,8 @@ public:
     juce::var viewState() const;
     void restoreViewState(const juce::var& state);
     void resetCamera();
+    juce::var cameraState() const;
+    bool controlCamera(const juce::var&, juce::String& error);
     // Publishes a frame and requests one render only when the camera, pose, geometry, highlights or visibility
     // changed; returns true if it did. Hidden and minimised views do nothing.
     bool prepareFrame(float sharedAngle, std::uint64_t serial);
@@ -148,6 +150,7 @@ public:
     juce::String viewState() const;
     void restoreViewState(const juce::String&);
     bool addView();
+    juce::var controlViewCamera(int view, const juce::var&);
     WorkspaceMenu workspaceMenu;
     void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source);
     void setSelection(std::shared_ptr<djehuti::cad::CadSelection> next);

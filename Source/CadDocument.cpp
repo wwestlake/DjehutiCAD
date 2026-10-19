@@ -48,7 +48,7 @@ double number(const juce::var& value, double fallback) { return value.isDouble()
 TDF_Label field(const TDF_Label& label, int tag) { return label.FindChild(tag, true); }
 TDF_Label existingField(const TDF_Label& label, int tag) { return label.FindChild(tag, false); }
 void writeString(const TDF_Label& label, int tag, const juce::String& value) { TDataStd_AsciiString::Set(field(label, tag), TCollection_AsciiString(value.toRawUTF8())); }
-juce::String readString(const TDF_Label& label, int tag) { Handle(TDataStd_AsciiString) a; const auto child=existingField(label, tag); return !child.IsNull() && child.FindAttribute(TDataStd_AsciiString::GetID(), a) && !a.IsNull() ? juce::String(a->Get().ToCString()) : juce::String(); }
+juce::String readString(const TDF_Label& label, int tag) { Handle(TDataStd_AsciiString) a; const auto child=existingField(label, tag); return !child.IsNull() && child.FindAttribute(TDataStd_AsciiString::GetID(), a) && !a.IsNull() ? juce::String::fromUTF8(a->Get().ToCString()) : juce::String(); }   // stored as UTF-8 bytes by writeString
 void writeReal(const TDF_Label& label, int tag, double value) { TDataStd_Real::Set(field(label, tag), value); }
 double readReal(const TDF_Label& label, int tag, double fallback) { Handle(TDataStd_Real) a; const auto child=existingField(label, tag); return !child.IsNull() && child.FindAttribute(TDataStd_Real::GetID(), a) && !a.IsNull() ? a->Get() : fallback; }
 void writeInteger(const TDF_Label& label, int tag, int value) { TDataStd_Integer::Set(field(label, tag), value); }

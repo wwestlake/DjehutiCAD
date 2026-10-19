@@ -8,6 +8,7 @@
 #include "FrustEngine.h"
 #include "CadIkCommands.h"
 #include "CadToolbox.h"
+#include "LocalAgentApi.h"
 
 namespace
 {
@@ -111,6 +112,139 @@ std::string DjehutiCAD::runIkCommand(const juce::Component::SafePointer<DjehutiC
     return *output;
 }
 
+
+std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<DjehutiCAD>& safeThis,
+                                     const std::string& name, const juce::String& arguments, std::function<bool()> keepWaiting)
+{
+    // Export plans on the message thread and writes on the calling thread, so it is not wrapped below.
+    if (name == "cad_export" && !juce::MessageManager::getInstance()->isThisTheMessageThread()) return runExportCommand(safeThis, arguments);
+    const auto execute = [safeThis, name, arguments]() -> std::string
+    {
+        if (safeThis == nullptr || safeThis->cadWorkspace == nullptr) return R"({"ok":false,"error":"DjehutiCAD is closing."})";
+        const auto parsedArgs = juce::JSON::parse(arguments);
+        if (!parsedArgs.isObject()) return R"({"ok":false,"error":"Arguments must be an object."})";
+        if (name == "cad_ui")
+        {
+            if (parsedArgs.getProperty("action", "").toString() == "camera" && (int)parsedArgs.getProperty("view", -1) >= 0)
+                return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
+            return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
+        }
+        if (name == "cad_workspace") return runWorkspaceCommand(safeThis, arguments);
+        if (name == "cad_export") return runExportCommand(safeThis, arguments);
+        if (name == "cad_list_faces" || name == "cad_create_face_sketch") return runFaceCommand(safeThis, name, arguments);
+        if (const auto ik = ikCommandForTool(name); ik.isNotEmpty()) return runIkCommand(safeThis, ik, arguments);
+        if (name == "cad_motion_status")
+        {
+            auto result = juce::JSON::parse(safeThis->motionLink->statusBoard()->get());
+            if (result.isObject()) result.getDynamicObject()->setProperty("ok", true);
+            return juce::JSON::toString(result).toStdString();
+        }
+        bool ok = true; juce::String error, id;
+            if (name == "open_cad_workspace") safeThis->selectWorkspace(0);
+            else if (name == "open_frust_editor") safeThis->selectWorkspace(1);
+            else if (name == "open_node_editor") safeThis->selectWorkspace(2);
+            else if (name == "open_3d_views") { safeThis->selectWorkspace(3); safeThis->viewsPanel->addView(); }
+            else if (name.rfind("cad_", 0) == 0)
+            {
+                const auto parsed = juce::JSON::parse(arguments);
+                auto number = [&](const char* key, double fallback = 0.0) { return parsed.getProperty(key, fallback).toString().getDoubleValue(); };
+                if (name == "cad_create_box") ok = safeThis->cadService->createBox(number("width"), number("depth"), number("height"), id, error);
+                else if (name == "cad_create_cylinder") ok = safeThis->cadService->createCylinder(number("radius"), number("height"), id, error);
+                else if (name == "cad_create_sketch") ok = safeThis->cadService->createSketch(parsed.getProperty("plane", "XY").toString(), number("offset"), id, error);
+                else if (name == "cad_sketch_line") ok = safeThis->cadService->addSketchLine(parsed.getProperty("sketch", "").toString(), number("x1"), number("y1"), number("x2"), number("y2"), id, error);
+                else if (name == "cad_sketch_rectangle") ok = safeThis->cadService->addSketchRectangle(parsed.getProperty("sketch", "").toString(), number("x"), number("y"), number("width"), number("height"), id, error);
+                else if (name == "cad_sketch_circle") ok = safeThis->cadService->addSketchCircle(parsed.getProperty("sketch", "").toString(), number("x"), number("y"), number("radius"), id, error);
+                else if (name == "cad_sketch_dimension") ok = safeThis->cadService->setSketchEntityDimension(parsed.getProperty("sketch", "").toString(), parsed.getProperty("entity", "").toString(), number("value"), error);
+                else if (name == "cad_sketch_position") ok = safeThis->cadService->setSketchEntityPosition(parsed.getProperty("sketch", "").toString(), parsed.getProperty("entity", "").toString(), number("x"), number("y"), error);
+                else if (name == "cad_sketch_constraint") ok = safeThis->cadService->addSketchConstraint(parsed.getProperty("sketch", "").toString(), parsed.getProperty("type", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), number("value"), id, error);
+                else if (name == "cad_extrude") ok = safeThis->cadService->createExtrude(parsed.getProperty("sketch", "").toString(), number("depth"), static_cast<bool>(parsed.getProperty("reverse", false)), id, error);
+                else if (name == "cad_cut") ok = safeThis->cadService->createCut(parsed.getProperty("sketch", "").toString(), parsed.getProperty("target", "").toString(), number("depth"), static_cast<bool>(parsed.getProperty("throughAll", false)), static_cast<bool>(parsed.getProperty("reverse", false)), id, error);
+                else if (name == "cad_set_dimensions") ok = safeThis->cadService->setDimensions(parsed.getProperty("id", "").toString(), number("width"), number("depth"), number("height"), number("radius"), error);
+                else if (name == "cad_set_placement") ok = safeThis->cadService->setPlacement(parsed.getProperty("id", "").toString(), number("x"), number("y"), number("z"), number("rx"), number("ry"), number("rz"), error);
+                else if (name == "cad_boolean") ok = safeThis->cadService->booleanOp(parsed.getProperty("operation", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), id, error);
+                else if (name == "cad_undo") ok = safeThis->cadService->undo(error);
+                else if (name == "cad_redo") ok = safeThis->cadService->redo(error);
+                else if (name == "cad_create_instance") ok = safeThis->cadService->createInstance(parsed.getProperty("feature", "").toString(), parsed.getProperty("name", "").toString(), id, error);
+                else if (name == "cad_create_joint" || name == "cad_update_joint")
+                {
+                    djehuti::cad::CadJointRequest request;
+                    auto vector = [&](const char* key, int index, double fallback) { const auto* list = parsed.getProperty(key, {}).getArray(); return list != nullptr && list->size() == 3 ? (double) (*list)[index] : fallback; };
+                    request.name = parsed.getProperty("name", "").toString(); request.type = parsed.getProperty("type", "").toString();
+                    request.parentInstance = parsed.getProperty("parent", "").toString(); if (request.parentInstance == "world") request.parentInstance.clear();
+                    request.childInstance = parsed.getProperty("child", "").toString();
+                    request.originX = vector("origin", 0, 0.0); request.originY = vector("origin", 1, 0.0); request.originZ = vector("origin", 2, 0.0);
+                    request.axisX = vector("axis", 0, 0.0); request.axisY = vector("axis", 1, 0.0); request.axisZ = vector("axis", 2, 1.0);
+                    request.reference = number("reference"); request.hasLimits = parsed.hasProperty("lower") && parsed.hasProperty("upper"); request.lower = number("lower"); request.upper = number("upper");
+                    if (name == "cad_create_joint") ok = safeThis->cadService->createJoint(request, id, error);
+                    else ok = safeThis->cadService->updateJoint(parsed.getProperty("joint", "").toString(), request, error);
+                }
+                else if (name == "cad_set_joint_mapping")
+                {
+                    djehuti::cad::CadSignalMapping mapping;
+                    mapping.jointId = parsed.getProperty("joint", "").toString(); mapping.signalId = parsed.getProperty("signal", "").toString();
+                    mapping.sourceQuantity = parsed.getProperty("quantity", "").toString(); mapping.sourceUnit = parsed.getProperty("unit", "").toString();
+                    mapping.scale = number("scale", 1.0); mapping.offset = number("offset"); mapping.initialCoordinate = number("initialCoordinate");
+                    ok = safeThis->cadService->setJointMapping(mapping, error);
+                }
+                else if (name == "cad_set_instance_grounded") ok = safeThis->cadService->setInstanceGrounded(parsed.getProperty("instance", "").toString(), static_cast<bool>(parsed.getProperty("grounded", true)), error);
+                else if (name == "cad_set_instance_placement")
+                {
+                    auto vector = [&](const char* key, int index) { const auto* list = parsed.getProperty(key, {}).getArray(); return list != nullptr && list->size() == 3 ? (double) (*list)[index] : 0.0; };
+                    const auto frame = djehuti::cad::mech::frameFromEulerDegrees(vector("origin", 0), vector("origin", 1), vector("origin", 2), vector("rotationDeg", 0), vector("rotationDeg", 1), vector("rotationDeg", 2));
+                    ok = safeThis->cadService->setInstancePlacement(parsed.getProperty("instance", "").toString(), frame, error);
+                }
+                else if (name == "cad_set_joint_role")
+                    ok = safeThis->cadService->setJointRole(parsed.getProperty("joint", "").toString(), parsed.getProperty("role", "").toString(), number("lockValue"), static_cast<bool>(parsed.getProperty("enforceLimits", false)), error);
+                else if (name == "cad_create_coupling")
+                {
+                    djehuti::cad::CadCoupling coupling;
+                    coupling.name = parsed.getProperty("name", "").toString(); coupling.type = parsed.getProperty("type", "").toString();
+                    coupling.jointA = parsed.getProperty("jointA", "").toString(); coupling.jointB = parsed.getProperty("jointB", "").toString();
+                    coupling.ratio = number("ratio", 1.0); coupling.pitchRadius = number("pitchRadius", 0.01); coupling.lead = number("lead", 0.001); coupling.offset = number("offset");
+                    ok = safeThis->cadService->createCoupling(coupling, id, error);
+                }
+                else if (name == "cad_remove_coupling") ok = safeThis->cadService->removeCoupling(parsed.getProperty("coupling", "").toString(), error);
+                else if (name == "cad_motion_preview")
+                {
+                    if (static_cast<bool>(parsed.getProperty("reset", false))) safeThis->motionRuntime->resetToReference();
+                    else ok = safeThis->motionRuntime->setPreviewCoordinate(parsed.getProperty("joint", "").toString(), number("value"), error);
+                }
+                else if (name == "cad_motion_lifecycle")
+                {
+                    const auto command = parsed.getProperty("command", "").toString();
+                    if (command == "retry") ok = safeThis->motionLink->retryLifecycle(error);
+                    else ok = safeThis->motionLink->requestLifecycle(command, (std::int64_t) std::llround(number("stepMs", 10.0) * 1.0e9), error);
+                }
+                else if (name == "cad_motion_listen")
+                {
+                    if (static_cast<bool>(parsed.getProperty("listen", true))) ok = safeThis->motionLink->startListening(error);
+                    else safeThis->motionLink->stopListening();
+                }
+                else { ok = false; error = "Unknown CAD tool."; }
+                if (safeThis->cadWorkspace != nullptr) safeThis->cadWorkspace->repaint();
+            }
+            else { ok = false; error = "Unknown tool."; }
+
+        auto* result = new juce::DynamicObject(); result->setProperty("ok", ok && error.isEmpty());
+        if (error.isNotEmpty()) result->setProperty("error", error);
+        if (id.isNotEmpty()) result->setProperty("id", id);
+        result->setProperty("state", safeThis->cadWorkspace->automationState());
+        return juce::JSON::toString(juce::var(result)).toStdString();
+    };
+    if (juce::MessageManager::getInstance()->isThisTheMessageThread()) return execute();
+    struct Pending { juce::WaitableEvent done; std::string result; };
+    auto pending = std::make_shared<Pending>();
+    juce::MessageManager::callAsync([execute, pending] { pending->result = execute(); pending->done.signal(); });
+    if (keepWaiting)
+    {
+        while (!pending->done.wait(200))
+            if (!keepWaiting()) return R"({"ok":false,"status":"unknown","error":"DjehutiCAD is shutting down; the command's outcome was not observed."})";
+    }
+    else if (!pending->done.wait(120000))
+        return R"({"ok":false,"status":"pending","error":"The command has not finished after 120 s and may still complete; inspect CAD state before issuing another change."})";
+    return pending->result;
+}
+
 DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
 {
     juce::PropertiesFile::Options storage;
@@ -171,104 +305,9 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     }
     dockManager->registerPanel("views", "3D Views", std::move(viewsPanelContent), CreationDock::DockTargetZone::CenterTab);
     const juce::Component::SafePointer<DjehutiCAD> safeThis(this);
-    const auto motionBoard = motionLink->statusBoard();
-    auto agentPanelContent = std::make_unique<DjehutiAgentPanel>(properties, [safeThis, motionBoard](const std::string& name, const std::string& arguments, std::shared_ptr<DjehutiAgentRequestState> state) {
-        // Link status is read from the thread-safe status board so the agent sees it immediately.
-        if (name == "cad_motion_status") return motionBoard->get().toStdString();
-        if (name == "cad_workspace") return (state == nullptr || state->cancelled) ? std::string(R"({"ok":false,"error":"Request cancelled."})") : runWorkspaceCommand(safeThis,arguments);
-        if (name == "cad_export")
-            return (state == nullptr || state->cancelled) ? std::string(R"({"ok": false, "error": "Request cancelled."})") : runExportCommand(safeThis, arguments);
-        if (name == "cad_list_faces" || name == "cad_create_face_sketch")
-            return (state == nullptr || state->cancelled) ? std::string(R"({"ok": false, "error": "Request cancelled."})") : runFaceCommand(safeThis, name, arguments);
-        if (const auto ikCommand = ikCommandForTool(name); ikCommand.isNotEmpty())
-            return (state == nullptr || state->cancelled) ? std::string(R"({"ok": false, "error": "Request cancelled."})") : runIkCommand(safeThis, ikCommand, arguments);
-        juce::MessageManager::callAsync([safeThis, name, arguments, state] {
-            if (safeThis == nullptr || state == nullptr || state->cancelled || !state->alive) return;
-            if (name == "open_cad_workspace") safeThis->selectWorkspace(0);
-            else if (name == "open_frust_editor") safeThis->selectWorkspace(1);
-            else if (name == "open_node_editor") safeThis->selectWorkspace(2);
-            else if (name == "open_3d_views") { safeThis->selectWorkspace(3); safeThis->viewsPanel->addView(); }
-            else if (name.rfind("cad_", 0) == 0)
-            {
-                const auto parsed = juce::JSON::parse(arguments);
-                auto number = [&](const char* key, double fallback = 0.0) { return parsed.getProperty(key, fallback).toString().getDoubleValue(); };
-                juce::String error, id;
-                if (name == "cad_create_box") safeThis->cadService->createBox(number("width"), number("depth"), number("height"), id, error);
-                else if (name == "cad_create_cylinder") safeThis->cadService->createCylinder(number("radius"), number("height"), id, error);
-                else if (name == "cad_create_sketch") safeThis->cadService->createSketch(parsed.getProperty("plane", "XY").toString(), number("offset"), id, error);
-                else if (name == "cad_sketch_line") safeThis->cadService->addSketchLine(parsed.getProperty("sketch", "").toString(), number("x1"), number("y1"), number("x2"), number("y2"), id, error);
-                else if (name == "cad_sketch_rectangle") safeThis->cadService->addSketchRectangle(parsed.getProperty("sketch", "").toString(), number("x"), number("y"), number("width"), number("height"), id, error);
-                else if (name == "cad_sketch_circle") safeThis->cadService->addSketchCircle(parsed.getProperty("sketch", "").toString(), number("x"), number("y"), number("radius"), id, error);
-                else if (name == "cad_sketch_dimension") safeThis->cadService->setSketchEntityDimension(parsed.getProperty("sketch", "").toString(), parsed.getProperty("entity", "").toString(), number("value"), error);
-                else if (name == "cad_sketch_position") safeThis->cadService->setSketchEntityPosition(parsed.getProperty("sketch", "").toString(), parsed.getProperty("entity", "").toString(), number("x"), number("y"), error);
-                else if (name == "cad_sketch_constraint") safeThis->cadService->addSketchConstraint(parsed.getProperty("sketch", "").toString(), parsed.getProperty("type", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), number("value"), id, error);
-                else if (name == "cad_extrude") safeThis->cadService->createExtrude(parsed.getProperty("sketch", "").toString(), number("depth"), static_cast<bool>(parsed.getProperty("reverse", false)), id, error);
-                else if (name == "cad_cut") safeThis->cadService->createCut(parsed.getProperty("sketch", "").toString(), parsed.getProperty("target", "").toString(), number("depth"), static_cast<bool>(parsed.getProperty("throughAll", false)), static_cast<bool>(parsed.getProperty("reverse", false)), id, error);
-                else if (name == "cad_set_dimensions") safeThis->cadService->setDimensions(parsed.getProperty("id", "").toString(), number("width"), number("depth"), number("height"), number("radius"), error);
-                else if (name == "cad_set_placement") safeThis->cadService->setPlacement(parsed.getProperty("id", "").toString(), number("x"), number("y"), number("z"), number("rx"), number("ry"), number("rz"), error);
-                else if (name == "cad_boolean") safeThis->cadService->booleanOp(parsed.getProperty("operation", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), id, error);
-                else if (name == "cad_undo") safeThis->cadService->undo(error);
-                else if (name == "cad_redo") safeThis->cadService->redo(error);
-                else if (name == "cad_create_instance") safeThis->cadService->createInstance(parsed.getProperty("feature", "").toString(), parsed.getProperty("name", "").toString(), id, error);
-                else if (name == "cad_create_joint" || name == "cad_update_joint")
-                {
-                    djehuti::cad::CadJointRequest request;
-                    auto vector = [&](const char* key, int index, double fallback) { const auto* list = parsed.getProperty(key, {}).getArray(); return list != nullptr && list->size() == 3 ? (double) (*list)[index] : fallback; };
-                    request.name = parsed.getProperty("name", "").toString(); request.type = parsed.getProperty("type", "").toString();
-                    request.parentInstance = parsed.getProperty("parent", "").toString(); if (request.parentInstance == "world") request.parentInstance.clear();
-                    request.childInstance = parsed.getProperty("child", "").toString();
-                    request.originX = vector("origin", 0, 0.0); request.originY = vector("origin", 1, 0.0); request.originZ = vector("origin", 2, 0.0);
-                    request.axisX = vector("axis", 0, 0.0); request.axisY = vector("axis", 1, 0.0); request.axisZ = vector("axis", 2, 1.0);
-                    request.reference = number("reference"); request.hasLimits = parsed.hasProperty("lower") && parsed.hasProperty("upper"); request.lower = number("lower"); request.upper = number("upper");
-                    if (name == "cad_create_joint") safeThis->cadService->createJoint(request, id, error);
-                    else safeThis->cadService->updateJoint(parsed.getProperty("joint", "").toString(), request, error);
-                }
-                else if (name == "cad_set_joint_mapping")
-                {
-                    djehuti::cad::CadSignalMapping mapping;
-                    mapping.jointId = parsed.getProperty("joint", "").toString(); mapping.signalId = parsed.getProperty("signal", "").toString();
-                    mapping.sourceQuantity = parsed.getProperty("quantity", "").toString(); mapping.sourceUnit = parsed.getProperty("unit", "").toString();
-                    mapping.scale = number("scale", 1.0); mapping.offset = number("offset"); mapping.initialCoordinate = number("initialCoordinate");
-                    safeThis->cadService->setJointMapping(mapping, error);
-                }
-                else if (name == "cad_set_instance_grounded") safeThis->cadService->setInstanceGrounded(parsed.getProperty("instance", "").toString(), static_cast<bool>(parsed.getProperty("grounded", true)), error);
-                else if (name == "cad_set_instance_placement")
-                {
-                    auto vector = [&](const char* key, int index) { const auto* list = parsed.getProperty(key, {}).getArray(); return list != nullptr && list->size() == 3 ? (double) (*list)[index] : 0.0; };
-                    const auto frame = djehuti::cad::mech::frameFromEulerDegrees(vector("origin", 0), vector("origin", 1), vector("origin", 2), vector("rotationDeg", 0), vector("rotationDeg", 1), vector("rotationDeg", 2));
-                    safeThis->cadService->setInstancePlacement(parsed.getProperty("instance", "").toString(), frame, error);
-                }
-                else if (name == "cad_set_joint_role")
-                    safeThis->cadService->setJointRole(parsed.getProperty("joint", "").toString(), parsed.getProperty("role", "").toString(), number("lockValue"), static_cast<bool>(parsed.getProperty("enforceLimits", false)), error);
-                else if (name == "cad_create_coupling")
-                {
-                    djehuti::cad::CadCoupling coupling;
-                    coupling.name = parsed.getProperty("name", "").toString(); coupling.type = parsed.getProperty("type", "").toString();
-                    coupling.jointA = parsed.getProperty("jointA", "").toString(); coupling.jointB = parsed.getProperty("jointB", "").toString();
-                    coupling.ratio = number("ratio", 1.0); coupling.pitchRadius = number("pitchRadius", 0.01); coupling.lead = number("lead", 0.001); coupling.offset = number("offset");
-                    safeThis->cadService->createCoupling(coupling, id, error);
-                }
-                else if (name == "cad_remove_coupling") safeThis->cadService->removeCoupling(parsed.getProperty("coupling", "").toString(), error);
-                else if (name == "cad_motion_preview")
-                {
-                    if (static_cast<bool>(parsed.getProperty("reset", false))) safeThis->motionRuntime->resetToReference();
-                    else safeThis->motionRuntime->setPreviewCoordinate(parsed.getProperty("joint", "").toString(), number("value"), error);
-                }
-                else if (name == "cad_motion_lifecycle")
-                {
-                    const auto command = parsed.getProperty("command", "").toString();
-                    if (command == "retry") safeThis->motionLink->retryLifecycle(error);
-                    else safeThis->motionLink->requestLifecycle(command, (std::int64_t) std::llround(number("stepMs", 10.0) * 1.0e9), error);
-                }
-                else if (name == "cad_motion_listen")
-                {
-                    if (static_cast<bool>(parsed.getProperty("listen", true))) safeThis->motionLink->startListening(error);
-                    else safeThis->motionLink->stopListening();
-                }
-                if (safeThis->cadWorkspace != nullptr) safeThis->cadWorkspace->repaint();
-            }
-        });
-        return std::string("Operation scheduled in DjehutiCAD.");
+    auto agentPanelContent = std::make_unique<DjehutiAgentPanel>(properties, [safeThis](const std::string& name, const std::string& arguments, std::shared_ptr<DjehutiAgentRequestState> state) {
+        if (state == nullptr || state->cancelled || !state->alive) return std::string(R"({"ok":false,"error":"Request cancelled."})");
+        return runToolCommand(safeThis, name, arguments);
     });
     agentPanel = agentPanelContent.get();
     dockManager->registerPanel("agent", "Agent", std::move(agentPanelContent), CreationDock::DockTargetZone::CenterTab);
@@ -288,11 +327,19 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     { if (safe != nullptr) safe->viewContextCommand(action,pick); });
     dockManager->activatePanel("cad"); defaultDockLayout = dockManager->captureLayout();
     defaultDockLayout.getDynamicObject()->setProperty("leftWidth",176); dockManager->applyLayout(defaultDockLayout);
-    if (!diagnosticMode) restoreSettings();
+    if (!diagnosticMode)
+    {
+        restoreSettings();
+        localApi = std::make_unique<LocalAgentApi>([safeThis](const juce::String& name, const juce::var& args, std::function<bool()> keepWaiting) {
+            return juce::JSON::parse(juce::String(runToolCommand(safeThis, name.toStdString(), juce::JSON::toString(args), std::move(keepWaiting))));
+        }, DjehutiAgentPanel::toolCatalogue());
+        if (!localApi->start()) juce::Logger::writeToLog("DjehutiCAD localhost API could not start.");
+    }
 }
 
 DjehutiCAD::~DjehutiCAD()
 {
+    localApi.reset();
     saveSettings();
     authSession.cancelLogin();
     dockManager.reset();
@@ -377,6 +424,7 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
     else
     {
         menu.addItem(31, "CAD Workspace Guide");
+        menu.addItem(32, "Local Automation API");
         menu.addItem(30, "About DjehutiCAD");
     }
     return menu;
@@ -423,6 +471,10 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
     }
     else if (commandId == 21)
         authSession.clearSession();
+    else if (commandId == 32)
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Local Automation API",
+            "Local tools operate the same CAD document and visible task controls. No model provider is required.\n\nDiscovery: " + LocalAgentApi::getDiscoveryFile().getFullPathName()
+            + "\n\nGET /v1/status, /v1/tools and /v1/state. POST /v1/tools/call. Authenticate with the discovery file's bearer token; keep it private.\n\nUse cad_ui to inspect the task, set fields, click Apply, draw sketch previews and move cameras. Requests execute one action at a time; the client controls pauses for narration. See docs/LOCAL_AUTOMATION_API.md.");
     else if (commandId == 31)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "CAD Workspace Guide",
                                                "Workspace menus and tools:\nEach workspace owns its menus, including when floated. Window reopens panels and the dockable Toolbox. Choose Pointer, Box or Circle selection and the Body/Face/Edge filter in the Toolbox. Box left-to-right encloses; right-to-left and circle cross projected geometry, including obscured items. Right-click a 3D view for context actions and reference guides. View > Floor grid, World planes, Selected local planes and Joint frames show model/solved coordinates without editing the document. Each view keeps its own guide settings.\n\nSketch to solid:\n"
@@ -549,6 +601,8 @@ std::string DjehutiCAD::runWorkspaceCommand(const juce::Component::SafePointer<D
                     }
                 }
             }
+            else if(action=="ui")
+                return juce::JSON::toString(safe->cadWorkspace->automation(args.getProperty("ui",{}))).toStdString();
             else if(action=="float" || action=="dock" || action=="activate")
             {
                 auto* panel=safe->dockManager->findPanelById(workspace);

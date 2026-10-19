@@ -19,6 +19,7 @@ public:
                                std::function<std::string(const std::string&, const std::string&, std::shared_ptr<DjehutiAgentRequestState>)> dispatchTool);
     ~DjehutiAgentPanel() override;
 
+    static juce::var toolCatalogue();
     void paint(juce::Graphics&) override;
     void resized() override;
 

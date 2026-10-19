@@ -304,6 +304,38 @@ void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelD
     const auto maximumDistance = juce::jmax(1000.0f, sceneRadius * 100000.0f);
     distance = juce::jlimit(minimumDistance, maximumDistance, distance * std::exp(-w.deltaY * 0.5f)); cameraChanged();
 }
+
+juce::var Viewport3D::cameraState() const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("yawDeg", (double)juce::radiansToDegrees(yaw)); o->setProperty("pitchDeg", (double)juce::radiansToDegrees(pitch));
+    o->setProperty("distance", distance); o->setProperty("panX", panX); o->setProperty("panY", panY);
+    o->setProperty("targetX", targetX); o->setProperty("targetY", targetY); o->setProperty("targetZ", targetZ);
+    o->setProperty("showing", isShowing()); return o;
+}
+bool Viewport3D::controlCamera(const juce::var& args, juce::String& error)
+{
+    const auto op = args.getProperty("operation", "set").toString();
+    if (op == "fit") { fitAll(); return true; }
+    if (op == "reset") { resetCamera(); return true; }
+    if (op == "state") return true;
+    if (op != "set") { error = "Camera operation must be set, fit, reset or state."; return false; }
+    for (const auto* key : { "yawDeg", "pitchDeg", "distance", "panX", "panY" }) if (args.hasProperty(key))
+    {
+        const auto value = args[key];
+        if (!(value.isDouble() || value.isInt() || value.isInt64()) || !std::isfinite((double)value) || std::abs((double)value) > 1.0e9)
+        { error = juce::String(key) + " must be a finite camera value within +/- 1e9."; return false; }
+    }
+    const auto minimum = juce::jmax(0.001f, sceneRadius * 0.02f), maximum = juce::jmax(1000.0f, sceneRadius * 100000.0f);
+    const auto nextDistance = (double)args.getProperty("distance", distance);
+    const auto nextPitch = (double)args.getProperty("pitchDeg", juce::radiansToDegrees(pitch));
+    if (nextDistance < minimum || nextDistance > maximum || std::abs(nextPitch) > juce::radiansToDegrees(1.4))
+    { error = "Camera distance or elevation exceeds the same bounds used by mouse navigation."; return false; }
+    yaw = (float)juce::degreesToRadians(std::remainder((double)args.getProperty("yawDeg", juce::radiansToDegrees(yaw)),360.0));
+    pitch = (float)juce::degreesToRadians(nextPitch); distance = (float)nextDistance;
+    panX = (float)(double)args.getProperty("panX", panX); panY = (float)(double)args.getProperty("panY", panY);
+    cameraChanged(); markDirty(); return true;
+}
 void Viewport3D::resetCamera() { yaw = homeYaw; pitch = homePitch; panX = panY = 0.0f; userCameraChanged = false; if (hasSceneBounds) frameScene(); else { distance = homeDistance; targetX = targetY = targetZ = 0.0f; fitPending = true; } markDirty(); }
 void Viewport3D::fitAll() { userCameraChanged = false; if (hasSceneBounds) frameScene(); else fitPending = true; markDirty(); }
 void Viewport3D::requestFit(std::uint64_t documentInstance) { fitPending = true; fitDocument = documentInstance; userCameraChanged = false; tryPendingFit(); markDirty(); }
@@ -670,4 +702,14 @@ bool Viewport3D::keyPressed(const juce::KeyPress& key)
     if(key==juce::KeyPress::escapeKey) { selectingRegion=false; if(selection!=nullptr) selection->setTool(djehuti::cad::CadSelection::Tool::pointer); markDirty(); repaint(); return true; }
     if(key.getTextCharacter()=='f' && !key.getModifiers().isAnyModifierKeyDown()) { fitAll(); return true; }
     return false;
+}
+
+
+juce::var ThreeDViewsPanel::controlViewCamera(int view, const juce::var& args)
+{
+    juce::String error;
+    auto* result = new juce::DynamicObject();
+    if (!juce::isPositiveAndBelow(view, tiles.size())) error = "Unknown 3D view index.";
+    else { tiles[view]->viewport().controlCamera(args, error); result->setProperty("camera", tiles[view]->viewport().cameraState()); }
+    result->setProperty("ok", error.isEmpty()); if (error.isNotEmpty()) result->setProperty("error", error); return result;
 }

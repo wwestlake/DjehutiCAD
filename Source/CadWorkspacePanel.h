@@ -38,8 +38,13 @@ public:
     bool executeUiCommand(const juce::String& command);
     bool uiToolActive(const juce::String& command) const;
     bool uiCommandEnabled(const juce::String& command) const;
+    // Shared by HTTP, BYOK and the FRust/node workspace command. Message thread only.
+    juce::var automation(const juce::var& arguments);
+    juce::var automationState();
 
 private:
+    bool automationInProgress = false;
+    void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape };
     class FeatureItem;
     class GroupItem;
