@@ -286,6 +286,7 @@ void Viewport3D::mouseMove(const juce::MouseEvent& e)
     if (onFrameRequested) onFrameRequested();
 }
 void Viewport3D::mouseExit(const juce::MouseEvent&) { if (selection != nullptr) selection->setHover({}); }
+void Viewport3D::setInspectionLines(std::vector<djehuti::cad::CadOverlayLine> next) { { const juce::SpinLock::ScopedLockType lock(highlightLock); glInspection = std::move(next); } markDirty(); }
 void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { { const juce::SpinLock::ScopedLockType lock(highlightLock); if (highlights == next) return; highlights = std::move(next); } markDirty(); }
 void Viewport3D::mouseDrag(const juce::MouseEvent& e)
 {
@@ -592,6 +593,26 @@ void Viewport3D::renderOpenGL()
                 shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
                 glDrawArrays(GL_LINES, static_cast<GLint>(i * 2), 2);
             }
+            glBindVertexArray(0);
+            glEnable(GL_DEPTH_TEST);
+        }
+        // Interference regions from the last inspection, visible through the parts that enclose them.
+        std::vector<djehuti::cad::CadOverlayLine> inspection;
+        { const juce::SpinLock::ScopedLockType lock(highlightLock); inspection = glInspection; }
+        if (!inspection.empty() && axisVao != 0)
+        {
+            std::vector<float> lines;
+            const float light[3] { 0.4f / 1.0770f, 0.8f / 1.0770f, 0.6f / 1.0770f };
+            for (const auto& line : inspection)
+                for (const auto* p : { &line.a, &line.b }) { lines.insert(lines.end(), { (*p)[0], (*p)[1], (*p)[2] }); lines.insert(lines.end(), { light[0], light[1], light[2] }); }
+            glBindBuffer(GL_ARRAY_BUFFER, axisVbo);
+            glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(float)), lines.data(), GL_DYNAMIC_DRAW);
+            glDisable(GL_DEPTH_TEST);
+            glBindVertexArray(axisVao);
+            shader->setUniformMat4("uInstance", unit.v, 1, GL_FALSE);
+            const juce::Colour colour(inspection.front().argb);
+            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+            glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(inspection.size() * 2));
             glBindVertexArray(0);
             glEnable(GL_DEPTH_TEST);
         }

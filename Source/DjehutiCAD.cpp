@@ -130,6 +130,14 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
         if (name == "cad_workspace") return runWorkspaceCommand(safeThis, arguments);
+        if (name == "cad_check_interference")
+        {
+            if ((bool) parsedArgs.getProperty("clear", false))
+            { safeThis->cadWorkspace->clearInterference(); return std::string(R"({"ok":true,"cleared":true})"); }
+            const auto pose = parsedArgs.getProperty("pose", "shown").toString();
+            if (pose != "shown" && pose != "reference") return std::string(R"({"ok":false,"error":"pose must be shown or reference."})");
+            return juce::JSON::toString(safeThis->cadWorkspace->checkInterference(pose == "reference")).toStdString();
+        }
         if (name == "cad_export") return runExportCommand(safeThis, arguments);
         if (name == "cad_list_faces" || name == "cad_create_face_sketch") return runFaceCommand(safeThis, name, arguments);
         if (const auto ik = ikCommandForTool(name); ik.isNotEmpty()) return runIkCommand(safeThis, ik, arguments);
@@ -494,6 +502,7 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "6. Simulation controls in the Motion Link panel (Start/Resume, Pause, Stop Simulation, Reset, Single Step) ask DEWB to change its run state; they need a DEWB that advertises lifecycle control, and the model moves only when DEWB reports the new state.\n"
                                                "6a. Faces and edges: the Body, Face and Edge buttons choose what a click in a 3-D view picks. Hover highlights in light cyan; the selection is magenta in every view and is described in the right panel. A planar face with a persistent name (e.g. box-1/top) can carry a sketch: select it and press Create Sketch. The sketch lies in the face, follows it when the body's dimensions change, and an edit that removes or splits that face is refused instead of moving the sketch. Cuts from a face sketch go into the body unless reversed.\n"
                                                "7. Inverse Kinematics: choose Assembly > Inverse kinematics, then choose the driver joints the solve may adjust, then add targets: the instance carrying the endpoint, a tool frame on it (mm, degrees), the reference frame (World or another instance), the mode (position, orientation or full pose) and the desired pose. Capture Current Pose copies the shown pose without moving anything. Solve moves only the selected drivers; dependent joints follow the mechanism, locked joints and grounding hold, hard bounds are respected. A result is shown only if every constraint and target holds; otherwise the last valid pose stays and the target errors are listed. Drag Target moves a target's position on the shown plane (the yellow diamond). Save Task stores the definition (undoable); solving never changes the document. Local IK is unavailable while DEWB drives the mechanism.\n"
+                                               "7a. Interference: Assembly > Check interference inspects the pose shown (motion previews and IK results included). Interfering parts turn red and the shared volume is outlined in yellow; the right panel lists each pair with its common volume. Touching faces are contact, not interference. Moving the mechanism or editing the model marks the result out of date; Check again or Clear.\n"
                                                "8. Export: File > Export..., or right-click a body or instance in the tree. Choose 3MF (preferred for 3-D printing: millimetres, one named object per part), binary STL (millimetres; one file per part) or STEP AP214 (exact solids with names and placements). Tick the parts; all ticked exports the visible model, with instanced bodies exported as their instances and construction operands left out. Placements are the authored reference configuration, never a simulation or IK pose. Mesh quality: Standard 0.05 mm / 15 deg, Fine 0.01 mm / 5 deg, or Custom. Solids and meshes are checked before writing; a failed or cancelled export leaves existing files untouched, and export never changes the document.");
     else if (commandId == 30)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About DjehutiCAD",

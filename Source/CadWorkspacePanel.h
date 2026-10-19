@@ -6,6 +6,7 @@
 #include "CadMotionRuntime.h"
 #include "MotionLink.h"
 #include "CadSelection.h"
+#include "CadInterference.h"
 #include "WorkspaceMenu.h"
 
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
@@ -41,11 +42,15 @@ public:
     // Shared by HTTP, BYOK and the FRust/node workspace command. Message thread only.
     juce::var automation(const juce::var& arguments);
     juce::var automationState();
+    // Shared interference inspection (UI command and cad_check_interference). referencePose inspects the saved
+    // placements instead of the pose shown and is not displayed. Returns the structured report.
+    juce::var checkInterference(bool referencePose);
+    void clearInterference();
 
 private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -110,6 +115,8 @@ private:
     void addSubshapePanel(juce::String& title, juce::String& instruction);
     void loadIkDraft(const juce::String& taskId);
     void addIkPanel(juce::String& title, juce::String& instruction, juce::String& accept, bool& showAccept, bool& showCancel);
+    void addInterferencePanel(juce::String& title, juce::String& instruction);
+    void markInterferenceStale();
     void validateIkPanel(juce::String& problem, int& severity);
     void readIkForm();
     void showIkMarkers();
@@ -146,6 +153,8 @@ private:
     juce::String profileId, targetId, toolId;
     juce::String instanceBodyId, jointParentId, jointChildId, couplingJointA, couplingJointB, shownMechanismSummary;
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
+    djehuti::cad::CadInterferenceReport interferenceReport;   // last displayed inspection (pose shown)
+    bool interferenceActive = false, interferenceStale = false;
     djehuti::motion::MotionLink* motionLink = nullptr;
     std::uint64_t shownLinkSerial = 0;
     std::shared_ptr<djehuti::cad::CadSelection> selection;

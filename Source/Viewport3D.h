@@ -53,6 +53,8 @@ public:
     juce::String diagnostics() const;
     void setTitle(const juce::String& text) { title = text; repaint(); }
     void setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next);
+    // World-mm lines drawn on top of the model (interference regions); empty clears them. Never affects picking or bounds.
+    void setInspectionLines(std::vector<djehuti::cad::CadOverlayLine> next);
     juce::String pickBody(juce::Point<float> position) const;
     void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); }
     std::function<void(const juce::String& featureId)> onBodyPicked;
@@ -68,6 +70,7 @@ private:
     void drawReferenceGuides(juce::Graphics&);
     void updateReferenceGuides();
     std::vector<djehuti::cad::CadOverlayLine> glGuides;
+    std::vector<djehuti::cad::CadOverlayLine> glInspection;
     float gridSpacing=10.0f;
     std::vector<djehuti::cad::CadPick> pickRegion(juce::Point<float> start, juce::Point<float> end, bool circle) const;
     void showContextMenu(const juce::MouseEvent&);

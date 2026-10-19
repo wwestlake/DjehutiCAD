@@ -34,6 +34,78 @@ Primary dependencies in use:
 Do not modify DEWB, FRust, or the original Creation Suite repository as part
 of DjehutiCAD work.
 
+## Assembly interference detection — October 19, 2026
+
+Code:
+- `Source/CadInterference.*`: the engine;
+- `CadWorkspacePanel::checkInterference` / `clearInterference`: the one operation behind the UI and the API;
+- `Viewport3D::setInspectionLines`;
+- `CadMotionRuntime::shownInstanceWorld()` / `synchronize()`: read-only. The solver is unchanged.
+
+### Behaviour
+
+- **Components** follow the display rules: every assembly instance of a visible solid body, at its pose, plus
+  every visible solid body without instances, at its placement. Features inside one finished body are never
+  compared. The order is deterministic (instances, then bodies) and each pair i < j is checked once.
+- **Pose:** `shown` (default) uses the runtime's double-precision instance frames for the pose currently
+  displayed. That includes unsaved motion previews and IK results, and nothing is committed. `reference` uses
+  the saved placements. `synchronize()` first applies any pending document edit to the pose. If the pose still
+  doesn't match the document revision, the check reports an error rather than inspecting stale frames.
+- **Geometry:**
+  - Each body is copied once per inspection, so OCCT never touches the live shapes; copies are placed per
+    component.
+  - Broad phase: `Bnd_Box` rejection.
+  - Narrow phase: `BRepAlgoAPI_Common` with a fuzzy value of 1e-5 mm.
+  - Interference is a common volume greater than max(1e-3 mm³, 1e-6 × the smaller part's volume). Shared faces,
+    edges or points are contact.
+  - Full containment is reported with a note. A failed Boolean is listed under `failures` and makes the result
+    "incomplete", never a false "no interference".
+- **Display:** interfering parts are highlighted red through the existing `setHighlights`. Edges of the common
+  volume are drawn as yellow lines over the model.
+- **Results panel:** the pairs with their volumes, select buttons, Check again and Clear.
+- **Staleness:** a new pose serial (`mechanismChanged`) or a document revision or instance change
+  (`refreshFromDocument`) marks the result out of date. Highlights and outlines are removed, and the panel says
+  so.
+- **Entry points:**
+  - UI: Assembly > Check interference / Clear interference; commands `interference` and `clearInterference`
+    for `cad_ui`.
+  - Agent/API: `cad_check_interference {pose, clear}`. It returns `ok`, `completed`, `result`
+    (`noInterference` / `interference` / `incomplete` / `error`), `interferences[]`, `failures[]`, `poseSerial`
+    and `documentRevision`.
+  - Help item 7a.
+
+### Verification
+
+`--cad-interference-check`: 11/11.
+- Separated boxes: none (rejected by bounding boxes).
+- Overlap: 500 mm³ with its region outlined.
+- Shared face: contact only.
+- Contained 4 mm cube: 64 mm³, flagged as contained.
+- Union of overlapping features: one component, no pairs.
+- Jointed assembly:
+  - at rest: none;
+  - 10 mm preview: 500 mm³ at the shown pose, and the reference pose is still clear;
+  - 5 mm preview: the faces touch after the joint transform and count as contact;
+  - the document, joints and revision are unchanged.
+
+`--cad-face-check` 19/19 and `--cad-export-check` 29/29 still pass.
+
+Live, on `SCARA Pick and Place Robot.djo` through the API:
+- Reference pose: 7 components, 21 pairs, 6 candidates, all contact; no interference, in 0.47 s.
+- J3 previewed to −150 mm: Link 2 / Quill, 1884.96 mm³, exactly the collar ring π(14² − 11²) × 8. The screenshot
+  showed both parts red, the ring outlined and the panel listing the pair.
+- The UI command path gave the same result.
+- Moving J1 removed the stale display.
+- After every check, preview and clear, the document still reported no unsaved changes.
+
+### Limits
+
+- Static check of one pose: no swept, continuous or path collision, and no minimum-clearance measurement.
+- Only the model view shows the highlights and outlines; separate 3D View windows don't.
+- After switching to another task panel, the out-of-date result panel is only reachable by checking again or
+  clearing.
+- FRust and node access are not added. The capability is available to the agent and the localhost API.
+
 ## Geometry rebuild performance repair — October 19, 2026
 
 ### Cause
