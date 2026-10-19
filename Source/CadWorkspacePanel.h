@@ -50,7 +50,7 @@ public:
 private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, cut, fillet, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -129,6 +129,7 @@ private:
     juce::TooltipWindow tooltipWindow { this, 600 };
     juce::Label modeLabel, statusLabel, unitsLabel, treeHeading;
     juce::TextButton sketchButton { "Create Sketch" }, boxButton { "Box" }, cylinderButton { "Cylinder" }, extrudeButton { "Extrude" }, cutButton { "Cut Sketch" },
+        filletButton { "Fillet" },
         subtractButton { "Subtract" }, unionButton { "Union" }, intersectButton { "Intersect" }, undoButton { "Undo" }, redoButton { "Redo" },
         fitButton { "Fit All" }, resetViewButton { "Reset View" }, viewsButton { "3D Views" },
         selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, constrainButton { "Constrain" },
@@ -151,6 +152,8 @@ private:
     juce::String booleanKind, sketchPlane, formContext;
     juce::String selectedId, editingSketchId, sketchEntityId, sketchSecondEntityId;
     juce::String profileId, targetId, toolId;
+    std::vector<int> filletEdges;
+    double filletRadius = 2.0;
     juce::String instanceBodyId, jointParentId, jointChildId, couplingJointA, couplingJointB, shownMechanismSummary;
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
     djehuti::cad::CadInterferenceReport interferenceReport;   // last displayed inspection (pose shown)

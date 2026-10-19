@@ -167,6 +167,13 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 else if (name == "cad_sketch_constraint") ok = safeThis->cadService->addSketchConstraint(parsed.getProperty("sketch", "").toString(), parsed.getProperty("type", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), number("value"), id, error);
                 else if (name == "cad_extrude") ok = safeThis->cadService->createExtrude(parsed.getProperty("sketch", "").toString(), number("depth"), static_cast<bool>(parsed.getProperty("reverse", false)), id, error);
                 else if (name == "cad_cut") ok = safeThis->cadService->createCut(parsed.getProperty("sketch", "").toString(), parsed.getProperty("target", "").toString(), number("depth"), static_cast<bool>(parsed.getProperty("throughAll", false)), static_cast<bool>(parsed.getProperty("reverse", false)), id, error);
+                else if (name == "cad_fillet")
+                {
+                    std::vector<int> edgeIndices;
+                    if (const auto* arr = parsed.getProperty("edges", {}).getArray())
+                        for (const auto& item : *arr) edgeIndices.push_back((int) item);
+                    ok = safeThis->cadService->createFillet(parsed.getProperty("target", "").toString(), edgeIndices, number("radius"), id, error);
+                }
                 else if (name == "cad_set_dimensions") ok = safeThis->cadService->setDimensions(parsed.getProperty("id", "").toString(), number("width"), number("depth"), number("height"), number("radius"), error);
                 else if (name == "cad_set_placement") ok = safeThis->cadService->setPlacement(parsed.getProperty("id", "").toString(), number("x"), number("y"), number("z"), number("rx"), number("ry"), number("rz"), error);
                 else if (name == "cad_boolean") ok = safeThis->cadService->booleanOp(parsed.getProperty("operation", "").toString(), parsed.getProperty("first", "").toString(), parsed.getProperty("second", "").toString(), id, error);

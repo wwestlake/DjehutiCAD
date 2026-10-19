@@ -23,7 +23,7 @@ std::vector<ai_provider::ToolDefinition> tools()
 {
     const auto emptyObject = R"({"type":"object","properties":{},"additionalProperties":false})";
     const auto dimensions = R"({"type":"object","properties":{"width":{"type":"number"},"depth":{"type":"number"},"height":{"type":"number"}},"required":["width","depth","height"],"additionalProperties":false})";
-    const auto featureDimensions = R"({"type":"object","properties":{"id":{"type":"string"},"width":{"type":"number"},"depth":{"type":"number"},"height":{"type":"number"},"radius":{"type":"number"}},"required":["id","width","depth","height"],"additionalProperties":false})";
+    const auto featureDimensions = R"({"type":"object","properties":{"id":{"type":"string"},"width":{"type":"number"},"depth":{"type":"number"},"height":{"type":"number"},"radius":{"type":"number"}},"required":["id"],"additionalProperties":false})";
     const auto cylinder = R"({"type":"object","properties":{"radius":{"type":"number"},"height":{"type":"number"}},"required":["radius","height"],"additionalProperties":false})";
     const auto placement = R"({"type":"object","properties":{"id":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"rx":{"type":"number"},"ry":{"type":"number"},"rz":{"type":"number"}},"required":["id","x","y","z"],"additionalProperties":false})";
     const auto booleanArgs = R"({"type":"object","properties":{"operation":{"type":"string","enum":["union","subtract","intersect"]},"first":{"type":"string"},"second":{"type":"string"}},"required":["operation","first","second"],"additionalProperties":false})";
@@ -58,6 +58,7 @@ std::vector<ai_provider::ToolDefinition> tools()
     const auto ikTaskOnly = R"({"type":"object","properties":{"task":{"type":"string"}},"required":["task"],"additionalProperties":false})";
     const auto ikOptionalTask = R"({"type":"object","properties":{"task":{"type":"string"}},"additionalProperties":false})";
     const auto cut = R"({"type":"object","properties":{"sketch":{"type":"string"},"target":{"type":"string"},"depth":{"type":"number"},"throughAll":{"type":"boolean"},"reverse":{"type":"boolean"}},"required":["sketch","target"],"additionalProperties":false})";
+    const auto fillet = R"({"type":"object","properties":{"target":{"type":"string"},"edges":{"type":"array","items":{"type":"integer"}},"radius":{"type":"number"}},"required":["target","edges","radius"],"additionalProperties":false})";
     return {
         { "open_cad_workspace", "Open the CAD workspace.", emptyObject },
         { "open_frust_editor", "Open the FRust editor.", emptyObject },
@@ -74,6 +75,7 @@ std::vector<ai_provider::ToolDefinition> tools()
         { "cad_sketch_constraint", "Add a supported sketch constraint: coincident, horizontal, vertical, fixed, length, distance, radius, or diameter.", sketchConstraint },
         { "cad_extrude", "Extrude a closed sketch profile into a real solid.", extrude },
         { "cad_cut", "Cut a closed sketch profile from an explicit solid target; support finite depth or through-all.", cut },
+        { "cad_fillet", "Apply a constant-radius fillet in millimeters to selected edge indices of a target solid body.", fillet },
         { "cad_set_dimensions", "Change a managed CAD feature's dimensions in millimeters.", featureDimensions },
         { "cad_set_placement", "Set a feature's millimeter position and optional Euler rotations in degrees.", placement },
         { "cad_boolean", "Create a union, subtract, or intersect feature from two distinct solid body ids. For subtract, first is the target body to keep and second is the cutting tool. Both sources are hidden and stay in the feature history; undo restores them.", booleanArgs },

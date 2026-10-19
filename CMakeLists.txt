@@ -150,7 +150,7 @@ if(WIN32)
 endif()
 
 if(EXISTS "${OCCT_INCLUDE_DIR}/TopoDS_Shape.hxx")
-    target_link_libraries(DjehutiCAD PRIVATE TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKMesh TKShHealing TKBO TKBool TKCDF TKStd TKStdL TKLCAF TKCAF TKBin TKBinL)
+    target_link_libraries(DjehutiCAD PRIVATE TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKMesh TKShHealing TKBO TKBool TKFillet TKCDF TKStd TKStdL TKLCAF TKCAF TKBin TKBinL)
     # Manufacturing export: STEP and STL writers with the XCAF assembly document they use (and its dependencies).
     target_link_libraries(DjehutiCAD PRIVATE TKDESTEP TKDESTL TKBinXCAF TKXCAF TKVCAF TKV3d TKService TKHLR TKDE TKXSBase)
     if(WIN32)

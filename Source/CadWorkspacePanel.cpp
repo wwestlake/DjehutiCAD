@@ -16,7 +16,7 @@ const juce::Colour selectedColour(0xffffb86b), targetColour(0xff63d48a), toolCol
 const juce::Colour interferenceColour(0xffe0303a);           // parts of an interfering pair
 constexpr juce::uint32 interferenceRegionArgb = 0xffffe14d;  // outline of the common volume
 
-bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "cut" || type == "union" || type == "subtract" || type == "intersect"; }
+bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "cut" || type == "union" || type == "subtract" || type == "intersect" || type == "fillet"; }
 bool isPrimitiveType(const juce::String& type) { return type == "box" || type == "cylinder"; }
 // Joint coordinates are radians/metres everywhere except the UI, which shows degrees/millimetres.
 double toUi(const juce::String& jointType, double value) { return jointType == "revolute" ? value * 180.0 / juce::MathConstants<double>::pi : value * 1000.0; }
@@ -514,7 +514,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
-            { "Modify", { E{6,"Extrude...",!sketching}, E{7,"Cut sketch...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Modify", { E{6,"Extrude...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
@@ -526,6 +526,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
+        else if (id == 34) executeUiCommand("fillet");
         else if (id >= 30 && id <= 33) modelView.toggleGuide(juce::StringArray{"floor","world","local","joints"}[id-30]);
     };
     addAndMakeVisible(modeLabel); addAndMakeVisible(statusLabel); addAndMakeVisible(unitsLabel);
@@ -533,7 +534,8 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     struct ToolSpec { juce::TextButton* button; const char* tip; };
     for (const auto& spec : { ToolSpec { &sketchButton, "Create a sketch on an origin plane (XY, XZ or YZ)." }, ToolSpec { &boxButton, "Create a box body from width, depth and height." },
                               ToolSpec { &cylinderButton, "Create a cylinder body from radius and height." }, ToolSpec { &extrudeButton, "Extrude a closed sketch profile into a solid body." },
-                              ToolSpec { &cutButton, "Cut a closed sketch profile from a target body." }, ToolSpec { &subtractButton, "Subtract a Tool body from a Target body." },
+                              ToolSpec { &cutButton, "Cut a closed sketch profile from a target body." }, ToolSpec { &filletButton, "Create a constant-radius fillet on selected edges of a body." },
+                              ToolSpec { &subtractButton, "Subtract a Tool body from a Target body." },
                               ToolSpec { &unionButton, "Combine two bodies into one." }, ToolSpec { &intersectButton, "Keep only the volume shared by two bodies." },
                               ToolSpec { &undoButton, "Undo the last modeling command." }, ToolSpec { &redoButton, "Redo the last undone modeling command." },
                               ToolSpec { &fitButton, "Frame all visible bodies in the model view." }, ToolSpec { &resetViewButton, "Return the model view to the default orientation." },
@@ -561,6 +563,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     cylinderButton.onClick = [this] { startTask(Task::newCylinder); };
     extrudeButton.onClick = [this] { startTask(Task::extrude); };
     cutButton.onClick = [this] { startTask(Task::cut); };
+    filletButton.onClick = [this] { startTask(Task::fillet); };
     subtractButton.onClick = [this] { startTask(Task::boolean, "subtract"); };
     unionButton.onClick = [this] { startTask(Task::boolean, "union"); };
     intersectButton.onClick = [this] { startTask(Task::boolean, "intersect"); };
@@ -812,7 +815,7 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
     selectFeature(id);
 }
 
-bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::cut || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::cut || task == Task::fillet || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
 // "face <token> of <body>" for a face-attached sketch.
 juce::String CadWorkspacePanel::supportText(const djehuti::cad::CadSketch& sketch) const { return "face " + sketch.supportFace + " of " + featureName(sketch.supportFeature); }
 bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
@@ -837,6 +840,40 @@ void CadWorkspacePanel::selectionChanged()
     const auto& picked = selection->selected();
     if (picked.valid() && (picked.face >= 0 || picked.edge >= 0))
     {
+        if (task == Task::fillet)
+        {
+            if (!selection->items().empty())
+            {
+                for (const auto& item : selection->items())
+                {
+                    if (item.valid() && item.edge >= 0)
+                    {
+                        if (targetId.isEmpty() || targetId != item.featureId)
+                        {
+                            targetId = item.featureId;
+                            filletEdges.clear();
+                        }
+                        if (std::find(filletEdges.begin(), filletEdges.end(), item.edge) == filletEdges.end())
+                            filletEdges.push_back(item.edge);
+                    }
+                }
+            }
+            else if (picked.edge >= 0)
+            {
+                if (targetId.isEmpty() || targetId != picked.featureId)
+                {
+                    targetId = picked.featureId;
+                    filletEdges.clear();
+                }
+                auto it = std::find(filletEdges.begin(), filletEdges.end(), picked.edge);
+                if (it == filletEdges.end())
+                    filletEdges.push_back(picked.edge);
+                else if (filletEdges.size() > 1)
+                    filletEdges.erase(it);
+            }
+            rebuildTaskPanel(true);
+            return;
+        }
         if (editingSketchId.isNotEmpty()) finishSketch();
         task = Task::subshape; commandMessage.clear(); validationMessage.clear();
         rebuildTaskPanel(false);
@@ -882,6 +919,11 @@ void CadWorkspacePanel::addSubshapePanel(juce::String& title, juce::String& inst
         juce::String text;
         title = "Edge of " + body; instruction = "Hover highlights, click selects.";
         form->addNote({}, service->describeEdge(picked.featureId, picked.edge, text, error) ? text : error, 2);
+        form->addButton("edgeFillet", "Fillet this edge...", [this] {
+            postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
+                if (safe != nullptr) safe->startTask(Task::fillet);
+            });
+        }, "Create a constant-radius fillet on this edge.");
     }
     form->addButton("clearPick", "Clear selection", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr && safe->selection != nullptr) safe->selection->clear(); }); }, "Clear the face or edge selection.");
 }
@@ -952,6 +994,25 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
     task = next; booleanKind = kind;
     commandMessage.clear(); validationMessage.clear();
     profileId.clear(); targetId.clear(); toolId.clear(); activeRole = 0; sketchPlane.clear();
+    filletEdges.clear();
+    if (next == Task::fillet)
+    {
+        filletRadius = 2.0;
+        if (selection != nullptr && selection->selected().valid())
+        {
+            const auto& picked = selection->selected();
+            if (isSolid(picked.featureId))
+                targetId = picked.featureId;
+            if (picked.edge >= 0)
+                filletEdges.push_back(picked.edge);
+        }
+        else if (isSolid(selectedId))
+        {
+            targetId = selectedId;
+        }
+        if (selection != nullptr)
+            selection->setMode(djehuti::cad::CadSelection::Mode::edge);
+    }
     if (next == Task::createSketch) { djehuti::cad::CadFaceInfo support; juce::String reason; if (selectedSupport(support, reason)) sketchPlane = "FACE"; }
     if (next == Task::extrude || next == Task::cut) { if (selected != nullptr && selected->type == "sketch") profileId = selectedId; }
     if (next == Task::boolean && isSolid(selectedId)) { targetId = selectedId; activeRole = 1; }
@@ -1037,6 +1098,12 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             }
             else if (f->type == "subtract") { form->addHeader("Subtract"); form->addNote({}, "Target: " + featureName(f->firstOperand) + "\nTool: " + featureName(f->secondOperand), 2); }
             else if (f->type == "union" || f->type == "intersect") { form->addHeader(f->type == "union" ? "Union" : "Intersect"); form->addNote({}, featureName(f->firstOperand) + " and " + featureName(f->secondOperand), 2); }
+            else if (f->type == "fillet")
+            {
+                form->addHeader("Fillet");
+                form->addNote({}, "Target: " + featureName(f->targetFeatureId) + "  |  " + juce::String(f->edges.size()) + " edges filleted", 2);
+                form->addNumber("radius", "Radius", f->radius, "mm", "Fillet radius.");
+            }
             const juce::String placement = f->type == "box" ? "Corner " : f->type == "cylinder" ? "Base centre " : "Offset ";
             form->addHeader("Placement (world)");
             form->addNumber("x", placement + "X", f->x, "mm", "World X position.");
@@ -1184,6 +1251,45 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNote({}, subtract ? "Both source bodies stay in the feature history and are hidden after the operation. Undo restores them." : "Both source bodies stay in the feature history and are hidden after the operation.", 3);
             break;
         }
+        case Task::fillet:
+        {
+            title = "Fillet";
+            instruction = "Select a solid body and one or more of its edges in Edge mode, then enter the radius.";
+            accept = "Fillet";
+            form->addHeader("Body and Edges");
+            form->addSlot("target", "Target body", slotText(targetId, "Select a body in tree or view"), targetColour, targetId.isEmpty(), [this] {
+                postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
+                    if (safe != nullptr) { safe->activeRole = 0; safe->rebuildTaskPanel(true); }
+                });
+            }, "Click, then pick the solid body to fillet.");
+            juce::String edgeSummary;
+            if (filletEdges.empty())
+            {
+                edgeSummary = "0 edges selected (pick edges in Edge mode)";
+            }
+            else
+            {
+                juce::StringArray edgeNums;
+                for (int idx : filletEdges) edgeNums.add(juce::String(idx));
+                edgeSummary = juce::String((int)filletEdges.size()) + " edge" + (filletEdges.size() == 1 ? "" : "s") + " selected: " + edgeNums.joinIntoString(", ");
+            }
+            form->addNote("edgeCount", edgeSummary, filletEdges.size() > 4 ? 2 : 1);
+            if (!filletEdges.empty())
+            {
+                form->addButton("clearEdges", "Clear selected edges", [this] {
+                    postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
+                        if (safe != nullptr) {
+                            safe->filletEdges.clear();
+                            if (safe->selection != nullptr) safe->selection->clear();
+                            safe->rebuildTaskPanel(true);
+                        }
+                    });
+                }, "Clear the currently selected edges.");
+            }
+            form->addHeader("Parameters");
+            form->addNumber("radius", "Radius", filletRadius, "mm", "Constant fillet radius.");
+            break;
+        }
     }
 
     if (!previous.isEmpty() && task != Task::ik) form->restore(previous);
@@ -1246,6 +1352,12 @@ void CadWorkspacePanel::assignRole(const juce::String& id)
         if (activeRole == 0) { targetId = id; if (toolId == id) toolId.clear(); if (toolId.isEmpty()) activeRole = 1; }
         else { toolId = id; if (targetId == id) targetId.clear(); if (targetId.isEmpty()) activeRole = 0; }
     }
+    else if (task == Task::fillet)
+    {
+        if (!isSolid(id)) { setMessage(f->name + " is not a solid body.", 2); return; }
+        targetId = id;
+        filletEdges.clear();
+    }
     updateHighlights();
     rebuildTaskPanel(true);
 }
@@ -1297,6 +1409,12 @@ void CadWorkspacePanel::validateTask()
             else if (!isSolid(targetId) || !isSolid(toolId)) { problem = "Both inputs must be solid bodies."; severity = 2; }
             break;
         }
+        case Task::fillet:
+            if (targetId.isEmpty()) problem = "Select a solid body to fillet.";
+            else if (!isSolid(targetId)) problem = featureName(targetId) + " is not a solid body.";
+            else if (filletEdges.empty()) problem = "Select at least one edge in Edge mode.";
+            requirePositive("radius", "Radius");
+            break;
         case Task::none: case Task::sketch: case Task::sketchEdit: break;
         default: validateMotionTask(problem, severity); break;
     }
@@ -1423,6 +1541,16 @@ void CadWorkspacePanel::acceptTask()
                 setMessage(featureName(id) + " created. " + featureName(target) + " and " + featureName(tool) + " are hidden in the tree; Undo restores them.", 0);
             return;
         }
+        case Task::fillet:
+        {
+            filletRadius = form->number("radius");
+            const auto target = targetId;
+            const auto edges = filletEdges;
+            if (!service->createFillet(target, edges, filletRadius, id, e)) { showError(e); return; }
+            refreshFromDocument(true); selectFeature(id);
+            setMessage(featureName(id) + " created. " + featureName(target) + " is hidden in the tree; Undo restores it.", 0);
+            return;
+        }
         case Task::none: return;
         default: acceptMotionTask(); return;
     }
@@ -1516,7 +1644,7 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what)
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
-    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
+    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &filletButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
     {
         const auto mode = selection != nullptr ? selection->mode() : djehuti::cad::CadSelection::Mode::body;
         bodyModeButton.setToggleState(mode == djehuti::cad::CadSelection::Mode::body, juce::dontSendNotification);
@@ -1534,12 +1662,13 @@ void CadWorkspacePanel::updateToolbar()
     unionButton.setToggleState(task == Task::boolean && booleanKind == "union", juce::dontSendNotification);
     intersectButton.setToggleState(task == Task::boolean && booleanKind == "intersect", juce::dontSendNotification);
     extrudeButton.setToggleState(task == Task::extrude, juce::dontSendNotification); cutButton.setToggleState(task == Task::cut, juce::dontSendNotification);
+    filletButton.setToggleState(task == Task::fillet, juce::dontSendNotification);
     sketchButton.setToggleState(task == Task::createSketch, juce::dontSendNotification);
     boxButton.setToggleState(task == Task::newBox, juce::dontSendNotification); cylinderButton.setToggleState(task == Task::newCylinder, juce::dontSendNotification);
     if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + (sketch->onFace() ? "on " + supportText(*sketch) : sketch->plane + " plane"), juce::dontSendNotification);
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
-    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton,&cutButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
+    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton,&cutButton,&filletButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
     resized(); repaint();
 }
 
@@ -1589,7 +1718,13 @@ void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
     }
     juce::PopupMenu menu;
     if (f->type == "sketch") { menu.addItem(1, "Edit Sketch"); menu.addItem(2, "Extrude..."); menu.addItem(3, "Cut Sketch..."); }
-    if (isSolid(id)) { menu.addItem(4, "Subtract from this body..."); if (task == Task::boolean) { menu.addItem(5, "Use as Target"); menu.addItem(6, "Use as Tool"); } }
+    if (isSolid(id))
+    {
+        menu.addItem(4, "Subtract from this body...");
+        menu.addItem(10, "Fillet...");
+        if (task == Task::boolean) { menu.addItem(5, "Use as Target"); menu.addItem(6, "Use as Tool"); }
+        if (task == Task::fillet) { menu.addItem(11, "Use as Fillet Target"); }
+    }
     if (f->type != "sketch") menu.addItem(7, f->visible ? "Hide" : "Show");
     if (isSolid(id) && f->visible) menu.addItem(9, "Export...");
     menu.addSeparator(); menu.addItem(8, "Delete");
@@ -1607,6 +1742,8 @@ void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
             case 7: safe->toggleVisibility(id); break;
             case 8: safe->deleteFeature(id); break;
             case 9: showCadExportDialog(safe->service, { id }); break;
+            case 10: safe->selectFeature(id); safe->startTask(Task::fillet); break;
+            case 11: safe->targetId = id; safe->filletEdges.clear(); safe->updateHighlights(); safe->rebuildTaskPanel(true); break;
             default: break;
         }
     });
@@ -2543,7 +2680,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
     if (command == "clearInterference") { clearInterference(); return true; }
     const std::pair<const char*,juce::TextButton*> commands[] = {
         {"undo",&undoButton},{"redo",&redoButton},{"sketch",&sketchButton},{"box",&boxButton},{"cylinder",&cylinderButton},
-        {"extrude",&extrudeButton},{"cut",&cutButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
+        {"extrude",&extrudeButton},{"cut",&cutButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
         {"sketchSelect",&selectToolButton},{"line",&lineButton},{"rectangle",&rectangleButton},{"circle",&circleButton},{"constrain",&constrainButton},
         {"fitSketch",&fitSketchButton},{"finishSketch",&finishSketchButton},{"instance",&instanceButton},{"joint",&jointButton},{"coupling",&couplingButton},
         {"link",&linkButton},{"ik",&ikButton},{"fit",&fitButton},{"reset",&resetViewButton},{"views",&viewsButton},
@@ -2616,6 +2753,7 @@ juce::var CadWorkspacePanel::automationState()
     for (const auto& f : document.features())
     {
         auto* o = new juce::DynamicObject(); o->setProperty("id", f.id); o->setProperty("name", f.name); o->setProperty("type", f.type); o->setProperty("visible", f.visible);
+        o->setProperty("width", f.width); o->setProperty("depth", f.depth); o->setProperty("height", f.height); o->setProperty("radius", f.radius);
         o->setProperty("x", f.x); o->setProperty("y", f.y); o->setProperty("z", f.z);
         if (const auto* sketch = document.findSketch(f.id))
         {
