@@ -1,0 +1,153 @@
+{
+  "format": "djehuti-engineering-catalog",
+  "schemaVersion": 1,
+  "materialSchemaVersion": 2,
+  "stockSchemaVersion": 1,
+  "materials": [
+    {
+      "id": "mat-ref-a36",
+      "name": "A36 carbon steel (reference)",
+      "revision": 1,
+      "model": "isotropic",
+      "family": "Carbon steel",
+      "specification": "ASTM A36",
+      "condition": "Supplier typical",
+      "source": "https://www.onlinemetals.com/en/product-guide/alloy/a36",
+      "note": "Supplier typical reference, checked 2026-10-20; not certified design allowables. Density converted from 0.282 lb/in^3; modulus from 29000 ksi. Source precision retained; yield and forming properties unspecified.",
+      "properties": {
+        "density": {
+          "value": 7805.7331,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 199947.9615,
+          "unit": "MPa"
+        },
+        "poissonsRatio": {
+          "value": 0.26,
+          "unit": "1"
+        }
+      }
+    },
+    {
+      "id": "mat-ref-304",
+      "name": "304 stainless steel (reference)",
+      "revision": 1,
+      "model": "isotropic",
+      "family": "Stainless steel",
+      "specification": "UNS S30400",
+      "condition": "Annealed",
+      "source": "https://www.onlinemetals.com/en/product-guide/alloy/304",
+      "note": "Supplier typical reference, checked 2026-10-20; not certified design allowables. Density converted from 0.289 lb/in^3; modulus from 28000 ksi. Source precision retained; yield and forming properties unspecified.",
+      "properties": {
+        "density": {
+          "value": 7999.4925,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 193053.2042,
+          "unit": "MPa"
+        },
+        "poissonsRatio": {
+          "value": 0.29,
+          "unit": "1"
+        }
+      }
+    },
+    {
+      "id": "mat-ref-6061-t6",
+      "name": "6061-T6 aluminum (reference)",
+      "revision": 1,
+      "model": "isotropic",
+      "family": "Aluminum",
+      "specification": "6061",
+      "condition": "T6",
+      "source": "https://www.onlinemetals.com/en/product-guide/alloy/6061",
+      "note": "Supplier typical reference, checked 2026-10-20; not certified design allowables. Density converted from 0.1 lb/in^3; modulus from 10000 ksi. Source precision retained; yield and forming properties unspecified.",
+      "properties": {
+        "density": {
+          "value": 2767.9905,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 68947.5729,
+          "unit": "MPa"
+        },
+        "poissonsRatio": {
+          "value": 0.33,
+          "unit": "1"
+        }
+      }
+    },
+    {
+      "id": "mat-ref-c110",
+      "name": "C110 copper (reference)",
+      "revision": 1,
+      "model": "isotropic",
+      "family": "Copper",
+      "specification": "UNS C11000",
+      "condition": "Annealed",
+      "source": "https://www.onlinemetals.com/en/product-guide/alloy/110",
+      "note": "Supplier typical reference, checked 2026-10-20; not certified design allowables. Density converted from 0.321 lb/in^3; modulus from 17000 ksi. Source precision retained; yield and forming properties unspecified.",
+      "properties": {
+        "density": {
+          "value": 8885.2494,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 117210.874,
+          "unit": "MPa"
+        },
+        "poissonsRatio": {
+          "value": 0.34,
+          "unit": "1"
+        }
+      }
+    },
+    {
+      "id": "mat-ref-c260",
+      "name": "C260 brass (reference)",
+      "revision": 1,
+      "model": "isotropic",
+      "family": "Brass",
+      "specification": "UNS C26000",
+      "condition": "Soft annealed",
+      "source": "https://www.onlinemetals.com/en/product-guide/alloy/260",
+      "note": "Supplier typical reference, checked 2026-10-20; not certified design allowables. Density converted from 0.308 lb/in^3; modulus from 16000 ksi. Source precision retained; yield and forming properties unspecified.",
+      "properties": {
+        "density": {
+          "value": 8525.4107,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 110316.1167,
+          "unit": "MPa"
+        },
+        "poissonsRatio": {
+          "value": 0.38,
+          "unit": "1"
+        }
+      }
+    }
+  ],
+  "stocks": [
+    {
+      "id": "stock-ref-6061-0063-12x24",
+      "name": "6061-T6 sheet 0.063 in x 12 x 24 in (reference)",
+      "revision": 1,
+      "material": "mat-ref-6061-t6",
+      "lengthUnit": "mm",
+      "thicknessBasis": "substrate",
+      "thicknessMm": 1.6002,
+      "sheetWidthMm": 304.8,
+      "sheetLengthMm": 609.6,
+      "finish": "Mill",
+      "coating": "",
+      "formingMethod": "kFactor",
+      "qualification": "unqualified",
+      "formingSource": "",
+      "source": "https://www.grainger.com/product/Aluminum-Sheet-6061-786CH9",
+      "note": "Supplier nominal dimensions converted with 25.4 mm/in; checked 2026-10-20. Confirm actual substrate thickness for production. Bend radius and K-factor intentionally unspecified."
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+#include "CadMaterialsManager.h"
 #include "CadWorkspacePanel.h"
 #include "CadExportDialog.h"
 
@@ -647,7 +648,7 @@ private:
 };
 
 //==============================================================================
-CadWorkspacePanel::~CadWorkspacePanel() { if (keyHost != nullptr) keyHost->removeKeyListener(this); stopTimer(); tree.setRootItem(nullptr); }
+CadWorkspacePanel::~CadWorkspacePanel() { if (keyHost != nullptr) keyHost->removeKeyListener(this); stopTimer(); delete materialsManager.getComponent(); tree.setRootItem(nullptr); }
 
 CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandService> s) : service(std::move(s)), sketchCanvas(std::make_unique<SketchCanvas>(*this))
 {
@@ -665,7 +666,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         using E = WorkspaceMenu::Entry; using S = WorkspaceMenu::Section;
         const bool sketching = editingSketchId.isNotEmpty();
         return std::vector<S> {
-            { "Edit", { E{1,"Undo"}, E{2,"Redo"} } },
+            { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
             { "Modify", { E{6,"Extrude...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
@@ -681,6 +682,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         else if (id == 27) executeUiCommand("clearInterference");
         else if (id == 34) executeUiCommand("fillet");
         else if (id == 35) executeUiCommand("curve");
+        else if (id == 36) executeUiCommand("materials");
         else if (id >= 30 && id <= 33) modelView.toggleGuide(juce::StringArray{"floor","world","local","joints"}[id-30]);
     };
     addAndMakeVisible(modeLabel); addAndMakeVisible(statusLabel); addAndMakeVisible(unitsLabel);
@@ -1337,6 +1339,11 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("x", placement + "X", f->x, "mm", "World X position.");
             form->addNumber("y", placement + "Y", f->y, "mm", "World Y position.");
             form->addNumber("z", placement + "Z", f->z, "mm", "World Z position.");
+            juce::String materialText = "No engineering material assigned.";
+            if (const auto* a = document.materialsData().assignmentFor(selectedId))
+                if (const auto* m = document.materialsData().find(a->materialId)) materialText = "Material: " + m->name + " (revision " + juce::String(m->revision) + ")";
+            form->addNote({}, materialText, 2);
+            form->addButton("materials", "Materials and Sheet Stock...", [this] { showMaterialsManager(); }, "Manage libraries and assign a physical material to this part.");
             form->addHeader("Actions");
             const auto id = selectedId;
             form->addButton("visibility", f->visible ? "Hide" : "Show", [this, id] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->toggleVisibility(id); }); }, "Toggle visibility in the model view.");
@@ -2976,6 +2983,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
         if (selection != nullptr) selection->setTool(command == "pointer" ? djehuti::cad::CadSelection::Tool::pointer : command == "boxSelect" ? djehuti::cad::CadSelection::Tool::box : djehuti::cad::CadSelection::Tool::circle);
         return true;
     }
+    if (command == "materials") { showMaterialsManager(); return true; }
     if (command == "export") { showExportDialog(); return true; }
     if (command == "interference") { checkInterference(false); return true; }
     if (command == "clearInterference") { clearInterference(); return true; }
@@ -2994,7 +3002,7 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
 {
     const bool sketch = editingSketchId.isNotEmpty();
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
-    if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","interference"}.contains(command)) return !sketch;
+    if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","interference","materials"}.contains(command)) return !sketch;
     if (command == "clearInterference") return interferenceActive;
     return true;
 }
@@ -3052,7 +3060,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -3236,4 +3244,11 @@ void CadWorkspacePanel::addInterferencePanel(juce::String& title, juce::String& 
     form->addHeader("Actions");
     form->addButton("recheck", "Check again", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->checkInterference(false); }); }, "Inspect the pose shown now.");
     form->addButton("clearInterference", "Clear", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->clearInterference(); }); }, "Remove the highlights and close the check.");
+}
+
+void CadWorkspacePanel::showMaterialsManager()
+{
+    if (materialsManager != nullptr) { materialsManager->toFront(true); return; }
+    const auto* instance = service->document().mechanicsData().findInstance(selectedId);
+    materialsManager = showCadMaterialsManager(service, instance ? instance->featureId : selectedId);
 }

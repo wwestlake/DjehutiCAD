@@ -31,6 +31,7 @@ public:
     void saveDocumentAs();
     // Shared Export... dialog; the selected body or instance is checked initially, otherwise the whole visible model.
     void showExportDialog();
+    void showMaterialsManager();
     juce::String layoutState() const;
     void restoreLayoutState(const juce::String& state);
     void setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link);
@@ -187,6 +188,7 @@ private:
     int idleFrameTicks = 0;
     bool fastFrames = true;
     std::unique_ptr<juce::FileChooser> fileChooser;
+    juce::Component::SafePointer<juce::DialogWindow> materialsManager;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CadWorkspacePanel)
 };

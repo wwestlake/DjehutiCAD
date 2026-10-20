@@ -30,6 +30,10 @@ struct CadMaterial
     std::optional<double> poissonsRatio;      // required for "isotropic"
     std::optional<double> yieldStrengthMPa;   // optional
     juce::String note;                        // free text, e.g. source of the values
+    juce::String family, specification, condition, source;
+    // Origin of a document snapshot (or a customized catalog entry); never a live external link.
+    juce::String catalogId;
+    int catalogRevision = 0;
 };
 
 // One material per part. A part is a document feature (body) identified by its persistent feature id, never by
@@ -42,7 +46,7 @@ struct CadMaterialAssignment
 
 struct CadMaterials
 {
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
     int nextNumber = 1;
     std::vector<CadMaterial> materials;
     std::vector<CadMaterialAssignment> assignments;
@@ -65,6 +69,7 @@ bool validateMaterial(const CadMaterial& material, juce::String& error);
 bool validateLibrary(const CadMaterials& library, juce::String& error);
 juce::var materialToJson(const CadMaterial& material);
 bool materialFromJson(const juce::var& json, CadMaterial& material, juce::String& error);
+bool readArgs(const juce::var& args, CadMaterial& material, juce::String& error);
 juce::var toJson(const CadMaterials& library);
 bool fromJson(const juce::var& json, CadMaterials& library, juce::String& error);
 }

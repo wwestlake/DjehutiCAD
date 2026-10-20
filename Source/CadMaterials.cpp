@@ -65,6 +65,7 @@ bool validateMaterial(const CadMaterial& m, juce::String& error)
     if (m.poissonsRatio && !(*m.poissonsRatio > -1.0 && *m.poissonsRatio < 0.5)) { error = label + ": Poisson's ratio must lie between -1 and 0.5 (exclusive)."; return false; }
     if (m.yieldStrengthMPa && *m.yieldStrengthMPa <= 0.0) { error = label + ": yield strength must be greater than 0 MPa when specified."; return false; }
     if (m.revision < 1) { error = label + ": revision must be 1 or greater."; return false; }
+    if (m.catalogRevision < 0 || (m.catalogId.isEmpty() != (m.catalogRevision == 0))) { error = label + ": invalid catalog provenance."; return false; }
     return true;
 }
 
@@ -100,6 +101,8 @@ juce::var materialToJson(const CadMaterial& m)
         }
     o->setProperty("properties", juce::var(properties));
     if (m.note.isNotEmpty()) o->setProperty("note", m.note);
+    o->setProperty("family", m.family); o->setProperty("specification", m.specification); o->setProperty("condition", m.condition); o->setProperty("source", m.source);
+    if (m.catalogId.isNotEmpty()) { o->setProperty("catalogId", m.catalogId); o->setProperty("catalogRevision", m.catalogRevision); }
     return juce::var(o);
 }
 
@@ -110,6 +113,9 @@ bool materialFromJson(const juce::var& json, CadMaterial& m, juce::String& error
     m = {};
     m.id = o->getProperty("id").toString(); m.name = o->getProperty("name").toString();
     m.revision = (int) o->getProperty("revision"); m.model = o->getProperty("model").toString(); m.note = o->getProperty("note").toString();
+    m.family = o->getProperty("family").toString(); m.specification = o->getProperty("specification").toString();
+    m.condition = o->getProperty("condition").toString(); m.source = o->getProperty("source").toString();
+    m.catalogId = o->getProperty("catalogId").toString(); m.catalogRevision = (int) o->getProperty("catalogRevision");
     if (auto* properties = o->getProperty("properties").getDynamicObject())
         for (const auto& entry : properties->getProperties())
         {
@@ -172,14 +178,20 @@ juce::var assignmentJson(const CadDocument& document, const CadMaterialAssignmen
 
 // Reads the flat API fields (explicit units in the key names) into a material. Missing keys leave the current
 // value; keys listed in "clear" become unspecified.
-bool readMaterialArgs(const juce::var& args, CadMaterial& m, juce::String& error)
+}
+bool matl::readArgs(const juce::var& args, CadMaterial& m, juce::String& error)
 {
+    if (!args.isObject()) { error = "Material definition must be an object."; return false; }
     struct Field { const char* key; std::optional<double> CadMaterial::* member; const char* property; };
     const Field fields[] { { "densityKgPerM3", &CadMaterial::densityKgPerM3, "density" }, { "youngsModulusMPa", &CadMaterial::youngsModulusMPa, "youngsModulus" },
                            { "poissonsRatio", &CadMaterial::poissonsRatio, "poissonsRatio" }, { "yieldStrengthMPa", &CadMaterial::yieldStrengthMPa, "yieldStrength" } };
     if (args.hasProperty("name")) m.name = args.getProperty("name", "").toString().trim();
     if (args.hasProperty("model")) m.model = args.getProperty("model", "").toString();
     if (args.hasProperty("note")) m.note = args.getProperty("note", "").toString();
+    if (args.hasProperty("family")) m.family = args["family"].toString().trim();
+    if (args.hasProperty("specification")) m.specification = args["specification"].toString().trim();
+    if (args.hasProperty("condition")) m.condition = args["condition"].toString().trim();
+    if (args.hasProperty("source")) m.source = args["source"].toString().trim();
     for (const auto& f : fields)
         if (args.hasProperty(f.key))
         {
@@ -196,7 +208,6 @@ bool readMaterialArgs(const juce::var& args, CadMaterial& m, juce::String& error
         }
     return true;
 }
-}
 
 juce::var CadCommandService::materialCommand(const juce::String& tool, const juce::var& args)
 {
@@ -210,7 +221,7 @@ juce::var CadCommandService::materialCommand(const juce::String& tool, const juc
         const auto materialId = args.getProperty("material", "").toString(), featureId = args.getProperty("feature", "").toString();
         if (materialId.isNotEmpty())
         {
-            if (const auto* m = library.find(materialId)) { reply->setProperty("material", matl::materialToJson(*m)); reply->setProperty("usedBy", juce::var(library.featuresUsing(materialId))); }
+            if (const auto* m = library.find(materialId)) { reply->setProperty("material", matl::materialToJson(*m)); reply->setProperty("usedBy", juce::var(library.featuresUsing(materialId))); reply->setProperty("usedByStock", juce::var(model.stocksData().usingMaterial(materialId))); }
             else { ok = false; error = "Unknown material: " + materialId; }
         }
         else if (featureId.isNotEmpty())
@@ -231,7 +242,7 @@ juce::var CadCommandService::materialCommand(const juce::String& tool, const juc
     else if (tool == "cad_material_create")
     {
         CadMaterial m;
-        ok = readMaterialArgs(args, m, error) && model.createMaterial(m, id, error);
+        ok = matl::readArgs(args, m, error) && model.createMaterial(m, id, error);
         if (ok) reply->setProperty("material", matl::materialToJson(*model.materialsData().find(id)));
     }
     else if (tool == "cad_material_update")
@@ -242,9 +253,15 @@ juce::var CadCommandService::materialCommand(const juce::String& tool, const juc
         else
         {
             CadMaterial m = *existing;
-            ok = readMaterialArgs(args, m, error) && model.updateMaterial(materialId, m, error);
+            ok = matl::readArgs(args, m, error) && model.updateMaterial(materialId, m, error);
             if (ok) reply->setProperty("material", matl::materialToJson(*model.materialsData().find(materialId)));
         }
+    }
+    else if (tool == "cad_material_duplicate")
+    {
+        const auto* existing = library.find(args["material"].toString());
+        if (!existing) { ok = false; error = "Unknown material."; }
+        else { auto m = *existing; m.name += " copy"; ok = matl::readArgs(args, m, error) && model.createMaterial(m, id, error); }
     }
     else if (tool == "cad_material_delete") ok = model.removeMaterial(args.getProperty("material", "").toString(), static_cast<bool>(args.getProperty("clearAssignments", false)), error);
     else if (tool == "cad_material_assign") ok = model.assignMaterial(args.getProperty("feature", "").toString(), args.getProperty("material", "").toString(), error);

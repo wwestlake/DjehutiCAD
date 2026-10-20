@@ -4,6 +4,9 @@ DjehutiCAD is an independent FRust-programmable mechanical CAD application built
 
 The application includes sketch/solid modeling, Boolean operations, an authoritative OCAF document with undo/redo, multiple 3D views, mechanical joints/couplings and constraint solving, local inverse-kinematics targets, a DEWB motion interface, FRust/node integration, and a BYOK agent. Capabilities and recorded verification limits are described in the documentation and handoff.
 
+The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
+document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
+
 ## Build
 
 Configure with CMake from a Visual Studio developer shell. The project expects the existing local JUCE and FrustLang checkouts used by the Djehuti suite; override `JUCE_PATH` and `FRUSTLANG_ROOT` when those locations differ.

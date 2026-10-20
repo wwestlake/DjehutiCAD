@@ -46,7 +46,7 @@ std::string DjehutiCAD::runEngineeringCommand(const juce::Component::SafePointer
         if (safe == nullptr || safe->cadService == nullptr) return R"({"ok": false, "error": "DjehutiCAD is closing."})";
         const auto parsed = juce::JSON::parse(arguments.isEmpty() ? juce::String("{}") : arguments);
         const auto args = parsed.isObject() ? parsed : juce::var(new juce::DynamicObject());
-        const auto reply = name.rfind("cad_analysis_", 0) == 0 ? safe->cadService->analysisCommand(juce::String(name), args) : safe->cadService->materialCommand(juce::String(name), args);
+        const auto reply = name == "cad_catalog" ? safe->cadService->catalogCommand(args) : name == "cad_stock" ? safe->cadService->stockCommand(args) : name.rfind("cad_analysis_", 0) == 0 ? safe->cadService->analysisCommand(juce::String(name), args) : safe->cadService->materialCommand(juce::String(name), args);
         if (safe->cadWorkspace != nullptr) safe->cadWorkspace->repaint();
         return juce::JSON::toString(reply, true).toStdString();
     };
@@ -160,7 +160,7 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
         }
         if (name == "cad_export") return runExportCommand(safeThis, arguments);
         if (name == "cad_list_faces" || name == "cad_create_face_sketch") return runFaceCommand(safeThis, name, arguments);
-        if (name.rfind("cad_material_", 0) == 0 || name.rfind("cad_analysis_", 0) == 0) return runEngineeringCommand(safeThis, name, arguments);
+        if (name == "cad_catalog" || name == "cad_stock" || name.rfind("cad_material_", 0) == 0 || name.rfind("cad_analysis_", 0) == 0) return runEngineeringCommand(safeThis, name, arguments);
         if (const auto ik = ikCommandForTool(name); ik.isNotEmpty()) return runIkCommand(safeThis, ik, arguments);
         if (name == "cad_motion_status")
         {

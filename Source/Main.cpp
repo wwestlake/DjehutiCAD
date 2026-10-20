@@ -9,6 +9,8 @@
 #include "CadMotionRuntime.h"
 #include "CadIkCommands.h"
 #include "Viewport3D.h"
+#include "CadMaterialsManager.h"
+namespace djehuti::cad { bool runCadStockCheck(juce::var&); }
 
 #include <BRepBndLib.hxx>
 #include <Poly_Triangulation.hxx>
@@ -386,7 +388,7 @@ bool runCadMaterialCheck(juce::var& report)
     {
         CadMaterials bad; juce::String be;
         const bool wrongUnit = !matl::fromJson(args(R"({"schemaVersion":1,"nextNumber":2,"materials":[{"id":"mat-1","name":"X","revision":1,"model":"isotropic","properties":{"density":{"value":7.85,"unit":"g/cm^3"},"youngsModulus":{"value":1,"unit":"MPa"},"poissonsRatio":{"value":0.3,"unit":"1"}}}],"assignments":[]})"), bad, be) && be.contains("kg/m^3");
-        const bool newer = !matl::fromJson(args(R"({"schemaVersion":2,"materials":[],"assignments":[]})"), bad, be) && be.contains("schema");
+        const bool newer = !matl::fromJson(args(R"({"schemaVersion":3,"materials":[],"assignments":[]})"), bad, be) && be.contains("schema");
         const bool dangling = !matl::fromJson(args(R"({"schemaVersion":1,"nextNumber":1,"materials":[],"assignments":[{"feature":"box-1","material":"mat-7"}]})"), bad, be) && be.contains("missing material");
         record(wrongUnit && newer && dangling, "stored data with a wrong unit, a newer schema or a dangling assignment is refused");
     }
@@ -1250,6 +1252,18 @@ public:
 
     void initialise(const juce::String& commandLine) override
     {
+        if (commandLine.startsWith("--cad-stock-ui-check"))
+        {
+            juce::MessageManager::callAsync([this]
+            {
+                const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/stock-ui-check").getChildFile(juce::Uuid().toDashedString());
+                juce::var report; const bool passed = runCadStockUiCheck(report, folder);
+                juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-stock-ui-check.result.json").replaceWithText(juce::JSON::toString(report));
+                setApplicationReturnValue(passed ? 0 : 1);
+                juce::MessageManager::callAsync([this] { quit(); });
+            });
+            return;
+        }
         if (commandLine.startsWith("--cad-workspace-check"))
         {
             // Use JUCE's normal event loop and shutdown path. std::exit inside initialise bypasses
@@ -1289,6 +1303,13 @@ public:
             juce::var report;
             const bool ok = runCadGeometryCheck(report);
             juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-geometry-check.result.json").replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-stock-check"))
+        {
+            juce::var report;
+            const bool ok = djehuti::cad::runCadStockCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-stock-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-material-check"))
