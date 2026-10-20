@@ -15,7 +15,7 @@ public:
         const std::pair<const char*, const char*> specs[] = {
             {"Pointer", "pointer"}, {"Box select", "boxSelect"}, {"Circle select", "circleSelect"},
             {"Bodies", "bodyMode"}, {"Faces", "faceMode"}, {"Edges", "edgeMode"},
-            {"Sketch select", "sketchSelect"}, {"Line", "line"}, {"Rectangle", "rectangle"}, {"Circle", "circle"}
+            {"Sketch select", "sketchSelect"}, {"Line", "line"}, {"Rectangle", "rectangle"}, {"Circle", "circle"}, {"Curve", "curve"}
         };
         for (const auto& s : specs)
         {

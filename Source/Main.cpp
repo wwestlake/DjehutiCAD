@@ -20,6 +20,7 @@
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 #include "lib3mf_implicit.hpp"
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -599,6 +600,154 @@ bool runCadAnalysisCheck(juce::var& report)
     return passed;
 }
 
+// Focused sketch-editing check (document level; the canvas gestures call these same commands): polygon shape kept,
+// vertex moves with joined geometry and one undo step each, redo cleared by a new edit, vertex insertion, rectangle
+// corner reshaping, Bezier profiles extruded into exact solids, handle edits, tangent smoothing, save/reopen.
+bool runCadSketchEditCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks;
+    bool passed = true;
+    const auto record = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto item = new juce::DynamicObject(); item->setProperty("check", name); item->setProperty("passed", ok); item->setProperty("detail", detail);
+        checks.add(juce::var(item)); passed = passed && ok;
+        auto root = new juce::DynamicObject(); root->setProperty("passed", passed); root->setProperty("checks", checks); report = juce::var(root);
+        juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-edit-check.result.json").replaceWithText(juce::JSON::toString(report, false));
+        return ok;
+    };
+    const auto volumeOf = [](CadCommandService& s, const juce::String& id) { return geomprops::ofFeature(s.document(), id).volumeMm3; };
+    const auto entity = [](CadCommandService& s, const juce::String& sketch, const juce::String& id) -> const CadSketchEntity* { if (const auto* k = s.document().findSketch(sketch)) for (const auto& e : k->entities) if (e.id == id) return &e; return nullptr; };
+    const auto shoelace = [](const std::vector<std::pair<double, double>>& p) { double a = 0; for (size_t i = 0; i < p.size(); ++i) { const auto& q = p[i]; const auto& r = p[(i + 1) % p.size()]; a += q.first * r.second - r.first * q.second; } return std::abs(a) * 0.5; };
+    const auto close = [](double a, double b, double rel) { return std::abs(a - b) <= rel * juce::jmax(1.0, std::abs(b)); };
+
+    // 1. A trapezoid drawn with the Line tool (ends joined by snapping) keeps its shape and extrudes.
+    CadCommandService svc; juce::String e, sketch, l1, l2, l3, l4, solid;
+    svc.createSketch("XY", 0, sketch, e);
+    svc.addSketchLine(sketch, 0, 0, 40, 0, l1, e);
+    svc.addSketchLine(sketch, 40, 0, 30, 20, l2, e, l1 + ":p2");
+    svc.addSketchLine(sketch, 30, 20, 10, 20, l3, e, l2 + ":p2");
+    svc.addSketchLine(sketch, 10, 20, 0, 0, l4, e, l3 + ":p2", l1 + ":p1");
+    svc.createExtrude(sketch, 10, false, solid, e);
+    const auto trapezoid = shoelace({ { 0, 0 }, { 40, 0 }, { 30, 20 }, { 10, 20 } }) * 10.0;
+    record(solid.isNotEmpty() && close(volumeOf(svc, solid), trapezoid, 1e-9) && std::abs(entity(svc, sketch, l2)->x2 - 30.0) < 1e-12,
+           "four joined lines stay a trapezoid (not forced into a rectangle) and extrude: 6000 mm3", juce::String(volumeOf(svc, solid), 6) + " " + e);
+
+    // 2. Moving a vertex carries the joined endpoint and keeps the profile closed; one command, one undo.
+    const auto revision = svc.document().revision();
+    const bool moved = svc.moveSketchPoint(sketch, l2 + ":p2", 35, 25, e);
+    const auto movedArea = shoelace({ { 0, 0 }, { 40, 0 }, { 35, 25 }, { 10, 20 } }) * 10.0;
+    record(moved && entity(svc, sketch, l3)->x1 == 35.0 && entity(svc, sketch, l3)->y1 == 25.0 && close(volumeOf(svc, solid), movedArea, 1e-9) && svc.document().revision() == revision + 1,
+           "vertex move: the joined line follows, the extrusion rebuilds closed (exact area), one document revision", juce::String(volumeOf(svc, solid), 6) + " " + e);
+    juce::String ue;
+    svc.undo(ue);
+    const bool undone = entity(svc, sketch, l2)->x2 == 30.0 && entity(svc, sketch, l3)->x1 == 30.0 && close(volumeOf(svc, solid), trapezoid, 1e-9);
+    svc.redo(ue);
+    const bool redone = entity(svc, sketch, l3)->y1 == 25.0 && close(volumeOf(svc, solid), movedArea, 1e-9);
+    record(undone && redone, "one Undo restores the whole move (both endpoints and the solid); Redo re-applies it");
+    svc.undo(ue);
+    svc.moveSketchPoint(sketch, l3 + ":p2", 5, 22, e);   // a new edit after undo
+    juce::String re; const bool redoRefused = !svc.redo(re);
+    record(redoRefused && entity(svc, sketch, l3)->x1 == 30.0 && entity(svc, sketch, l4)->x1 == 5.0, "a new edit after Undo clears Redo (the undone move cannot come back on top of it)", re);
+
+    // 3. Insert a vertex: the path is unchanged; then moving it reshapes the profile.
+    juce::String created; juce::StringArray removed;
+    const auto before = volumeOf(svc, solid);
+    const bool inserted = svc.insertSketchVertex(sketch, l1, 20, -3, created, removed, e);
+    const auto* first = entity(svc, sketch, l1); const auto* second = entity(svc, sketch, created);
+    record(inserted && first->x2 == 20.0 && first->y2 == 0.0 && second->x1 == 20.0 && second->x2 == 40.0 && close(volumeOf(svc, solid), before, 1e-9) && removed.isEmpty(),
+           "insert vertex at (20, 0) projected from (20, -3): two joined lines, same path and volume", created + " " + e);
+    const bool pulled = svc.moveSketchPoint(sketch, l1 + ":p2", 20, -10, e);
+    const auto pulledArea = shoelace({ { 0, 0 }, { 20, -10 }, { 40, 0 }, { 30, 20 }, { 10, 20 } });
+    const auto withNotch = shoelace({ { 0, 0 }, { 20, -10 }, { 40, 0 }, { 30, 20 }, { 5, 22 } }) * 10.0;
+    record(pulled && entity(svc, sketch, created)->x1 == 20.0 && entity(svc, sketch, created)->y1 == -10.0 && close(volumeOf(svc, solid), withNotch, 1e-9),
+           "the inserted vertex moves; both halves follow and the solid rebuilds", juce::String(volumeOf(svc, solid), 6) + " expected " + juce::String(withNotch, 6) + " (" + juce::String(pulledArea, 3) + ") " + e);
+    svc.undo(ue); svc.undo(ue);
+    record(entity(svc, sketch, created) == nullptr && entity(svc, sketch, l1)->x2 == 40.0, "undo removes the move and the insertion");
+
+    // 4. Rectangle: a corner drag reshapes it about the opposite corner and updates its dimensions; splitting an
+    //    edge turns it into a polygon and says which constraints were removed.
+    {
+        CadCommandService r; juce::String re2, rs, group, body;
+        r.createSketch("XY", 0, rs, re2); r.addSketchRectangle(rs, 0, 0, 30, 20, group, re2); r.createExtrude(rs, 5, false, body, re2);
+        const auto* k = r.document().findSketch(rs);
+        const auto bottom = k->entities[0].id, right = k->entities[1].id;
+        const bool corner = r.moveSketchPoint(rs, right + ":p2", 50, 35, re2);
+        double width = 0, height = 0; for (const auto& c : r.document().findSketch(rs)->constraints) { if (c.type == "distance" && c.firstEntity == bottom) width = c.value; if (c.type == "distance" && c.firstEntity == right) height = c.value; }
+        record(corner && width == 50.0 && height == 35.0 && close(volumeOf(r, body), 50.0 * 35.0 * 5.0, 1e-9), "rectangle corner dragged to (50, 35): 50 x 35, dimensions updated, solid rebuilt", re2);
+        juce::String newLine; juce::StringArray dropped;
+        const bool split = r.insertSketchVertex(rs, bottom, 25, 0, newLine, dropped, re2);
+        const bool pulledOut = split && r.moveSketchPoint(rs, bottom + ":p2", 25, -10, re2);
+        record(split && dropped.size() >= 2 && pulledOut && close(volumeOf(r, body), (50.0 * 35.0 + 0.5 * 50.0 * 10.0) * 5.0, 1e-9),
+               "splitting a rectangle edge reports the removed constraints, then the new vertex can leave the line", dropped.joinIntoString(", ") + " " + re2);
+    }
+
+    // 5. Bezier: a closed profile of a line and a curve is a genuine curved solid.
+    CadCommandService b; juce::String be, bs, base, curve, arch;
+    b.createSketch("XY", 0, bs, be);
+    b.addSketchLine(bs, 0, 0, 60, 0, base, be);
+    b.addSketchBezier(bs, 60, 0, 60, 40, 0, 40, 0, 0, curve, be, base + ":p2", base + ":p1");
+    const bool extruded = b.createExtrude(bs, 8, false, arch, be);
+    // Area enclosed by the chord and the cubic: integral of x dy over the curve, sampled finely.
+    const auto curveArea = [](double x0, double y0, double x1, double y1, double x2, double y2, double x3, double y3)
+    {
+        const auto at = [&](double t, double a, double p, double q, double d) { const auto s = 1 - t; return s * s * s * a + 3 * s * s * t * p + 3 * s * t * t * q + t * t * t * d; };
+        double area = 0, px = x0, py = y0; const int n = 20000;
+        for (int i = 1; i <= n; ++i) { const auto t = (double) i / n; const auto x = at(t, x0, x1, x2, x3), y = at(t, y0, y1, y2, y3); area += px * y - x * py; px = x; py = y; }
+        area += px * y0 - x0 * py; return std::abs(area) * 0.5;
+    };
+    const auto archArea = curveArea(60, 0, 60, 40, 0, 40, 0, 0);
+    int bezierEdges = 0;
+    for (TopExp_Explorer ex(b.document().find(arch)->shape, TopAbs_EDGE); ex.More(); ex.Next()) if (BRepAdaptor_Curve(TopoDS::Edge(ex.Current())).GetType() == GeomAbs_BezierCurve) ++bezierEdges;
+    record(extruded && close(volumeOf(b, arch), archArea * 8.0, 1e-6) && bezierEdges >= 2,
+           "line + Bezier closed profile extrudes to an exact curved solid (OCCT Bezier edges, volume = area x 8)", juce::String(volumeOf(b, arch), 6) + " expected " + juce::String(archArea * 8.0, 6) + ", Bezier edges " + juce::String(bezierEdges) + " " + be);
+    const bool handle = b.moveSketchPoint(bs, curve + ":c1", 70, 60, be);
+    const auto reshaped = curveArea(60, 0, 70, 60, 0, 40, 0, 0) * 8.0;
+    record(handle && close(volumeOf(b, arch), reshaped, 1e-6), "dragging handle 1 reshapes the curve and the solid", juce::String(volumeOf(b, arch), 6) + " expected " + juce::String(reshaped, 6) + " " + be);
+    const bool endMove = b.moveSketchPoint(bs, curve + ":p2", -10, 0, be);
+    const auto* c = entity(b, bs, curve);
+    record(endMove && entity(b, bs, base)->x1 == -10.0 && c->cx2 == -10.0 && c->cy2 == 40.0, "moving a curve endpoint moves the joined line end and carries that end's handle", be);
+    b.undo(ue); b.undo(ue);
+    record(close(volumeOf(b, arch), archArea * 8.0, 1e-6) && entity(b, bs, curve)->cx1 == 60.0, "undo restores the endpoint and the handle edit");
+    // Tangent join: the start handle is turned onto the line's direction (G1), keeping its length 40.
+    b.moveSketchPoint(bs, curve + ":c1", 75, 30, be);
+    const bool smoothed = b.smoothSketchJoint(bs, curve, "p1", be);
+    const auto* s = entity(b, bs, curve);
+    const double hx = s->cx1 - s->x1, hy = s->cy1 - s->y1, lx = s->x1 - entity(b, bs, base)->x1, ly = s->y1 - entity(b, bs, base)->y1;
+    record(smoothed && std::abs(hx * ly - hy * lx) < 1e-9 && hx * lx + hy * ly > 0 && close(std::hypot(hx, hy), std::hypot(15.0, 30.0), 1e-12),
+           "smooth join: the curve leaves the line along the line's direction (tangent), handle length kept", juce::String(hx, 6) + "," + juce::String(hy, 6) + " " + be);
+    record(b.document().find(arch) != nullptr && volumeOf(b, arch) > 0.0, "the smoothed profile still extrudes", juce::String(volumeOf(b, arch), 6));
+
+    // 6. Save, reopen, edit.
+    {
+        const auto file = juce::File::getCurrentWorkingDirectory().getChildFile("build/sketch-edit-check/curve.djo");
+        file.getParentDirectory().createDirectory();
+        const auto volume = volumeOf(b, arch);
+        juce::String se; const bool saved = b.save(file, se);
+        CadCommandService back; const bool loaded = back.load(file, se);
+        const auto* r = loaded ? entity(back, bs, curve) : nullptr;
+        record(saved && loaded && r != nullptr && r->type == "bezier" && r->cx1 == s->cx1 && r->cy2 == s->cy2 && close(volumeOf(back, arch), volume, 1e-9),
+               "save and reopen keep the curve, its handles and the extruded solid", se);
+        const bool edited = back.moveSketchPoint(bs, curve + ":c2", 10, 50, se);
+        record(edited && volumeOf(back, arch) > 0.0 && std::abs(volumeOf(back, arch) - volume) > 1.0, "after reopen the curve can be edited and the solid follows", se);
+    }
+
+    // 7. Existing behaviour: entity panel edits are one undo step; circles and plain rectangles still work.
+    {
+        CadCommandService p; juce::String pe, ps, group, circle, body;
+        p.createSketch("XY", 0, ps, pe); p.addSketchRectangle(ps, 0, 0, 10, 10, group, pe); p.createExtrude(ps, 2, false, body, pe);
+        const auto bottom = p.document().findSketch(ps)->entities[0].id;
+        p.editSketchEntity(ps, bottom, true, 5, 5, true, 20, pe);
+        const bool both = close(volumeOf(p, body), 20.0 * 10.0 * 2.0, 1e-9) && p.document().findSketch(ps)->entities[0].x1 == 5.0;
+        juce::String pu; p.undo(pu);
+        record(both && close(volumeOf(p, body), 200.0, 1e-9) && p.document().findSketch(ps)->entities[0].x1 == 0.0, "position + dimension edit is one command: one Undo reverts both", pe);
+        juce::String cs, cbody; p.createSketch("XY", 0, cs, pe); p.addSketchCircle(cs, 0, 0, 5, circle, pe); p.createExtrude(cs, 4, false, cbody, pe);
+        record(close(volumeOf(p, cbody), juce::MathConstants<double>::pi * 25.0 * 4.0, 1e-6), "circle profiles still extrude", pe);
+        record(!p.moveSketchPoint(ps, "constraint-1:p1", 0, 0, pe) && !p.insertSketchVertex(cs, circle, 0, 0, created, removed, pe), "bad point references and inserting into a circle are refused", pe);
+    }
+    return passed;
+}
+
 bool runCadRebuildCheck(juce::var& report)
 {
     using namespace djehuti::cad;
@@ -1154,6 +1303,13 @@ public:
             juce::var report;
             const bool ok = runCadAnalysisCheck(report);
             juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-analysis-check.result.json").replaceWithText(juce::JSON::toString(report, false));
+            std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-sketch-edit-check"))
+        {
+            juce::var report;
+            const bool ok = runCadSketchEditCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-edit-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
         if (commandLine.startsWith("--cad-rebuild-check"))

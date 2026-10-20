@@ -12,6 +12,7 @@
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
 class CadWorkspacePanel final : public juce::Component,
+                                private juce::KeyListener,
                                 private juce::Timer,
                                 private juce::AsyncUpdater
 {
@@ -21,6 +22,9 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress&) override;
+    // Undo/redo keys also arrive through the top-level window, for when keyboard focus is not inside this panel.
+    bool keyPressed(const juce::KeyPress&, juce::Component*) override;
+    void parentHierarchyChanged() override;
     void newDocument();
     void openDocument();
     void saveDocument();
@@ -79,6 +83,12 @@ private:
     void chooseConstraint();
     void addConstraint();
     void sketchGeometryAdded(const juce::String& what);
+    // Interactive sketch edits committed by the canvas (one document command each): vertex/handle drag,
+    // vertex insertion. selectSketchVertex selects an endpoint ("<entity>:p1|p2") for precise editing.
+    void selectSketchVertex(const juce::String& pointRef);
+    bool handleHistoryKey(const juce::KeyPress& key);
+    bool moveSketchPoint(const juce::String& pointRef, double u, double v);
+    bool insertSketchVertex(const juce::String& lineId, double u, double v);
     void updateToolbar();
     void updateHighlights();
     void setMessage(const juce::String& text, int severity);
@@ -126,13 +136,14 @@ private:
     void ikTargetDragged(const juce::String& targetId, const std::array<float, 3>& point, bool finished);
 
     std::shared_ptr<djehuti::cad::CadCommandService> service;
+    juce::Component::SafePointer<juce::Component> keyHost;   // top-level component this panel listens to for undo/redo keys
     juce::TooltipWindow tooltipWindow { this, 600 };
     juce::Label modeLabel, statusLabel, unitsLabel, treeHeading;
     juce::TextButton sketchButton { "Create Sketch" }, boxButton { "Box" }, cylinderButton { "Cylinder" }, extrudeButton { "Extrude" }, cutButton { "Cut Sketch" },
         filletButton { "Fillet" },
         subtractButton { "Subtract" }, unionButton { "Union" }, intersectButton { "Intersect" }, undoButton { "Undo" }, redoButton { "Redo" },
         fitButton { "Fit All" }, resetViewButton { "Reset View" }, viewsButton { "3D Views" },
-        selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, constrainButton { "Constrain" },
+        selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, curveButton { "Curve" }, constrainButton { "Constrain" },
         fitSketchButton { "Fit Sketch" }, finishSketchButton { "Finish Sketch" },
         instanceButton { "Instance" }, jointButton { "Joint" }, couplingButton { "Coupling" }, linkButton { "Motion Link" }, ikButton { "IK" },
         bodyModeButton { "Body" }, faceModeButton { "Face" }, edgeModeButton { "Edge" };
@@ -150,7 +161,7 @@ private:
 
     Task task = Task::none;
     juce::String booleanKind, sketchPlane, formContext;
-    juce::String selectedId, editingSketchId, sketchEntityId, sketchSecondEntityId;
+    juce::String selectedId, editingSketchId, sketchEntityId, sketchSecondEntityId, sketchVertexRef;
     juce::String profileId, targetId, toolId;
     std::vector<int> filletEdges;
     double filletRadius = 2.0;

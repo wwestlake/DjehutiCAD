@@ -56,10 +56,15 @@ struct CadFeature
     CadFaceOrigins faceOrigins;   // derived with shape
 };
 
+// type "line": p1 = (x1, y1), p2 = (x2, y2). type "circle": centre (x1, y1), radius.
+// type "bezier": cubic Bezier from p1 to p2 with control points c1 = (cx1, cy1) and c2 = (cx2, cy2); an OCCT
+// Geom_BezierCurve edge in profiles. Endpoints are referenced as "<id>:p1" / "<id>:p2", controls as ":c1" / ":c2".
+// Endpoints are not shared objects: connections are coincident constraints (see docs/SKETCH_EDITING_ARCHITECTURE.md).
 struct CadSketchEntity
 {
     juce::String id, type, groupId;
     double x1 = 0.0, y1 = 0.0, x2 = 0.0, y2 = 0.0, radius = 1.0;
+    double cx1 = 0.0, cy1 = 0.0, cx2 = 0.0, cy2 = 0.0;
 };
 
 struct CadSketchConstraint
@@ -168,6 +173,21 @@ public:
     bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error);
     bool setSketchEntityPosition(const juce::String& sketchId, const juce::String& entityId, double x, double y, juce::String& error);
     bool addSketchConstraint(const juce::String& sketchId, const juce::String& type, const juce::String& firstEntity, const juce::String& secondEntity, double value, juce::String& constraintId, juce::String& error);
+    // Interactive editing; each call is one undoable command.
+    // Position and dimension of an entity together (the entity panel's Apply).
+    bool editSketchEntity(const juce::String& sketchId, const juce::String& entityId, bool move, double x, double y, bool resize, double value, juce::String& error);
+    // Moves a point "<entity>:p1|p2|c1|c2". An endpoint carries every endpoint joined to it (coincident constraints,
+    // transitively, and endpoints at exactly the same position) and a Bezier endpoint carries its control point;
+    // a rectangle corner reshapes the rectangle about the opposite corner. Refused if constraints cannot hold.
+    bool moveSketchPoint(const juce::String& sketchId, const juce::String& pointRef, double x, double y, juce::String& error);
+    // Splits a line at the point of it nearest (x, y): the line keeps its id up to the new vertex, a new line
+    // continues to the old end, joined by a coincident constraint. The split line's own orientation/length
+    // constraints are removed and named in `removed`; a split rectangle becomes a polygon.
+    bool insertSketchVertex(const juce::String& sketchId, const juce::String& lineId, double x, double y, juce::String& newLineId, juce::StringArray& removed, juce::String& error);
+    bool addSketchBezier(const juce::String& sketchId, double x1, double y1, double cx1, double cy1, double cx2, double cy2, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {});
+    // Tangent (G1) join at one end of a Bezier: its control point at that end is turned onto the direction of the
+    // segment connected there, keeping the handle length. A one-time edit, not a persistent constraint.
+    bool smoothSketchJoint(const juce::String& sketchId, const juce::String& bezierId, const juce::String& end, juce::String& error);
     bool createExtrude(const juce::String& sketchId, double depth, bool reverse, juce::String& id, juce::String& error);
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
@@ -329,6 +349,11 @@ public:
     bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error) { return model.setSketchEntityDimension(sketchId, entityId, value, error); }
     bool setSketchEntityPosition(const juce::String& sketchId, const juce::String& entityId, double x, double y, juce::String& error) { return model.setSketchEntityPosition(sketchId, entityId, x, y, error); }
     bool addSketchConstraint(const juce::String& sketchId, const juce::String& type, const juce::String& firstEntity, const juce::String& secondEntity, double value, juce::String& constraintId, juce::String& error) { return model.addSketchConstraint(sketchId, type, firstEntity, secondEntity, value, constraintId, error); }
+    bool editSketchEntity(const juce::String& sketchId, const juce::String& entityId, bool move, double x, double y, bool resize, double value, juce::String& error) { return model.editSketchEntity(sketchId, entityId, move, x, y, resize, value, error); }
+    bool moveSketchPoint(const juce::String& sketchId, const juce::String& pointRef, double x, double y, juce::String& error) { return model.moveSketchPoint(sketchId, pointRef, x, y, error); }
+    bool insertSketchVertex(const juce::String& sketchId, const juce::String& lineId, double x, double y, juce::String& newLineId, juce::StringArray& removed, juce::String& error) { return model.insertSketchVertex(sketchId, lineId, x, y, newLineId, removed, error); }
+    bool addSketchBezier(const juce::String& sketchId, double x1, double y1, double cx1, double cy1, double cx2, double cy2, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {}) { return model.addSketchBezier(sketchId, x1, y1, cx1, cy1, cx2, cy2, x2, y2, entityId, error, firstConnection, secondConnection); }
+    bool smoothSketchJoint(const juce::String& sketchId, const juce::String& bezierId, const juce::String& end, juce::String& error) { return model.smoothSketchJoint(sketchId, bezierId, end, error); }
     bool createExtrude(const juce::String& sketchId, double depth, bool reverse, juce::String& id, juce::String& error) { return model.createExtrude(sketchId, depth, reverse, id, error); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }

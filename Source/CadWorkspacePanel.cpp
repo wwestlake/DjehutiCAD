@@ -22,7 +22,7 @@ bool isPrimitiveType(const juce::String& type) { return type == "box" || type ==
 double toUi(const juce::String& jointType, double value) { return jointType == "revolute" ? value * 180.0 / juce::MathConstants<double>::pi : value * 1000.0; }
 double fromUi(const juce::String& jointType, double value) { return jointType == "revolute" ? value * juce::MathConstants<double>::pi / 180.0 : value / 1000.0; }
 juce::String uiUnit(const juce::String& jointType) { return jointType == "revolute" ? "deg" : "mm"; }
-juce::String friendlyEntity(const juce::String& id) { const auto type = id.upToFirstOccurrenceOf("-", false, false); return type.substring(0, 1).toUpperCase() + type.substring(1) + " " + id.fromLastOccurrenceOf("-", false, false); }
+juce::String friendlyEntity(const juce::String& id) { const auto type = id.upToFirstOccurrenceOf("-", false, false); if (type == "bezier") return "Curve " + id.fromLastOccurrenceOf("-", false, false); return type.substring(0, 1).toUpperCase() + type.substring(1) + " " + id.fromLastOccurrenceOf("-", false, false); }
 double volumeOf(const TopoDS_Shape& shape) { if (shape.IsNull()) return 0.0; GProp_GProps properties; BRepGProp::VolumeProperties(shape, properties); return properties.Mass(); }
 bool circleDiameterDriven(const djehuti::cad::CadSketch& sketch, const juce::String& entityId)
 {
@@ -303,12 +303,13 @@ public:
     void setTool(const juce::String& next) { cancelGesture(); mode = next; setMouseCursor(mode == "select" ? juce::MouseCursor::NormalCursor : juce::MouseCursor::CrosshairCursor); repaint(); }
     bool escape()
     {
-        if (gestureActive) { cancelGesture(); owner.setMessage("Gesture cancelled; committed sketch geometry is unchanged.", 0); return true; }
+        if (gestureActive || pointDragActive) { cancelGesture(); owner.setMessage("Gesture cancelled; committed sketch geometry is unchanged.", 0); return true; }
         if (mode != "select") { owner.setSketchTool("select"); return true; }
         if (selectedEntity.isNotEmpty()) { owner.selectSketchEntity({}, false); return true; }
         return false;
     }
-    void cancelGesture() { gestureActive = false; panning = false; snapTarget.clear(); repaint(); }
+    bool hasActiveGesture() const { return gestureActive || pointDragActive; }
+    void cancelGesture() { gestureActive = false; panning = false; pointDragActive = false; dragRef.clear(); snapTarget.clear(); repaint(); }
     void fitToContent()
     {
         needsFit = false;
@@ -318,7 +319,7 @@ public:
             for (const auto& e : sketch->entities)
             {
                 if (e.type == "circle") { include(e.x1 - e.radius, e.y1 - e.radius); include(e.x1 + e.radius, e.y1 + e.radius); }
-                else { include(e.x1, e.y1); include(e.x2, e.y2); }
+                else { include(e.x1, e.y1); include(e.x2, e.y2); if (e.type == "bezier") { include(e.cx1, e.cy1); include(e.cx2, e.cy2); } }
             }
         if (!found) { minX = minY = -50.0; maxX = maxY = 50.0; }
         const auto span = std::max({ maxX - minX, maxY - minY, 10.0 });
@@ -353,13 +354,44 @@ public:
         g.setColour(juce::Colour(0xff5aa06a)); g.drawText(plane.substring(1, 2), juce::roundToInt(origin.x) + 4, 4, 20, 16, juce::Justification::centredLeft);
 
         if (sketch != nullptr)
-            for (const auto& entity : sketch->entities)
+        {
+            // While a vertex or handle is dragged the canvas shows the moved geometry; the document changes once, on release.
+            const auto entities = pointDragActive ? draggedEntities(*sketch) : sketch->entities;
+            for (const auto& entity : entities)
             {
                 g.setColour(entity.id == selectedEntity ? selectedColour : entity.id == secondEntity ? juce::Colour(0xffc39bff) : juce::Colour(0xff78dcca));
                 const auto thickness = entity.id == selectedEntity || entity.id == secondEntity ? 3.0f : 2.0f;
                 if (entity.type == "circle") { const auto c = toPoint(entity.x1, entity.y1); const auto r = (float) (entity.radius * scale); g.drawEllipse(c.x - r, c.y - r, r * 2.0f, r * 2.0f, thickness); }
+                else if (entity.type == "bezier") g.strokePath(curvePath(entity), juce::PathStrokeType(thickness));
                 else { const auto a = toPoint(entity.x1, entity.y1), b = toPoint(entity.x2, entity.y2); g.drawLine(a.x, a.y, b.x, b.y, thickness); }
             }
+            // Handles of the selected curve: thin lines from each endpoint to its square control point.
+            for (const auto& entity : entities)
+                if (entity.type == "bezier" && entity.id == selectedEntity)
+                    for (const auto& [px, py, cx, cy, ref] : { std::tuple<double, double, double, double, juce::String> { entity.x1, entity.y1, entity.cx1, entity.cy1, entity.id + ":c1" }, { entity.x2, entity.y2, entity.cx2, entity.cy2, entity.id + ":c2" } })
+                    {
+                        const auto a = toPoint(px, py), c = toPoint(cx, cy);
+                        g.setColour(juce::Colour(0xffb0c4cc)); g.drawLine(a.x, a.y, c.x, c.y, 1.0f);
+                        const bool hot = ref == hoverRef || (pointDragActive && ref == dragRef);
+                        g.setColour(hot ? juce::Colour(0xffffdf7e) : juce::Colour(0xffe8f0f2));
+                        g.fillRect(c.x - (hot ? 5.0f : 4.0f), c.y - (hot ? 5.0f : 4.0f), hot ? 10.0f : 8.0f, hot ? 10.0f : 8.0f);
+                    }
+            // Endpoints of the selected entity as small dots; the selected vertex filled; the hovered one ringed.
+            for (const auto& entity : entities)
+                if (entity.id == selectedEntity && entity.type != "circle")
+                    for (const auto& [px, py, ref] : { std::tuple<double, double, juce::String> { entity.x1, entity.y1, entity.id + ":p1" }, { entity.x2, entity.y2, entity.id + ":p2" } })
+                    {
+                        const auto p = toPoint(px, py);
+                        g.setColour(ref == selectedPoint ? juce::Colour(0xffff9f43) : selectedColour);
+                        const auto r = ref == selectedPoint ? 5.0f : 3.0f;
+                        g.fillEllipse(p.x - r, p.y - r, r * 2.0f, r * 2.0f);
+                    }
+            if (hoverRef.isNotEmpty() && !hoverRef.endsWith(":c1") && !hoverRef.endsWith(":c2") && !gestureActive)
+            {
+                const auto p = toPoint(hoverPoint.x, hoverPoint.y);
+                g.setColour(juce::Colour(0xffffdf7e)); g.drawEllipse(p.x - 7.0f, p.y - 7.0f, 14.0f, 14.0f, 2.0f);
+            }
+        }
 
         if (gestureActive && mode != "select")
         {
@@ -368,6 +400,7 @@ public:
             juce::String readout;
             if (mode == "rectangle") { g.drawRect(juce::Rectangle<float>(a, b), 1.5f); readout = juce::String(std::abs(current.x - start.x), 2) + " x " + juce::String(std::abs(current.y - start.y), 2) + " mm"; }
             else if (mode == "circle") { const auto r = (float) (std::hypot(current.x - start.x, current.y - start.y) * scale); g.drawEllipse(a.x - r, a.y - r, r * 2.0f, r * 2.0f, 1.5f); g.drawLine(a.x, a.y, b.x, b.y, 1.0f); readout = "R " + juce::String(std::hypot(current.x - start.x, current.y - start.y), 2) + " mm"; }
+            else if (mode == "curve") { g.strokePath(curvePath(defaultCurve(start, current)), juce::PathStrokeType(1.5f)); readout = "Curve, chord " + juce::String(std::hypot(current.x - start.x, current.y - start.y), 2) + " mm"; }
             else { g.drawLine(a.x, a.y, b.x, b.y, 1.5f); readout = "L " + juce::String(std::hypot(current.x - start.x, current.y - start.y), 2) + " mm"; }
             g.setFont(juce::Font(13.0f)); g.drawText(readout, juce::roundToInt(b.x) + 12, juce::roundToInt(b.y) + 6, 160, 18, juce::Justification::centredLeft);
         }
@@ -382,37 +415,53 @@ public:
     {
         grabKeyboardFocus();
         if (e.mods.isRightButtonDown() || e.mods.isMiddleButtonDown()) { panning = true; panStart = e.position; return; }
-        if (mode == "select") return;
+        if (mode == "select")
+        {
+            // Pressing on a hovered vertex or handle starts a point drag; it commits on release (one undo step).
+            updateHover(e.position);
+            if (hoverRef.isNotEmpty() && !e.mods.isShiftDown()) { pointDragActive = true; dragMoved = false; dragRef = hoverRef; dragPress = e.position; dragTo = hoverPoint; }
+            return;
+        }
         gestureActive = true; start = current = fromPoint(e.position); startConnection.clear(); snapTarget.clear();
-        if (mode == "line") { const auto snap = nearestSnap(start); start = current = snap.point; startConnection = snap.target; snapTarget = snap.target; snapPoint = snap.point; }
+        if (snapsEnds()) { const auto snap = nearestSnap(start); start = current = snap.point; startConnection = snap.target; snapTarget = snap.target; snapPoint = snap.point; }
         repaint();
     }
     void mouseDrag(const juce::MouseEvent& e) override
     {
         updateCursor(e.position);
         if (panning) { const auto d = e.position - panStart; panStart = e.position; centre.x -= d.x / scale; centre.y += d.y / scale; repaint(); return; }
+        if (pointDragActive)
+        {
+            if (e.position.getDistanceFrom(dragPress) >= 3.0f) dragMoved = true;
+            if (dragMoved) dragTo = fromPoint(e.position);
+            repaint(); return;
+        }
         if (!gestureActive) return;
-        const auto raw = fromPoint(e.position); const auto snap = mode == "line" ? nearestSnap(raw) : Snap { raw, {} };
+        const auto raw = fromPoint(e.position); const auto snap = snapsEnds() ? nearestSnap(raw) : Snap { raw, {} };
         current = snap.point; snapTarget = snap.target; snapPoint = snap.point; repaint();
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
         if (panning) { panning = false; return; }
+        if (pointDragActive)
+        {
+            pointDragActive = false;
+            const auto ref = dragRef; dragRef.clear();
+            if (dragMoved) owner.moveSketchPoint(ref, dragTo.x, dragTo.y);
+            else if (ref.endsWith(":p1") || ref.endsWith(":p2")) owner.selectSketchVertex(ref);
+            else owner.selectSketchEntity(ref.upToFirstOccurrenceOf(":", false, false), false);
+            updateHover(e.position);
+            repaint(); return;
+        }
         if (mode == "select")
         {
-            const auto p = fromPoint(e.position); juce::String hit; double best = 8.0 / scale;
-            if (const auto* sketch = owner.service->document().findSketch(sketchId))
-                for (const auto& entity : sketch->entities)
-                {
-                    const auto d = entity.type == "circle" ? std::abs(std::hypot(p.x - entity.x1, p.y - entity.y1) - entity.radius) : distanceToSegment(p.x, p.y, entity.x1, entity.y1, entity.x2, entity.y2);
-                    if (d < best) { best = d; hit = entity.id; }
-                }
+            const auto hit = entityAt(fromPoint(e.position));
             owner.selectSketchEntity(hit, e.mods.isShiftDown() && hit.isNotEmpty());
             return;
         }
         if (!gestureActive) return;
         gestureActive = false;
-        const auto endSnap = mode == "line" ? nearestSnap(fromPoint(e.position)) : Snap { fromPoint(e.position), {} };
+        const auto endSnap = snapsEnds() ? nearestSnap(fromPoint(e.position)) : Snap { fromPoint(e.position), {} };
         const auto end = endSnap.point; snapTarget.clear();
         if ((toPoint(end.x, end.y) - toPoint(start.x, start.y)).getDistanceFromOrigin() < 3.0f) { repaint(); return; }
         juce::String error; commitDrawing(end.x, end.y, endSnap.target, error);
@@ -424,6 +473,11 @@ public:
         if (mode == "rectangle") ok = owner.service->addSketchRectangle(sketchId, std::min(start.x, end.x), std::min(start.y, end.y), std::abs(end.x - start.x), std::abs(end.y - start.y), entityId, error);
         else if (mode == "circle") ok = owner.service->addSketchCircle(sketchId, start.x, start.y, std::hypot(end.x - start.x, end.y - start.y), entityId, error);
         else if (mode == "line") ok = owner.service->addSketchLine(sketchId, start.x, start.y, end.x, end.y, entityId, error, startConnection, endConnection);
+        else if (mode == "curve")
+        {
+            const auto c = defaultCurve(start, { end.x, end.y });
+            ok = owner.service->addSketchBezier(sketchId, c.x1, c.y1, c.cx1, c.cy1, c.cx2, c.cy2, c.x2, c.y2, entityId, error, startConnection, endConnection);
+        }
         if (ok) owner.sketchGeometryAdded(mode); else owner.showError(error);
         repaint();
         return ok;
@@ -432,11 +486,11 @@ public:
     {
         const auto phase = args.getProperty("phase", "").toString();
         if (phase == "cancel") { cancelGesture(); return true; }
-        if (mode == "select") { error = "Choose Line, Rectangle or Circle first."; return false; }
+        if (mode == "select") { error = "Choose Line, Rectangle, Circle or Curve first."; return false; }
         for (const auto* key : { "x", "y" })
         { const auto n = args.getProperty(key, {}); if (!(n.isInt() || n.isInt64() || n.isDouble()) || !std::isfinite((double)n)) { error = "Sketch x/y must be finite millimetre coordinates."; return false; } }
         const auto x = (double)args["x"], y = (double)args["y"];
-        const auto snap = mode == "line" ? nearestSnap({x,y}) : Snap{{x,y},{}};
+        const auto snap = snapsEnds() ? nearestSnap({x,y}) : Snap{{x,y},{}};
         if (phase == "begin") { if (gestureActive) { error = "Finish or cancel the active gesture first."; return false; } start = current = snap.point; startConnection = snap.target; gestureActive = true; }
         else if (phase == "update" || phase == "commit")
         {
@@ -452,8 +506,17 @@ public:
         auto* o = new juce::DynamicObject(); o->setProperty("active", gestureActive); o->setProperty("tool", mode);
         o->setProperty("startX", start.x); o->setProperty("startY", start.y); o->setProperty("x", current.x); o->setProperty("y", current.y); return o;
     }
-    void mouseMove(const juce::MouseEvent& e) override { updateCursor(e.position); }
-    void mouseExit(const juce::MouseEvent&) override { hasCursor = false; repaint(); }
+    void mouseMove(const juce::MouseEvent& e) override { updateHover(e.position); updateCursor(e.position); }
+    void mouseExit(const juce::MouseEvent&) override { hasCursor = false; hoverRef.clear(); repaint(); }
+    // Double-click on a line (Select tool) inserts a vertex there.
+    void mouseDoubleClick(const juce::MouseEvent& e) override
+    {
+        if (mode != "select" || e.mods.isRightButtonDown()) return;
+        const auto p = fromPoint(e.position);
+        const auto hit = entityAt(p);
+        if (hit.startsWith("line-") && hoverRef.isEmpty()) owner.insertSketchVertex(hit, p.x, p.y);
+    }
+    void setSelectedPoint(const juce::String& ref) { selectedPoint = ref; repaint(); }
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
         const auto anchor = fromPoint(e.position);
@@ -461,7 +524,10 @@ public:
         const auto moved = fromPoint(e.position);
         centre.x += anchor.x - moved.x; centre.y += anchor.y - moved.y; repaint();
     }
-    bool keyPressed(const juce::KeyPress& key) override { return key == juce::KeyPress::escapeKey && escape(); }
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        return key == juce::KeyPress::escapeKey && escape();
+    }
 
 private:
     struct Point { double x = 0, y = 0; };
@@ -470,12 +536,98 @@ private:
     juce::Point<float> toPoint(double x, double y) const { return { (float) (getWidth() * 0.5 + (x - centre.x) * scale), (float) (getHeight() * 0.5 - (y - centre.y) * scale) }; }
     Point fromPoint(juce::Point<float> p) const { return { centre.x + (p.x - getWidth() * 0.5) / scale, centre.y + (getHeight() * 0.5 - p.y) / scale }; }
     void updateCursor(juce::Point<float> p) { cursor = fromPoint(p); hasCursor = true; repaint(); }
+    bool snapsEnds() const { return mode == "line" || mode == "curve"; }
+    static double bezierAt(double t, double p0, double p1, double p2, double p3) { const auto s = 1.0 - t; return s * s * s * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t * t * t * p3; }
+    juce::Path curvePath(const djehuti::cad::CadSketchEntity& c) const
+    {
+        juce::Path path; const auto a = toPoint(c.x1, c.y1), c1 = toPoint(c.cx1, c.cy1), c2 = toPoint(c.cx2, c.cy2), b = toPoint(c.x2, c.y2);
+        path.startNewSubPath(a); path.cubicTo(c1, c2, b); return path;
+    }
+    // A new curve from a drag: control points at the thirds of the chord, lifted to one side so it is visibly curved.
+    static djehuti::cad::CadSketchEntity defaultCurve(Point a, Point b)
+    {
+        djehuti::cad::CadSketchEntity c; c.type = "bezier";
+        const auto dx = b.x - a.x, dy = b.y - a.y; const auto nx = -dy * 0.3, ny = dx * 0.3;
+        c.x1 = a.x; c.y1 = a.y; c.x2 = b.x; c.y2 = b.y;
+        c.cx1 = a.x + dx / 3.0 + nx; c.cy1 = a.y + dy / 3.0 + ny; c.cx2 = a.x + 2.0 * dx / 3.0 + nx; c.cy2 = a.y + 2.0 * dy / 3.0 + ny;
+        return c;
+    }
+    static double distanceToCurve(double px, double py, const djehuti::cad::CadSketchEntity& c)
+    {
+        double best = std::numeric_limits<double>::max(), ax = c.x1, ay = c.y1;
+        for (int k = 1; k <= 48; ++k) { const auto t = k / 48.0; const auto bx = bezierAt(t, c.x1, c.cx1, c.cx2, c.x2), by = bezierAt(t, c.y1, c.cy1, c.cy2, c.y2); best = std::min(best, distanceToSegment(px, py, ax, ay, bx, by)); ax = bx; ay = by; }
+        return best;
+    }
+    juce::String entityAt(Point p) const
+    {
+        juce::String hit; double best = 8.0 / scale;
+        if (const auto* sketch = owner.service->document().findSketch(sketchId))
+            for (const auto& entity : sketch->entities)
+            {
+                const auto d = entity.type == "circle" ? std::abs(std::hypot(p.x - entity.x1, p.y - entity.y1) - entity.radius)
+                             : entity.type == "bezier" ? distanceToCurve(p.x, p.y, entity) : distanceToSegment(p.x, p.y, entity.x1, entity.y1, entity.x2, entity.y2);
+                if (d < best) { best = d; hit = entity.id; }
+            }
+        return hit;
+    }
+    // The vertex or handle under the pointer (8 px, independent of zoom): endpoints of lines and curves, and the
+    // handles of the selected curve. Shown before any click; drawing tools use the same rings as snap targets.
+    void updateHover(juce::Point<float> position)
+    {
+        juce::String ref; Point at; float bestPixels = 8.0f;
+        if (!pointDragActive && !gestureActive && (mode == "select" || snapsEnds()))
+            if (const auto* sketch = owner.service->document().findSketch(sketchId))
+                for (const auto& entity : sketch->entities)
+                {
+                    if (entity.type != "line" && entity.type != "bezier") continue;
+                    std::vector<std::tuple<double, double, juce::String>> points { { entity.x1, entity.y1, entity.id + ":p1" }, { entity.x2, entity.y2, entity.id + ":p2" } };
+                    if (entity.type == "bezier" && entity.id == selectedEntity && mode == "select") { points.push_back({ entity.cx1, entity.cy1, entity.id + ":c1" }); points.push_back({ entity.cx2, entity.cy2, entity.id + ":c2" }); }
+                    for (const auto& [px, py, r] : points)
+                    {
+                        const auto pixels = toPoint(px, py).getDistanceFrom(position);
+                        if (pixels < bestPixels || (pixels <= bestPixels && (r.endsWith(":c1") || r.endsWith(":c2")))) { bestPixels = pixels; ref = r; at = { px, py }; }
+                    }
+                }
+        if (ref != hoverRef || (ref.isNotEmpty() && (at.x != hoverPoint.x || at.y != hoverPoint.y))) { hoverRef = ref; hoverPoint = at; repaint(); }
+        setMouseCursor(mode != "select" ? juce::MouseCursor::CrosshairCursor : hoverRef.isNotEmpty() ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+    }
+    // The sketch as it will look if the dragged point is released here: an endpoint carries every endpoint joined to
+    // it (coincident constraints and same position) and its curve handle; a handle moves alone.
+    std::vector<djehuti::cad::CadSketchEntity> draggedEntities(const djehuti::cad::CadSketch& sketch) const
+    {
+        auto entities = sketch.entities;
+        const auto ref = dragRef; const auto colon = ref.indexOfChar(':');
+        if (!dragMoved || colon <= 0) return entities;
+        const auto id = ref.substring(0, colon), which = ref.substring(colon + 1);
+        const auto px = [&](djehuti::cad::CadSketchEntity& e, const juce::String& w) -> double& { return w == "p1" ? e.x1 : w == "p2" ? e.x2 : w == "c1" ? e.cx1 : e.cx2; };
+        const auto py = [&](djehuti::cad::CadSketchEntity& e, const juce::String& w) -> double& { return w == "p1" ? e.y1 : w == "p2" ? e.y2 : w == "c1" ? e.cy1 : e.cy2; };
+        const auto find = [&](const juce::String& eid) -> djehuti::cad::CadSketchEntity* { for (auto& e : entities) if (e.id == eid) return &e; return nullptr; };
+        if (which.startsWith("c")) { if (auto* e = find(id)) { px(*e, which) = dragTo.x; py(*e, which) = dragTo.y; } return entities; }
+        juce::StringArray joined { ref };
+        for (int i = 0; i < joined.size(); ++i)
+        {
+            const auto jc = joined[i].indexOfChar(':'); auto* e = find(joined[i].substring(0, jc)); if (e == nullptr) continue;
+            const auto w = joined[i].substring(jc + 1); const auto x = px(*e, w), y = py(*e, w);
+            for (const auto& c : sketch.constraints) if (c.type == "coincident") { if (c.firstEntity == joined[i]) joined.addIfNotAlreadyThere(c.secondEntity); else if (c.secondEntity == joined[i]) joined.addIfNotAlreadyThere(c.firstEntity); }
+            for (const auto& o : sketch.entities) if (o.type == "line" || o.type == "bezier") { if (std::hypot(o.x1 - x, o.y1 - y) < 1.0e-7) joined.addIfNotAlreadyThere(o.id + ":p1"); if (std::hypot(o.x2 - x, o.y2 - y) < 1.0e-7) joined.addIfNotAlreadyThere(o.id + ":p2"); }
+        }
+        auto* origin = find(id); if (origin == nullptr) return entities;
+        const auto dx = dragTo.x - px(*origin, which), dy = dragTo.y - py(*origin, which);
+        for (const auto& j : joined)
+        {
+            const auto jc = j.indexOfChar(':'); auto* e = find(j.substring(0, jc)); if (e == nullptr) continue;
+            const auto w = j.substring(jc + 1);
+            px(*e, w) = dragTo.x; py(*e, w) = dragTo.y;
+            if (e->type == "bezier") { const auto c = w == "p1" ? juce::String("c1") : juce::String("c2"); px(*e, c) += dx; py(*e, c) += dy; }
+        }
+        return entities;
+    }
     Snap nearestSnap(Point candidate) const
     {
         Snap result { candidate, {} }; double bestPixels = 8.0;
         if (const auto* sketch = owner.service->document().findSketch(sketchId))
             for (const auto& entity : sketch->entities)
-                if (entity.type == "line")
+                if (entity.type == "line" || entity.type == "bezier")
                     for (const auto& endpoint : { std::pair<double, double> { entity.x1, entity.y1 }, std::pair<double, double> { entity.x2, entity.y2 } })
                     {
                         const auto pixels = toPoint(endpoint.first, endpoint.second).getDistanceFrom(toPoint(candidate.x, candidate.y));
@@ -487,14 +639,15 @@ private:
 
     CadWorkspacePanel& owner;
     juce::String sketchId, selectedEntity, secondEntity, mode { "select" }, snapTarget, startConnection;
-    Point start, current, snapPoint, centre, cursor;
-    juce::Point<float> panStart;
+    juce::String hoverRef, selectedPoint, dragRef;   // point references "<entity>:p1|p2|c1|c2"
+    Point start, current, snapPoint, centre, cursor, hoverPoint, dragTo;
+    juce::Point<float> panStart, dragPress;
     double scale = 4.0;
-    bool gestureActive = false, panning = false, needsFit = true, hasCursor = false;
+    bool gestureActive = false, panning = false, needsFit = true, hasCursor = false, pointDragActive = false, dragMoved = false;
 };
 
 //==============================================================================
-CadWorkspacePanel::~CadWorkspacePanel() { stopTimer(); tree.setRootItem(nullptr); }
+CadWorkspacePanel::~CadWorkspacePanel() { if (keyHost != nullptr) keyHost->removeKeyListener(this); stopTimer(); tree.setRootItem(nullptr); }
 
 CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandService> s) : service(std::move(s)), sketchCanvas(std::make_unique<SketchCanvas>(*this))
 {
@@ -515,7 +668,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
             { "Edit", { E{1,"Undo"}, E{2,"Redo"} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
             { "Modify", { E{6,"Extrude...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
-            { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
+            { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
         };
@@ -527,6 +680,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
         else if (id == 34) executeUiCommand("fillet");
+        else if (id == 35) executeUiCommand("curve");
         else if (id >= 30 && id <= 33) modelView.toggleGuide(juce::StringArray{"floor","world","local","joints"}[id-30]);
     };
     addAndMakeVisible(modeLabel); addAndMakeVisible(statusLabel); addAndMakeVisible(unitsLabel);
@@ -541,7 +695,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
                               ToolSpec { &fitButton, "Frame all visible bodies in the model view." }, ToolSpec { &resetViewButton, "Return the model view to the default orientation." },
                               ToolSpec { &viewsButton, "Open the multi-view 3D Views workspace." }, ToolSpec { &selectToolButton, "Select sketch entities. Shift-click selects a second entity." },
                               ToolSpec { &lineButton, "Draw lines: drag from start to end. Endpoints snap to existing line ends." }, ToolSpec { &rectangleButton, "Draw rectangles: drag from corner to corner." },
-                              ToolSpec { &circleButton, "Draw circles: drag from the centre outwards." }, ToolSpec { &constrainButton, "Add a constraint to the selected sketch entity." },
+                              ToolSpec { &circleButton, "Draw circles: drag from the centre outwards." }, ToolSpec { &curveButton, "Draw a cubic Bezier curve: drag from start to end, then drag its square handles to shape it." }, ToolSpec { &constrainButton, "Add a constraint to the selected sketch entity." },
                               ToolSpec { &fitSketchButton, "Frame the whole sketch in the canvas." },
                               ToolSpec { &instanceButton, "Create an assembly instance of a solid body so it can move." },
                               ToolSpec { &jointButton, "Connect two instances (or an instance and the world) with a fixed, revolute or prismatic joint." },
@@ -556,7 +710,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         addChildComponent(*spec.button);
     }
     styleButton(finishSketchButton, "Leave sketch editing and keep all completed geometry.", true); addChildComponent(finishSketchButton);
-    for (auto* b : { &selectToolButton, &lineButton, &rectangleButton, &circleButton }) b->setClickingTogglesState(false);
+    for (auto* b : { &selectToolButton, &lineButton, &rectangleButton, &circleButton, &curveButton }) b->setClickingTogglesState(false);
 
     sketchButton.onClick = [this] { startTask(Task::createSketch); };
     boxButton.onClick = [this] { startTask(Task::newBox); };
@@ -576,8 +730,9 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     faceModeButton.onClick = [setMode] { setMode(djehuti::cad::CadSelection::Mode::face); };
     edgeModeButton.onClick = [setMode] { setMode(djehuti::cad::CadSelection::Mode::edge); };
     ikButton.onClick = [this] { loadIkDraft(isIkTask(selectedId) ? selectedId : juce::String()); startTask(Task::ik); };
-    undoButton.onClick = [this] { juce::String e; if (!service->undo(e)) showError(e); else { refreshFromDocument(true); setMessage("Undone.", 0); } };
-    redoButton.onClick = [this] { juce::String e; if (!service->redo(e)) showError(e); else { refreshFromDocument(true); setMessage("Redone.", 0); } };
+    // After undo/redo the task panel and the sketch canvas show the restored values, not the ones of the undone edit.
+    undoButton.onClick = [this] { juce::String e; if (!service->undo(e)) showError(e); else { refreshFromDocument(true); rebuildTaskPanel(false); sketchCanvas->repaint(); setMessage("Undone.", 0); } };
+    redoButton.onClick = [this] { juce::String e; if (!service->redo(e)) showError(e); else { refreshFromDocument(true); rebuildTaskPanel(false); sketchCanvas->repaint(); setMessage("Redone.", 0); } };
     fitButton.onClick = [this] { modelView.fitAll(); };
     resetViewButton.onClick = [this] { modelView.resetCamera(); };
     viewsButton.onClick = [this] { if (onOpenViews) onOpenViews(); };
@@ -585,6 +740,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     lineButton.onClick = [this] { setSketchTool("line"); };
     rectangleButton.onClick = [this] { setSketchTool("rectangle"); };
     circleButton.onClick = [this] { setSketchTool("circle"); };
+    curveButton.onClick = [this] { setSketchTool("curve"); };
     constrainButton.onClick = [this] { chooseConstraint(); };
     fitSketchButton.onClick = [this] { sketchCanvas->fitToContent(); };
     finishSketchButton.onClick = [this] { finishSketch(); };
@@ -677,8 +833,47 @@ void CadWorkspacePanel::resized()
     if (form != nullptr) form->setSize(juce::jmax(1, s.getWidth() - (form->preferredHeight() > s.getHeight() ? taskViewport.getScrollBarThickness() : 0)), form->preferredHeight());
 }
 
+// Document history keys: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo, on the one OCAF document history. A focused text
+// field consumes these keys for its own text undo before they get here.
+bool CadWorkspacePanel::handleHistoryKey(const juce::KeyPress& key)
+{
+    const auto mods = key.getModifiers();
+    if (!mods.isCommandDown() || mods.isAltDown()) return false;
+    // Windows can report Ctrl+letter as the control character (Ctrl+Z = 26) when no scan code accompanies the key.
+    auto keyCode = key.getKeyCode();
+    if (keyCode >= 1 && keyCode <= 26) keyCode += 'A' - 1;
+    const auto code = juce::CharacterFunctions::toUpperCase((juce::juce_wchar) keyCode);
+    if (code != 'Z' && code != 'Y') return false;
+    sketchCanvas->cancelGesture();
+    executeUiCommand(code == 'Y' || mods.isShiftDown() ? "redo" : "undo");
+    return true;
+}
+
+// Keyboard focus is often outside this panel (a rebuilt task form, another dock, nothing at all), and JUCE then
+// delivers keys to the window's top-level component, which never passes them down. Listening on the top-level
+// window catches those; the panel acts only while it is on screen.
+bool CadWorkspacePanel::keyPressed(const juce::KeyPress& key, juce::Component*)
+{
+    if (!isShowing()) return false;
+    if (handleHistoryKey(key)) return true;
+    // Esc cancels a sketch drag in progress wherever focus is; otherwise Esc is left to whoever has focus.
+    if (key == juce::KeyPress::escapeKey && editingSketchId.isNotEmpty() && sketchCanvas->hasActiveGesture()) return sketchCanvas->escape();
+    return false;
+}
+
+void CadWorkspacePanel::parentHierarchyChanged()
+{
+    auto* top = getTopLevelComponent();
+    if (top == this) top = nullptr;
+    if (top == keyHost.getComponent()) return;
+    if (keyHost != nullptr) keyHost->removeKeyListener(this);
+    keyHost = top;
+    if (keyHost != nullptr) keyHost->addKeyListener(this);
+}
+
 bool CadWorkspacePanel::keyPressed(const juce::KeyPress& key)
 {
+    if (handleHistoryKey(key)) return true;
     if (key != juce::KeyPress::escapeKey) return false;
     if (editingSketchId.isNotEmpty()) return sketchCanvas->escape();
     if (task == Task::createSketch || task == Task::newBox || task == Task::newCylinder || isCommandTask()) { cancelTask(); return true; }
@@ -729,6 +924,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
         auto exists = [&](const juce::String& id) { for (const auto& e : sketch->entities) if (e.id == id) return true; return false; };
         if (sketchEntityId.isNotEmpty() && !exists(sketchEntityId)) sketchEntityId.clear();
         if (sketchSecondEntityId.isNotEmpty() && !exists(sketchSecondEntityId)) sketchSecondEntityId.clear();
+        if (sketchVertexRef.isNotEmpty() && !exists(sketchVertexRef.upToFirstOccurrenceOf(":", false, false))) { sketchVertexRef.clear(); sketchCanvas->setSelectedPoint({}); }
         sketchCanvas->setSelection(sketchEntityId, sketchSecondEntityId);
     }
     if (task == Task::body && selectedId.isEmpty()) task = Task::none;
@@ -976,8 +1172,40 @@ void CadWorkspacePanel::selectFeature(const juce::String& id)
     rebuildTaskPanel(false);
 }
 
+void CadWorkspacePanel::selectSketchVertex(const juce::String& pointRef)
+{
+    const auto entity = pointRef.upToFirstOccurrenceOf(":", false, false);
+    selectSketchEntity(entity, false);
+    sketchVertexRef = pointRef;
+    sketchCanvas->setSelectedPoint(pointRef);
+    requestRebuild(false);
+}
+
+bool CadWorkspacePanel::moveSketchPoint(const juce::String& pointRef, double u, double v)
+{
+    juce::String e;
+    const bool ok = service->moveSketchPoint(editingSketchId, pointRef, u, v, e);
+    refreshFromDocument(true); rebuildTaskPanel(false); sketchCanvas->repaint();
+    if (!ok) showError(e);
+    else setMessage((pointRef.endsWith(":c1") || pointRef.endsWith(":c2") ? juce::String("Handle moved.") : juce::String("Vertex moved; joined geometry followed.")) + " Ctrl+Z undoes it.", 0);
+    return ok;
+}
+
+bool CadWorkspacePanel::insertSketchVertex(const juce::String& lineId, double u, double v)
+{
+    juce::String e, created; juce::StringArray removed;
+    const bool ok = service->insertSketchVertex(editingSketchId, lineId, u, v, created, removed, e);
+    refreshFromDocument(true);
+    if (!ok) { showError(e); return false; }
+    selectSketchVertex(lineId + ":p2");   // the new vertex, ready to drag or type
+    setMessage("Vertex inserted: " + friendlyEntity(lineId) + " now ends there and " + friendlyEntity(created) + " continues to the old end."
+               + (removed.isEmpty() ? juce::String() : " Removed because they described the whole line: " + removed.joinIntoString(", ") + ".") + " Ctrl+Z undoes it.", removed.isEmpty() ? 0 : 1);
+    return true;
+}
+
 void CadWorkspacePanel::selectSketchEntity(const juce::String& id, bool second)
 {
+    sketchVertexRef.clear(); sketchCanvas->setSelectedPoint({});
     if (second && sketchEntityId.isNotEmpty() && id != sketchEntityId) sketchSecondEntityId = id;
     else { sketchEntityId = id; sketchSecondEntityId.clear(); }
     sketchCanvas->setSelection(sketchEntityId, sketchSecondEntityId);
@@ -1165,12 +1393,59 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             {
                 const auto tool = sketchCanvas->tool();
                 title = featureName(editingSketchId) + "  |  " + (sketch != nullptr && sketch->onFace() ? "on " + supportText(*sketch) : plane + " plane");
-                instruction = tool == "line" ? "Line: drag from start to end. Ends snap to existing line ends. Esc cancels the gesture."
+                instruction = tool == "line" ? "Line: drag from start to end. Ends snap to existing line ends (a ring shows the snap). Esc cancels the gesture."
                             : tool == "rectangle" ? "Rectangle: drag from one corner to the opposite corner. Esc cancels the gesture."
                             : tool == "circle" ? "Circle: drag from the centre outwards. Esc cancels the gesture."
-                            : "Select: click an entity to edit it. Shift-click a second entity for two-entity constraints.";
+                            : tool == "curve" ? "Curve: drag from start to end (ends snap like lines). Then, with Select, drag its square handles to shape it."
+                            : "Select: click an entity to edit it; drag a vertex (ring on hover) or a curve handle to move it; double-click a line to insert a vertex. Ctrl+Z undoes, Ctrl+Y redoes.";
                 accept = "Finish Sketch"; showCancel = false;
-                form->addNote({}, "Choose Line, Rectangle or Circle above to draw. The tool stays active until you pick another tool or press Esc. Finish Sketch keeps all completed geometry.", 4);
+                form->addNote({}, "Choose Line, Rectangle, Circle or Curve above to draw. The tool stays active until you pick another tool or press Esc. Finish Sketch keeps all completed geometry.", 4);
+                break;
+            }
+            // A selected endpoint of this entity: exact coordinates, moved with everything joined to it.
+            const auto addVertexSection = [&]
+            {
+                if (!sketchVertexRef.startsWith(entity->id + ":")) return;
+                const auto which = sketchVertexRef.fromFirstOccurrenceOf(":", false, false);
+                const auto vu = which == "p1" ? entity->x1 : entity->x2, vv = which == "p1" ? entity->y1 : entity->y2;
+                form->addHeader("Selected vertex (" + juce::String(which == "p1" ? "start" : "end") + ")");
+                form->addNumber("vertexU", "Vertex " + plane.substring(0, 1), vu, "mm", "Exact position of the selected vertex; joined vertices move with it.");
+                form->addNumber("vertexV", "Vertex " + plane.substring(1, 2), vv, "mm", "Exact position of the selected vertex; joined vertices move with it.");
+                const auto ref = sketchVertexRef;
+                form->addButton("moveVertex", "Move vertex", [this, ref] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), ref] { if (safe != nullptr && safe->form != nullptr) safe->moveSketchPoint(ref, safe->form->number("vertexU"), safe->form->number("vertexV")); }); }, "Move the selected vertex to these coordinates.");
+            };
+            if (entity->type == "bezier")
+            {
+                title = friendlyEntity(entity->id) + "  |  " + plane + " plane"; cancel = "Done";
+                instruction = "Drag the endpoints (rings) or the square handles in the canvas, or type positions and press Apply.";
+                form->addHeader("Endpoints (" + plane + " plane)");
+                form->addNumber("p1u", "Start " + plane.substring(0, 1), entity->x1, "mm", "Curve start; joined vertices move with it.");
+                form->addNumber("p1v", "Start " + plane.substring(1, 2), entity->y1, "mm", "Curve start; joined vertices move with it.");
+                form->addNumber("p2u", "End " + plane.substring(0, 1), entity->x2, "mm", "Curve end; joined vertices move with it.");
+                form->addNumber("p2v", "End " + plane.substring(1, 2), entity->y2, "mm", "Curve end; joined vertices move with it.");
+                form->addHeader("Handles (control points)");
+                form->addNumber("c1u", "Handle 1 " + plane.substring(0, 1), entity->cx1, "mm", "Control point at the start; sets the start tangent.");
+                form->addNumber("c1v", "Handle 1 " + plane.substring(1, 2), entity->cy1, "mm", "Control point at the start; sets the start tangent.");
+                form->addNumber("c2u", "Handle 2 " + plane.substring(0, 1), entity->cx2, "mm", "Control point at the end; sets the end tangent.");
+                form->addNumber("c2v", "Handle 2 " + plane.substring(1, 2), entity->cy2, "mm", "Control point at the end; sets the end tangent.");
+                form->addHeader("Continuity");
+                const auto id = entity->id, sketchId = editingSketchId;
+                for (const auto* end : { "p1", "p2" })
+                {
+                    const juce::String endName(end);
+                    form->addButton(juce::String("smooth") + end, endName == "p1" ? "Smooth join at start" : "Smooth join at end", [this, id, sketchId, endName]
+                    {
+                        postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id, sketchId, endName]
+                        {
+                            if (safe == nullptr) return;
+                            juce::String e;
+                            if (!safe->service->smoothSketchJoint(sketchId, id, endName, e)) { safe->showError(e); return; }
+                            safe->refreshFromDocument(true); safe->rebuildTaskPanel(false); safe->sketchCanvas->repaint();
+                            safe->setMessage("Handle aligned with the connected segment: the join is tangent.", 0);
+                        });
+                    }, "Turn this end's handle onto the direction of the segment joined there (tangent join), keeping its length.");
+                }
+                addVertexSection();
                 break;
             }
             const bool circle = entity->type == "circle";
@@ -1202,6 +1477,14 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             };
             typeBox.onChange = syncValue;
             syncValue();
+            if (!circle)
+            {
+                form->addHeader("Vertices");
+                const auto id = entity->id; const auto mu = (entity->x1 + entity->x2) * 0.5, mv = (entity->y1 + entity->y2) * 0.5;
+                form->addButton("insertVertex", "Insert vertex at midpoint", [this, id, mu, mv] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id, mu, mv] { if (safe != nullptr) safe->insertSketchVertex(id, mu, mv); }); },
+                                "Split this line into two joined lines at its midpoint (or double-click the line where the vertex should go).");
+                addVertexSection();
+            }
             break;
         }
         case Task::newBox:
@@ -1486,14 +1769,32 @@ void CadWorkspacePanel::acceptTask()
             const djehuti::cad::CadSketchEntity* entity = nullptr;
             if (sketch != nullptr) for (const auto& item : sketch->entities) if (item.id == sketchEntityId) entity = &item;
             if (entity == nullptr) return;
+            if (entity->type == "bezier")
+            {
+                // Each changed point is one move (endpoints carry what is joined to them); usually one changes.
+                const auto sketchId = editingSketchId, entityId = sketchEntityId;
+                const struct { const char* ref; const char* u; const char* v; double x, y; } points[] {
+                    { "p1", "p1u", "p1v", entity->x1, entity->y1 }, { "p2", "p2u", "p2v", entity->x2, entity->y2 },
+                    { "c1", "c1u", "c1v", entity->cx1, entity->cy1 }, { "c2", "c2u", "c2v", entity->cx2, entity->cy2 } };
+                bool ok = true, changed = false;
+                for (const auto& p : points)
+                {
+                    const auto u = form->number(p.u), v = form->number(p.v);
+                    if (std::abs(u - p.x) <= 1.0e-9 && std::abs(v - p.y) <= 1.0e-9) continue;
+                    changed = true;
+                    if (!(ok = service->moveSketchPoint(sketchId, entityId + ":" + p.ref, u, v, e))) break;
+                }
+                refreshFromDocument(true); rebuildTaskPanel(false); sketchCanvas->repaint();
+                if (!ok) showError(e); else setMessage(changed ? "Curve updated." : "No changes to apply.", 0);
+                return;
+            }
             const bool circle = entity->type == "circle", diameter = circle && circleDiameterDriven(*sketch, entity->id);
             const auto current = circle ? (diameter ? entity->radius * 2.0 : entity->radius) : std::hypot(entity->x2 - entity->x1, entity->y2 - entity->y1);
             const auto u = form->number("u"), v = form->number("v"), value = form->number("dimension");
             const auto sketchId = editingSketchId, entityId = sketchEntityId;
             const bool moved = std::abs(u - entity->x1) > 1.0e-9 || std::abs(v - entity->y1) > 1.0e-9, resized_ = std::abs(value - current) > 1.0e-9;
             bool ok = true;
-            if (moved) ok = service->setSketchEntityPosition(sketchId, entityId, u, v, e);
-            if (ok && resized_) ok = service->setSketchEntityDimension(sketchId, entityId, value, e);
+            if (moved || resized_) ok = service->editSketchEntity(sketchId, entityId, moved, u, v, resized_, value, e);   // one Apply = one undo step
             refreshFromDocument(true);
             rebuildTaskPanel(false);
             if (!ok) showError(e); else setMessage(moved || resized_ ? "Sketch entity updated." : "No changes to apply.", 0);
@@ -1653,11 +1954,11 @@ void CadWorkspacePanel::updateToolbar()
     }
     couplingButton.setToggleState(task == Task::newCoupling, juce::dontSendNotification);
     instanceButton.setToggleState(task == Task::newInstance, juce::dontSendNotification); jointButton.setToggleState(task == Task::newJoint, juce::dontSendNotification); linkButton.setToggleState(task == Task::link, juce::dontSendNotification); ikButton.setToggleState(task == Task::ik, juce::dontSendNotification);
-    for (auto* b : { &selectToolButton, &lineButton, &rectangleButton, &circleButton, &constrainButton, &fitSketchButton, &finishSketchButton }) b->setVisible(sketching);
+    for (auto* b : { &selectToolButton, &lineButton, &rectangleButton, &circleButton, &curveButton, &constrainButton, &fitSketchButton, &finishSketchButton }) b->setVisible(sketching);
     undoButton.setVisible(true); redoButton.setVisible(true);
     const auto tool = sketchCanvas->tool();
     selectToolButton.setToggleState(tool == "select", juce::dontSendNotification); lineButton.setToggleState(tool == "line", juce::dontSendNotification);
-    rectangleButton.setToggleState(tool == "rectangle", juce::dontSendNotification); circleButton.setToggleState(tool == "circle", juce::dontSendNotification);
+    rectangleButton.setToggleState(tool == "rectangle", juce::dontSendNotification); circleButton.setToggleState(tool == "circle", juce::dontSendNotification); curveButton.setToggleState(tool == "curve", juce::dontSendNotification);
     subtractButton.setToggleState(task == Task::boolean && booleanKind == "subtract", juce::dontSendNotification);
     unionButton.setToggleState(task == Task::boolean && booleanKind == "union", juce::dontSendNotification);
     intersectButton.setToggleState(task == Task::boolean && booleanKind == "intersect", juce::dontSendNotification);
@@ -1668,7 +1969,7 @@ void CadWorkspacePanel::updateToolbar()
     if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + (sketch->onFace() ? "on " + supportText(*sketch) : sketch->plane + " plane"), juce::dontSendNotification);
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
-    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton,&cutButton,&filletButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
+    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton,&cutButton,&filletButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
     resized(); repaint();
 }
 
@@ -2681,7 +2982,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
     const std::pair<const char*,juce::TextButton*> commands[] = {
         {"undo",&undoButton},{"redo",&redoButton},{"sketch",&sketchButton},{"box",&boxButton},{"cylinder",&cylinderButton},
         {"extrude",&extrudeButton},{"cut",&cutButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
-        {"sketchSelect",&selectToolButton},{"line",&lineButton},{"rectangle",&rectangleButton},{"circle",&circleButton},{"constrain",&constrainButton},
+        {"sketchSelect",&selectToolButton},{"line",&lineButton},{"rectangle",&rectangleButton},{"circle",&circleButton},{"curve",&curveButton},{"constrain",&constrainButton},
         {"fitSketch",&fitSketchButton},{"finishSketch",&finishSketchButton},{"instance",&instanceButton},{"joint",&jointButton},{"coupling",&couplingButton},
         {"link",&linkButton},{"ik",&ikButton},{"fit",&fitButton},{"reset",&resetViewButton},{"views",&viewsButton},
         {"bodyMode",&bodyModeButton},{"faceMode",&faceModeButton},{"edgeMode",&edgeModeButton}
@@ -2692,7 +2993,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
 bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
 {
     const bool sketch = editingSketchId.isNotEmpty();
-    if (juce::StringArray{"sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
+    if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
     if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","interference"}.contains(command)) return !sketch;
     if (command == "clearInterference") return interferenceActive;
     return true;
@@ -2745,8 +3046,13 @@ juce::var CadWorkspacePanel::automationState()
     state->setProperty("canCancel", cancelButton.isVisible() && cancelButton.isEnabled());
     state->setProperty("camera", modelView.cameraState()); state->setProperty("guides", modelView.viewState());
     state->setProperty("renderStatus", modelView.diagnostics()); state->setProperty("gesture", sketchCanvas->gestureState());
+    {   // which component has keyboard focus (diagnostics for keyboard routing)
+        const auto* focused = juce::Component::getCurrentlyFocusedComponent();
+        state->setProperty("keyboardFocus", focused == nullptr ? juce::String("none") : focused == sketchCanvas.get() ? juce::String("sketchCanvas") : focused == this ? juce::String("cadWorkspace")
+                                            : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
+    }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -2760,7 +3066,9 @@ juce::var CadWorkspacePanel::automationState()
             o->setProperty("plane", sketch->plane); o->setProperty("offset", sketch->offset);
             juce::Array<juce::var> entities;
             for (const auto& e : sketch->entities)
-            { auto* item = new juce::DynamicObject(); item->setProperty("id", e.id); item->setProperty("type", e.type); item->setProperty("x1",e.x1); item->setProperty("y1",e.y1); item->setProperty("x2",e.x2); item->setProperty("y2",e.y2); item->setProperty("radius",e.radius); entities.add(item); }
+            { auto* item = new juce::DynamicObject(); item->setProperty("id", e.id); item->setProperty("type", e.type); item->setProperty("x1",e.x1); item->setProperty("y1",e.y1); item->setProperty("x2",e.x2); item->setProperty("y2",e.y2); item->setProperty("radius",e.radius);
+              if (e.type == "bezier") { item->setProperty("cx1",e.cx1); item->setProperty("cy1",e.cy1); item->setProperty("cx2",e.cx2); item->setProperty("cy2",e.cy2); }
+              entities.add(item); }
             o->setProperty("entities", entities);
         }
         features.add(o);

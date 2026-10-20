@@ -37,7 +37,11 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <Geom_BezierCurve.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <algorithm>
+#include <set>
 #include <cmath>
 
 namespace djehuti::cad
@@ -340,6 +344,236 @@ bool CadDocument::addSketchCircle(const juce::String& sketchId,double x,double y
 bool CadDocument::setSketchEntityDimension(const juce::String& sketchId,const juce::String& entityId,double value,juce::String& error) { return mutate([&](juce::String& e){auto* sketch=mutableSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(value<=0||!std::isfinite(value)){e="Sketch dimension must be finite and greater than zero.";return false;}for(auto& entity:sketch->entities)if(entity.id==entityId){bool found=false;for(auto& c:sketch->constraints)if((c.type=="distance"||c.type=="length"||c.type=="radius"||c.type=="diameter")&&c.firstEntity==entityId){c.value=value;found=true;}if(entity.type=="circle"){if(!found){CadSketchConstraint c;c.id=newId("constraint",nextNumber++);c.type="radius";c.firstEntity=entityId;c.value=value;sketch->constraints.push_back(c);}}else if(!found){CadSketchConstraint c;c.id=newId("constraint",nextNumber++);c.type="distance";c.firstEntity=entityId;c.value=value;sketch->constraints.push_back(c);}return solveSketch(*sketch,e);}e="Unknown sketch entity id: "+entityId;return false;},error); }
 bool CadDocument::setSketchEntityPosition(const juce::String& sketchId,const juce::String& entityId,double px,double py,juce::String& error) { return mutate([&](juce::String& e){auto* sketch=mutableSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(!std::isfinite(px)||!std::isfinite(py)){e="Sketch position must be finite.";return false;}for(auto& entity:sketch->entities)if(entity.id==entityId){const auto dx=entity.x2-entity.x1,dy=entity.y2-entity.y1;entity.x1=px;entity.y1=py;if(entity.type!="circle"){entity.x2=px+dx;entity.y2=py+dy;}return solveSketch(*sketch,e);}e="Unknown sketch entity id: "+entityId;return false;},error); }
 bool CadDocument::addSketchConstraint(const juce::String& sketchId,const juce::String& type,const juce::String& first,const juce::String& second,double value,juce::String& constraintId,juce::String& error) { return mutate([&](juce::String& e){auto* sketch=mutableSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}const auto supported=type=="coincident"||type=="horizontal"||type=="vertical"||type=="fixed"||type=="length"||type=="distance"||type=="radius"||type=="diameter";if(!supported){e="Unsupported sketch constraint: "+type;return false;}CadSketchConstraint c;c.id=newId("constraint",nextNumber++);c.type=type;c.firstEntity=first;c.secondEntity=second;c.value=value;sketch->constraints.push_back(c);constraintId=c.id;return solveSketch(*sketch,e);},error); }
+
+// ---- Interactive sketch editing (docs/SKETCH_EDITING_ARCHITECTURE.md) -------------------------------------------
+namespace
+{
+CadSketchEntity* sketchEntity(CadSketch& sketch, const juce::String& id) { for (auto& e : sketch.entities) if (e.id == id) return &e; return nullptr; }
+bool splitPointRef(const juce::String& ref, juce::String& entity, juce::String& which)
+{
+    const auto colon = ref.indexOfChar(':');
+    if (colon <= 0) return false;
+    entity = ref.substring(0, colon); which = ref.substring(colon + 1);
+    return which == "p1" || which == "p2" || which == "c1" || which == "c2";
+}
+double& pointX(CadSketchEntity& e, const juce::String& which) { return which == "p1" ? e.x1 : which == "p2" ? e.x2 : which == "c1" ? e.cx1 : e.cx2; }
+double& pointY(CadSketchEntity& e, const juce::String& which) { return which == "p1" ? e.y1 : which == "p2" ? e.y2 : which == "c1" ? e.cy1 : e.cy2; }
+bool isSegment(const CadSketchEntity& e) { return e.type == "line" || e.type == "bezier"; }
+
+// Every endpoint joined to `start` ("id:p1|p2"): coincident constraints in either direction, transitively, plus
+// endpoints at exactly the same position (the profile builder joins those too).
+juce::StringArray joinedEndpoints(CadSketch& sketch, const juce::String& start)
+{
+    juce::StringArray result { start };
+    for (int i = 0; i < result.size(); ++i)
+    {
+        juce::String id, which; if (!splitPointRef(result[i], id, which)) continue;
+        auto* e = sketchEntity(sketch, id); if (e == nullptr) continue;
+        const auto px = pointX(*e, which), py = pointY(*e, which);
+        for (const auto& c : sketch.constraints)
+            if (c.type == "coincident") { if (c.firstEntity == result[i]) result.addIfNotAlreadyThere(c.secondEntity); else if (c.secondEntity == result[i]) result.addIfNotAlreadyThere(c.firstEntity); }
+        for (const auto& other : sketch.entities)
+            if (isSegment(other))
+            {
+                if (std::hypot(other.x1 - px, other.y1 - py) < 1.0e-7) result.addIfNotAlreadyThere(other.id + ":p1");
+                if (std::hypot(other.x2 - px, other.y2 - py) < 1.0e-7) result.addIfNotAlreadyThere(other.id + ":p2");
+            }
+    }
+    return result;
+}
+
+// The four lines of a Rectangle group in creation order (bottom, right, top, left), or empty.
+std::vector<CadSketchEntity*> rectangleGroup(CadSketch& sketch, const juce::String& group)
+{
+    std::vector<CadSketchEntity*> lines;
+    if (group.isEmpty()) return lines;
+    for (auto& e : sketch.entities) if (e.groupId == group && e.type == "line") lines.push_back(&e);
+    if (lines.size() != 4) lines.clear();
+    return lines;
+}
+}
+
+bool CadDocument::editSketchEntity(const juce::String& sketchId,const juce::String& entityId,bool move,double px,double py,bool resize,double value,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        auto* sketch = mutableSketch(sketchId);
+        if (sketch == nullptr) { e = "Unknown sketch id: " + sketchId; return false; }
+        auto* entity = sketchEntity(*sketch, entityId);
+        if (entity == nullptr) { e = "Unknown sketch entity id: " + entityId; return false; }
+        if (move)
+        {
+            if (!std::isfinite(px) || !std::isfinite(py)) { e = "Sketch position must be finite."; return false; }
+            const auto dx = px - entity->x1, dy = py - entity->y1;
+            entity->x1 = px; entity->y1 = py;
+            if (entity->type != "circle") { entity->x2 += dx; entity->y2 += dy; }
+            if (entity->type == "bezier") { entity->cx1 += dx; entity->cy1 += dy; entity->cx2 += dx; entity->cy2 += dy; }
+        }
+        if (resize)
+        {
+            if (value <= 0 || !std::isfinite(value)) { e = "Sketch dimension must be finite and greater than zero."; return false; }
+            if (entity->type == "bezier") { e = "A curve has no single dimension; move its points or handles instead."; return false; }
+            bool found = false;
+            for (auto& c : sketch->constraints) if ((c.type == "distance" || c.type == "length" || c.type == "radius" || c.type == "diameter") && c.firstEntity == entityId) { c.value = value; found = true; }
+            if (!found) { CadSketchConstraint c; c.id = newId("constraint", nextNumber++); c.type = entity->type == "circle" ? "radius" : "distance"; c.firstEntity = entityId; c.value = value; sketch->constraints.push_back(c); }
+        }
+        return solveSketch(*sketch, e);
+    }, error);
+}
+
+bool CadDocument::moveSketchPoint(const juce::String& sketchId,const juce::String& pointRef,double x,double y,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        auto* sketch = mutableSketch(sketchId);
+        if (sketch == nullptr) { e = "Unknown sketch id: " + sketchId; return false; }
+        if (!std::isfinite(x) || !std::isfinite(y)) { e = "Sketch position must be finite."; return false; }
+        juce::String id, which;
+        if (!splitPointRef(pointRef, id, which)) { e = "A sketch point is written <entity>:p1, :p2, :c1 or :c2 (got " + pointRef + ")."; return false; }
+        auto* entity = sketchEntity(*sketch, id);
+        if (entity == nullptr) { e = "Unknown sketch entity id: " + id; return false; }
+        if (which.startsWith("c"))
+        {
+            if (entity->type != "bezier") { e = id + " has no control points; only curves do."; return false; }
+            pointX(*entity, which) = x; pointY(*entity, which) = y;
+            return solveSketch(*sketch, e);
+        }
+        if (!isSegment(*entity)) { e = "Only line and curve endpoints can be moved this way; edit a circle in its panel."; return false; }
+        const auto ox = pointX(*entity, which), oy = pointY(*entity, which), dx = x - ox, dy = y - oy;
+        const auto joined = joinedEndpoints(*sketch, pointRef);
+        // Rectangle corners: reshape the rectangle about its opposite corner, keeping its constraints and updating
+        // its width/height dimensions.
+        juce::StringArray reshaped;
+        for (const auto& ref : joined)
+        {
+            juce::String rid, rw; if (!splitPointRef(ref, rid, rw)) continue;
+            auto* r = sketchEntity(*sketch, rid); if (r == nullptr || r->groupId.isEmpty() || reshaped.contains(r->groupId)) continue;
+            auto rect = rectangleGroup(*sketch, r->groupId); if (rect.empty()) continue;
+            reshaped.add(r->groupId);
+            double minX = rect[0]->x1, maxX = rect[0]->x1, minY = rect[0]->y1, maxY = rect[0]->y1;
+            for (auto* l : rect) for (const auto& p : { std::pair<double, double> { l->x1, l->y1 }, { l->x2, l->y2 } }) { minX = std::min(minX, p.first); maxX = std::max(maxX, p.first); minY = std::min(minY, p.second); maxY = std::max(maxY, p.second); }
+            const auto oppX = std::abs(ox - minX) < 1.0e-7 ? maxX : minX, oppY = std::abs(oy - minY) < 1.0e-7 ? maxY : minY;
+            if (std::abs(x - oppX) < 1.0e-6 || std::abs(y - oppY) < 1.0e-6) { e = "That would collapse the rectangle to zero width or height."; return false; }
+            const auto nx = std::min(x, oppX), ny = std::min(y, oppY), w = std::abs(x - oppX), h = std::abs(y - oppY);
+            rect[0]->x1 = nx; rect[0]->y1 = ny; rect[0]->x2 = nx + w; rect[0]->y2 = ny;
+            rect[1]->x1 = nx + w; rect[1]->y1 = ny; rect[1]->x2 = nx + w; rect[1]->y2 = ny + h;
+            rect[2]->x1 = nx + w; rect[2]->y1 = ny + h; rect[2]->x2 = nx; rect[2]->y2 = ny + h;
+            rect[3]->x1 = nx; rect[3]->y1 = ny + h; rect[3]->x2 = nx; rect[3]->y2 = ny;
+            for (auto& c : sketch->constraints) if (c.type == "distance" || c.type == "length") { if (c.firstEntity == rect[0]->id) c.value = w; else if (c.firstEntity == rect[1]->id) c.value = h; }
+        }
+        for (const auto& ref : joined)
+        {
+            juce::String rid, rw; if (!splitPointRef(ref, rid, rw)) continue;
+            auto* r = sketchEntity(*sketch, rid); if (r == nullptr || reshaped.contains(r->groupId)) continue;
+            pointX(*r, rw) = x; pointY(*r, rw) = y;
+            if (r->type == "bezier") { const auto c = rw == "p1" ? juce::String("c1") : juce::String("c2"); pointX(*r, c) += dx; pointY(*r, c) += dy; }   // a handle travels with its endpoint
+        }
+        if (!solveSketch(*sketch, e)) return false;
+        for (const auto& ref : joined)
+        {
+            juce::String rid, rw; if (!splitPointRef(ref, rid, rw)) continue;
+            auto* r = sketchEntity(*sketch, rid);
+            if (r != nullptr && std::hypot(pointX(*r, rw) - x, pointY(*r, rw) - y) > 1.0e-6)
+            {
+                juce::StringArray held;
+                for (const auto& c : sketch->constraints) for (const auto& j : joined) if (j.startsWith(c.firstEntity + ":") && c.type != "coincident") held.addIfNotAlreadyThere(c.type + " on " + c.firstEntity);
+                e = "The sketch's constraints keep that point from moving there" + (held.isEmpty() ? juce::String(".") : " (" + held.joinIntoString(", ") + ").") + " Change the dimension in the entity panel instead.";
+                return false;
+            }
+        }
+        return true;
+    }, error);
+}
+
+bool CadDocument::insertSketchVertex(const juce::String& sketchId,const juce::String& lineId,double x,double y,juce::String& newLineId,juce::StringArray& removed,juce::String& error)
+{
+    removed.clear();
+    return mutate([&](juce::String& e)
+    {
+        auto* sketch = mutableSketch(sketchId);
+        if (sketch == nullptr) { e = "Unknown sketch id: " + sketchId; return false; }
+        auto* line = sketchEntity(*sketch, lineId);
+        if (line == nullptr || line->type != "line") { e = "A vertex can be inserted only into a line."; return false; }
+        const auto dx = line->x2 - line->x1, dy = line->y2 - line->y1, q = dx * dx + dy * dy;
+        if (!std::isfinite(x) || !std::isfinite(y) || q <= 0.0) { e = "Invalid insertion point."; return false; }
+        const auto t = ((x - line->x1) * dx + (y - line->y1) * dy) / q;
+        const auto length = std::sqrt(q);
+        if (t * length < 1.0e-4 || (1.0 - t) * length < 1.0e-4) { e = "The new vertex must lie inside the line, away from its ends."; return false; }
+        const auto px = line->x1 + t * dx, py = line->y1 + t * dy;   // on the line: the path is unchanged
+        // A split Rectangle edge turns the rectangle into a polygon: the group stops being treated as a rectangle.
+        if (line->groupId.isNotEmpty()) { const auto group = line->groupId; for (auto& other : sketch->entities) if (other.groupId == group) other.groupId.clear(); removed.add("rectangle grouping of " + group); }
+        CadSketchEntity second; second.id = newId("line", nextNumber++); second.type = "line";
+        second.x1 = px; second.y1 = py; second.x2 = line->x2; second.y2 = line->y2;
+        line->x2 = px; line->y2 = py;
+        // The line's own orientation and length constraints no longer describe either part; remove them openly.
+        auto& constraints = sketch->constraints;
+        for (auto it = constraints.begin(); it != constraints.end();)
+            if (it->firstEntity == lineId && it->type != "coincident") { removed.add(it->type + " (" + it->id + ")"); it = constraints.erase(it); }
+            else ++it;
+        // Whatever was joined to the old far end is now joined to the new line's far end.
+        for (auto& c : constraints) { if (c.firstEntity == lineId + ":p2") c.firstEntity = second.id + ":p2"; if (c.secondEntity == lineId + ":p2") c.secondEntity = second.id + ":p2"; }
+        CadSketchConstraint join; join.id = newId("constraint", nextNumber++); join.type = "coincident"; join.firstEntity = lineId + ":p2"; join.secondEntity = second.id + ":p1";
+        constraints.push_back(join);
+        const auto index = (size_t) std::distance(sketch->entities.data(), line);
+        sketch->entities.insert(sketch->entities.begin() + (std::ptrdiff_t) index + 1, second);
+        newLineId = second.id;
+        return solveSketch(*sketch, e);
+    }, error);
+}
+
+bool CadDocument::addSketchBezier(const juce::String& sketchId,double x1,double y1,double cx1,double cy1,double cx2,double cy2,double x2,double y2,juce::String& entityId,juce::String& error,const juce::String& firstConnection,const juce::String& secondConnection)
+{
+    return mutate([&](juce::String& e)
+    {
+        auto* sketch = mutableSketch(sketchId);
+        if (sketch == nullptr) { e = "Unknown sketch id: " + sketchId; return false; }
+        for (const auto v : { x1, y1, cx1, cy1, cx2, cy2, x2, y2 }) if (!std::isfinite(v)) { e = "Curve points must be finite."; return false; }
+        if (std::hypot(x2 - x1, y2 - y1) < 1.0e-8) { e = "A curve needs two distinct endpoints."; return false; }
+        CadSketchEntity curve; curve.id = newId("bezier", nextNumber++); curve.type = "bezier";
+        curve.x1 = x1; curve.y1 = y1; curve.cx1 = cx1; curve.cy1 = cy1; curve.cx2 = cx2; curve.cy2 = cy2; curve.x2 = x2; curve.y2 = y2;
+        sketch->entities.push_back(curve); entityId = curve.id;
+        const auto connect = [&](const juce::String& target, const char* endpoint)
+        {
+            if (target.isEmpty()) return;
+            CadSketchConstraint c; c.id = newId("constraint", nextNumber++); c.type = "coincident"; c.firstEntity = curve.id + endpoint; c.secondEntity = target; sketch->constraints.push_back(c);
+        };
+        connect(firstConnection, ":p1"); connect(secondConnection, ":p2");
+        return solveSketch(*sketch, e);
+    }, error);
+}
+
+bool CadDocument::smoothSketchJoint(const juce::String& sketchId,const juce::String& bezierId,const juce::String& end,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        auto* sketch = mutableSketch(sketchId);
+        if (sketch == nullptr) { e = "Unknown sketch id: " + sketchId; return false; }
+        auto* curve = sketchEntity(*sketch, bezierId);
+        if (curve == nullptr || curve->type != "bezier") { e = "Smoothing applies to a curve."; return false; }
+        if (end != "p1" && end != "p2") { e = "The end must be p1 or p2."; return false; }
+        const auto handle = end == "p1" ? juce::String("c1") : juce::String("c2");
+        const auto jx = pointX(*curve, end), jy = pointY(*curve, end);
+        // The segment joined at that end, and the direction in which it arrives there.
+        double tx = 0.0, ty = 0.0;
+        for (const auto& ref : joinedEndpoints(*sketch, bezierId + ":" + end))
+        {
+            juce::String rid, rw; if (!splitPointRef(ref, rid, rw) || rid == bezierId) continue;
+            auto* other = sketchEntity(*sketch, rid); if (other == nullptr) continue;
+            double fx, fy;
+            if (other->type == "bezier") { const auto c = rw == "p1" ? juce::String("c1") : juce::String("c2"); fx = pointX(*other, c); fy = pointY(*other, c); if (std::hypot(jx - fx, jy - fy) < 1.0e-9) { fx = rw == "p1" ? other->x2 : other->x1; fy = rw == "p1" ? other->y2 : other->y1; } }
+            else { fx = rw == "p1" ? other->x2 : other->x1; fy = rw == "p1" ? other->y2 : other->y1; }
+            tx = jx - fx; ty = jy - fy;
+            break;
+        }
+        const auto n = std::hypot(tx, ty);
+        if (n < 1.0e-9) { e = "Nothing is connected at that end of " + bezierId + " to be tangent to."; return false; }
+        double length = std::hypot(pointX(*curve, handle) - jx, pointY(*curve, handle) - jy);
+        if (length < 1.0e-9) length = std::hypot(curve->x2 - curve->x1, curve->y2 - curve->y1) / 3.0;
+        pointX(*curve, handle) = jx + tx / n * length; pointY(*curve, handle) = jy + ty / n * length;
+        return solveSketch(*sketch, e);
+    }, error);
+}
+
 bool CadDocument::createExtrude(const juce::String& sketchId,double depth,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(depth<=0||!std::isfinite(depth)){e="Extrusion depth must be finite and greater than zero.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("extrude",nextNumber++);f.name="Extrude "+juce::String(nextNumber-1);f.type="extrude";f.sketchId=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.firstOperand=sketchId;for(auto& source:items)if(source.id==sketchId)source.visible=false;items.push_back(f);id=f.id;return true;},error); }
 bool CadDocument::createCut(const juce::String& sketchId,const juce::String& target,double depth,bool throughAll,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);const auto* targetFeature=find(target);if(sketch==nullptr||targetFeature==nullptr||targetFeature->shape.IsNull()){e="Cut requires an existing sketch and solid target feature.";return false;}if(depth<=0&&!throughAll){e="Cut depth must be greater than zero unless through-all is selected.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("cut",nextNumber++);f.name="Cut "+juce::String(nextNumber-1);f.type="cut";f.sketchId=sketchId;f.targetFeatureId=target;f.firstOperand=target;f.secondOperand=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.throughAll=throughAll;for(auto& source:items)if(source.id==target||source.id==sketchId)source.visible=false;items.push_back(f);id=f.id;return true;},error); }
 bool CadDocument::createFillet(const juce::String& target,const std::vector<int>& edgeIndices,double radius,juce::String& id,juce::String& error)
@@ -866,7 +1100,9 @@ bool CadDocument::solveSketch(CadSketch& sketch,juce::String& error) const
 {
     auto entity = [&](const juce::String& id) -> CadSketchEntity* { for (auto& e : sketch.entities) if (e.id == id || id.startsWith(e.id + ":")) return &e; return nullptr; };
     auto endpoint = [&](const juce::String& token, gp_Pnt& point) -> CadSketchEntity* { const auto separator = token.indexOfChar(':'); const auto id = separator < 0 ? token : token.substring(0, separator); auto* e = entity(id); if (e == nullptr) return nullptr; const bool second = token.endsWith(":p2"); point = gp_Pnt(second ? e->x2 : e->x1, second ? e->y2 : e->y1, 0); return e; };
-    if (sketch.entities.size() == 4 && std::all_of(sketch.entities.begin(), sketch.entities.end(), [](const auto& e) { return e.type == "line"; }))
+    // A sketch that is exactly one Rectangle (four lines of one rectangle group). Four free lines are a polygon and
+    // must keep their shape, so this applies only to the group the Rectangle tool created.
+    if (sketch.entities.size() == 4 && std::all_of(sketch.entities.begin(), sketch.entities.end(), [&](const auto& e) { return e.type == "line" && e.groupId.isNotEmpty() && e.groupId == sketch.entities[0].groupId; }))
     {
         double width = std::hypot(sketch.entities[0].x2 - sketch.entities[0].x1, sketch.entities[0].y2 - sketch.entities[0].y1);
         double height = std::hypot(sketch.entities[1].x2 - sketch.entities[1].x1, sketch.entities[1].y2 - sketch.entities[1].y1);
@@ -916,6 +1152,12 @@ bool CadDocument::solveSketch(CadSketch& sketch,juce::String& error) const
         if (c.type == "radius" || c.type == "diameter") { const auto expected = c.type == "diameter" ? c.value / 2.0 : c.value; if (e == nullptr || std::abs(e->radius - expected) > 1.0e-7) { error = "Sketch circle dimension could not be satisfied."; return false; } }
     }
     for (const auto& e : sketch.entities) if (e.type == "line" && std::hypot(e.x2 - e.x1, e.y2 - e.y1) < 1.0e-8) { error = "Sketch contains a zero-length line."; return false; }
+    for (const auto& e : sketch.entities)
+        if (e.type == "bezier")
+        {
+            for (const auto v : { e.x1, e.y1, e.x2, e.y2, e.cx1, e.cy1, e.cx2, e.cy2 }) if (!std::isfinite(v)) { error = "Sketch curve " + e.id + " has a non-finite point."; return false; }
+            if (std::hypot(e.x2 - e.x1, e.y2 - e.y1) < 1.0e-8) { error = "Sketch curve " + e.id + " must have two distinct endpoints."; return false; }
+        }
     return true;
 }
 bool CadDocument::validateSketch(const CadSketch& sketch,juce::String& error) const {if(sketch.entities.empty()){error="Sketch has no geometry.";return false;}CadSketch copy=sketch;if(!solveSketch(copy,error))return false;std::vector<TopoDS_Face> faces;if(!sketchProfiles(copy,originPlaneFrame(copy),faces,error))return false;if(faces.empty()){error="Sketch has no closed profile.";return false;}return true;}
@@ -933,6 +1175,7 @@ CadSketchFrame CadDocument::originPlaneFrame(const CadSketch& sketch)
 bool CadDocument::sketchProfiles(const CadSketch& sketch,const CadSketchFrame& frame,std::vector<TopoDS_Face>& faces,juce::String& error,std::vector<std::pair<TopoDS_Shape,juce::String>>* edgeEntities) const
 {
     const auto point=[&](double u,double v){return frame.origin.Translated(gp_Vec(frame.u)*u+gp_Vec(frame.v)*v);};
+    const auto bezierCurve=[&](const CadSketchEntity& e){TColgp_Array1OfPnt poles(1,4);poles(1)=point(e.x1,e.y1);poles(2)=point(e.cx1,e.cy1);poles(3)=point(e.cx2,e.cy2);poles(4)=point(e.x2,e.y2);return Handle(Geom_Curve)(new Geom_BezierCurve(poles));};
     // Profile edges are named by the sketch entity they come from, so extruded side faces get stable names.
     const auto nameEdges=[&](const TopoDS_Face& face)
     {
@@ -945,11 +1188,15 @@ bool CadDocument::sketchProfiles(const CadSketch& sketch,const CadSketchFrame& f
             {
                 bool on=false;
                 if(entity.type=="circle")on=std::abs(mid.Distance(point(entity.x1,entity.y1))-entity.radius)<1.0e-6;
+                else if(entity.type=="bezier"){GeomAPI_ProjectPointOnCurve projection(mid,bezierCurve(entity));on=projection.NbPoints()>0&&projection.LowerDistance()<1.0e-6;}
                 else{const auto a=point(entity.x1,entity.y1),b=point(entity.x2,entity.y2);const gp_Vec ab(a,b),am(a,mid);const auto t=juce::jlimit(0.0,1.0,ab.SquareMagnitude()>0?am.Dot(ab)/ab.SquareMagnitude():0.0);on=mid.Distance(a.Translated(ab*t))<1.0e-6;}
                 if(on){edgeEntities->push_back({ex.Current(),entity.id});break;}
             }
         }
     };
+    // Lines and Bezier curves are chained end to end (positions within 1e-7 mm) into closed wires; circles are
+    // profiles on their own. A Bezier becomes a genuine OCCT Geom_BezierCurve edge.
+    const auto segment=[](const CadSketchEntity& e){return e.type=="line"||e.type=="bezier";};
     std::vector<bool> used(sketch.entities.size(),false);
     for(size_t i=0;i<sketch.entities.size();++i)
     {
@@ -960,19 +1207,32 @@ bool CadDocument::sketchProfiles(const CadSketch& sketch,const CadSketchFrame& f
             catch(const Standard_Failure&){error="Unable to build circle profile.";return false;}
             continue;
         }
-        if(entity.type!="line"||used[i])continue;
+        if(!segment(entity)||used[i])continue;
         std::vector<size_t> loop;loop.push_back(i);used[i]=true;
         double startX=entity.x1,startY=entity.y1,currentX=entity.x2,currentY=entity.y2;
         for(size_t count=1;count<=sketch.entities.size();++count)
         {
             if(std::hypot(currentX-startX,currentY-startY)<1.0e-7)break;
             size_t next=sketch.entities.size();bool reverse=false;
-            for(size_t j=0;j<sketch.entities.size();++j)if(!used[j]&&sketch.entities[j].type=="line"){const auto& candidate=sketch.entities[j];if(std::hypot(candidate.x1-currentX,candidate.y1-currentY)<1.0e-7){next=j;break;}if(std::hypot(candidate.x2-currentX,candidate.y2-currentY)<1.0e-7){next=j;reverse=true;break;}}
+            for(size_t j=0;j<sketch.entities.size();++j)if(!used[j]&&segment(sketch.entities[j])){const auto& candidate=sketch.entities[j];if(std::hypot(candidate.x1-currentX,candidate.y1-currentY)<1.0e-7){next=j;break;}if(std::hypot(candidate.x2-currentX,candidate.y2-currentY)<1.0e-7){next=j;reverse=true;break;}}
             if(next==sketch.entities.size())break;
             used[next]=true;loop.push_back(next);const auto& candidate=sketch.entities[next];currentX=reverse?candidate.x1:candidate.x2;currentY=reverse?candidate.y1:candidate.y2;
         }
         if(std::hypot(currentX-startX,currentY-startY)>=1.0e-7){error="Sketch line profile is open; connect all endpoints before creating a solid.";return false;}
-        try{BRepBuilderAPI_MakeWire wire;for(const auto index:loop){const auto& line=sketch.entities[index];wire.Add(BRepBuilderAPI_MakeEdge(point(line.x1,line.y1),point(line.x2,line.y2)).Edge());}if(!wire.IsDone()){error="Unable to build sketch wire.";return false;}faces.push_back(BRepBuilderAPI_MakeFace(wire.Wire()).Face());nameEdges(faces.back());}
+        try
+        {
+            BRepBuilderAPI_MakeWire wire;
+            for(const auto index:loop)
+            {
+                const auto& item=sketch.entities[index];
+                if(item.type=="bezier"){TColgp_Array1OfPnt poles(1,4);poles(1)=point(item.x1,item.y1);poles(2)=point(item.cx1,item.cy1);poles(3)=point(item.cx2,item.cy2);poles(4)=point(item.x2,item.y2);wire.Add(BRepBuilderAPI_MakeEdge(Handle(Geom_BezierCurve)(new Geom_BezierCurve(poles))).Edge());}
+                else wire.Add(BRepBuilderAPI_MakeEdge(point(item.x1,item.y1),point(item.x2,item.y2)).Edge());
+                if(!wire.IsDone()){error="Unable to join sketch segment "+item.id+" into the profile.";return false;}
+            }
+            BRepBuilderAPI_MakeFace face(wire.Wire(),Standard_True);
+            if(!face.IsDone()){error="The closed sketch profile could not be turned into a planar face (check for self-intersecting curves).";return false;}
+            faces.push_back(face.Face());nameEdges(faces.back());
+        }
         catch(const Standard_Failure&){error="Unable to build closed sketch profile.";return false;}
     }
     return true;
@@ -1085,7 +1345,7 @@ juce::String CadDocument::sketchSignature(const juce::String& sketchId,juce::Str
     const auto* s=findSketch(sketchId);
     if(s==nullptr)return "nosketch:"+sketchId;
     juce::String sig="S:"+s->id+"|"+s->plane+"|"+exact(s->offset)+"|"+s->supportFeature+"|"+s->supportFace;
-    for(const auto& e:s->entities)sig<<"|e:"<<e.id<<","<<e.type<<","<<e.groupId<<","<<exact(e.x1)<<","<<exact(e.y1)<<","<<exact(e.x2)<<","<<exact(e.y2)<<","<<exact(e.radius);
+    for(const auto& e:s->entities){sig<<"|e:"<<e.id<<","<<e.type<<","<<e.groupId<<","<<exact(e.x1)<<","<<exact(e.y1)<<","<<exact(e.x2)<<","<<exact(e.y2)<<","<<exact(e.radius);if(e.type=="bezier")sig<<",c"<<exact(e.cx1)<<","<<exact(e.cy1)<<","<<exact(e.cx2)<<","<<exact(e.cy2);}
     for(const auto& c:s->constraints)sig<<"|c:"<<c.id<<","<<c.type<<","<<c.firstEntity<<","<<c.secondEntity<<","<<exact(c.value);
     if(s->onFace())sig<<"|support("<<geometrySignature(s->supportFeature,visiting)<<")";
     return sig;
@@ -1477,6 +1737,11 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
         for (const auto& entity : sketch->entities)
         {
             if (entity.type == "circle") for (int k = 0; k < 48; ++k) { const auto a0 = k * 2.0 * M_PI / 48.0, a1 = (k + 1) * 2.0 * M_PI / 48.0; segment(at(entity.x1 + entity.radius * std::cos(a0), entity.y1 + entity.radius * std::sin(a0)), at(entity.x1 + entity.radius * std::cos(a1), entity.y1 + entity.radius * std::sin(a1))); }
+            else if (entity.type == "bezier")
+            {
+                const auto b = [&](double t, double p0, double p1, double p2, double p3) { const auto s = 1.0 - t; return s * s * s * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t * t * t * p3; };
+                for (int k = 0; k < 32; ++k) { const auto t0 = k / 32.0, t1 = (k + 1) / 32.0; segment(at(b(t0, entity.x1, entity.cx1, entity.cx2, entity.x2), b(t0, entity.y1, entity.cy1, entity.cy2, entity.y2)), at(b(t1, entity.x1, entity.cx1, entity.cx2, entity.x2), b(t1, entity.y1, entity.cy1, entity.cy2, entity.y2))); }
+            }
             else segment(at(entity.x1, entity.y1), at(entity.x2, entity.y2));
         }
         if (sketch->onFace())   // small U/V axis marks at the sketch origin
@@ -1488,8 +1753,8 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
     return cachedSnapshot;
 }
 
-juce::String CadDocument::serializeSketches() const {juce::Array<juce::var> list;for(const auto& sketch:sketches){auto object=std::make_unique<juce::DynamicObject>();object->setProperty("id",sketch.id);object->setProperty("plane",sketch.plane);object->setProperty("offset",sketch.offset);if(sketch.onFace()){object->setProperty("supportFeature",sketch.supportFeature);object->setProperty("supportFace",sketch.supportFace);}juce::Array<juce::var> entities;for(const auto& entity:sketch.entities){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",entity.id);value->setProperty("type",entity.type);value->setProperty("groupId",entity.groupId);value->setProperty("x1",entity.x1);value->setProperty("y1",entity.y1);value->setProperty("x2",entity.x2);value->setProperty("y2",entity.y2);value->setProperty("radius",entity.radius);entities.add(juce::var(value.release()));}object->setProperty("entities",juce::var(entities));juce::Array<juce::var> constraints;for(const auto& constraint:sketch.constraints){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",constraint.id);value->setProperty("type",constraint.type);value->setProperty("firstEntity",constraint.firstEntity);value->setProperty("secondEntity",constraint.secondEntity);value->setProperty("value",constraint.value);constraints.add(juce::var(value.release()));}object->setProperty("constraints",juce::var(constraints));list.add(juce::var(object.release()));}return juce::JSON::toString(juce::var(list));}
-bool CadDocument::deserializeSketches(const juce::String& json,juce::String& error) {const auto parsed=juce::JSON::parse(json);auto* list=parsed.getArray();if(!list){error="Stored sketch data is invalid.";return false;}std::vector<CadSketch> loaded;for(const auto& value:*list){auto* object=value.getDynamicObject();if(!object){error="Stored sketch entry is invalid.";return false;}CadSketch sketch;sketch.id=object->getProperty("id").toString();sketch.plane=object->getProperty("plane").toString();sketch.offset=number(object->getProperty("offset"),0);sketch.supportFeature=object->getProperty("supportFeature").toString();sketch.supportFace=object->getProperty("supportFace").toString();if(sketch.onFace())sketch.plane="FACE";if(auto* entities=object->getProperty("entities").getArray())for(const auto& entityValue:*entities){auto* entityObject=entityValue.getDynamicObject();if(!entityObject)continue;CadSketchEntity entity;entity.id=entityObject->getProperty("id").toString();entity.type=entityObject->getProperty("type").toString();entity.groupId=entityObject->getProperty("groupId").toString();entity.x1=number(entityObject->getProperty("x1"),0);entity.y1=number(entityObject->getProperty("y1"),0);entity.x2=number(entityObject->getProperty("x2"),0);entity.y2=number(entityObject->getProperty("y2"),0);entity.radius=number(entityObject->getProperty("radius"),1);sketch.entities.push_back(entity);}if(auto* constraints=object->getProperty("constraints").getArray())for(const auto& constraintValue:*constraints){auto* constraintObject=constraintValue.getDynamicObject();if(!constraintObject)continue;CadSketchConstraint constraint;constraint.id=constraintObject->getProperty("id").toString();constraint.type=constraintObject->getProperty("type").toString();constraint.firstEntity=constraintObject->getProperty("firstEntity").toString();constraint.secondEntity=constraintObject->getProperty("secondEntity").toString();constraint.value=number(constraintObject->getProperty("value"),0);sketch.constraints.push_back(constraint);}loaded.push_back(std::move(sketch));}sketches=std::move(loaded);return true;}
+juce::String CadDocument::serializeSketches() const {juce::Array<juce::var> list;for(const auto& sketch:sketches){auto object=std::make_unique<juce::DynamicObject>();object->setProperty("id",sketch.id);object->setProperty("plane",sketch.plane);object->setProperty("offset",sketch.offset);if(sketch.onFace()){object->setProperty("supportFeature",sketch.supportFeature);object->setProperty("supportFace",sketch.supportFace);}juce::Array<juce::var> entities;for(const auto& entity:sketch.entities){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",entity.id);value->setProperty("type",entity.type);value->setProperty("groupId",entity.groupId);value->setProperty("x1",entity.x1);value->setProperty("y1",entity.y1);value->setProperty("x2",entity.x2);value->setProperty("y2",entity.y2);value->setProperty("radius",entity.radius);if(entity.type=="bezier"){value->setProperty("cx1",entity.cx1);value->setProperty("cy1",entity.cy1);value->setProperty("cx2",entity.cx2);value->setProperty("cy2",entity.cy2);}entities.add(juce::var(value.release()));}object->setProperty("entities",juce::var(entities));juce::Array<juce::var> constraints;for(const auto& constraint:sketch.constraints){auto value=std::make_unique<juce::DynamicObject>();value->setProperty("id",constraint.id);value->setProperty("type",constraint.type);value->setProperty("firstEntity",constraint.firstEntity);value->setProperty("secondEntity",constraint.secondEntity);value->setProperty("value",constraint.value);constraints.add(juce::var(value.release()));}object->setProperty("constraints",juce::var(constraints));list.add(juce::var(object.release()));}return juce::JSON::toString(juce::var(list));}
+bool CadDocument::deserializeSketches(const juce::String& json,juce::String& error) {const auto parsed=juce::JSON::parse(json);auto* list=parsed.getArray();if(!list){error="Stored sketch data is invalid.";return false;}std::vector<CadSketch> loaded;for(const auto& value:*list){auto* object=value.getDynamicObject();if(!object){error="Stored sketch entry is invalid.";return false;}CadSketch sketch;sketch.id=object->getProperty("id").toString();sketch.plane=object->getProperty("plane").toString();sketch.offset=number(object->getProperty("offset"),0);sketch.supportFeature=object->getProperty("supportFeature").toString();sketch.supportFace=object->getProperty("supportFace").toString();if(sketch.onFace())sketch.plane="FACE";if(auto* entities=object->getProperty("entities").getArray())for(const auto& entityValue:*entities){auto* entityObject=entityValue.getDynamicObject();if(!entityObject)continue;CadSketchEntity entity;entity.id=entityObject->getProperty("id").toString();entity.type=entityObject->getProperty("type").toString();entity.groupId=entityObject->getProperty("groupId").toString();entity.x1=number(entityObject->getProperty("x1"),0);entity.y1=number(entityObject->getProperty("y1"),0);entity.x2=number(entityObject->getProperty("x2"),0);entity.y2=number(entityObject->getProperty("y2"),0);entity.radius=number(entityObject->getProperty("radius"),1);entity.cx1=number(entityObject->getProperty("cx1"),0);entity.cy1=number(entityObject->getProperty("cy1"),0);entity.cx2=number(entityObject->getProperty("cx2"),0);entity.cy2=number(entityObject->getProperty("cy2"),0);sketch.entities.push_back(entity);}if(auto* constraints=object->getProperty("constraints").getArray())for(const auto& constraintValue:*constraints){auto* constraintObject=constraintValue.getDynamicObject();if(!constraintObject)continue;CadSketchConstraint constraint;constraint.id=constraintObject->getProperty("id").toString();constraint.type=constraintObject->getProperty("type").toString();constraint.firstEntity=constraintObject->getProperty("firstEntity").toString();constraint.secondEntity=constraintObject->getProperty("secondEntity").toString();constraint.value=number(constraintObject->getProperty("value"),0);sketch.constraints.push_back(constraint);}loaded.push_back(std::move(sketch));}sketches=std::move(loaded);return true;}
 
 bool CadDocument::syncOCAFFromItems(juce::String& error) { if(ocafDocument.IsNull()){error="OCAF document is not initialized.";return false;}const auto root=ocafDocument->Main();writeInteger(root.FindChild(kMetaTag,true),1,nextNumber);const auto features=root.FindChild(kFeatureContainerTag,true);for(TDF_ChildIterator it(features);it.More();it.Next()){const auto label=it.Value();if(readInteger(label,1,0)!=0){const auto oldId=readString(label,2);bool stillPresent=false;for(const auto& f:items)if(f.id==oldId){stillPresent=true;break;}if(!stillPresent)recordDeleted(label);}writeInteger(label,1,0);}for(const auto& f:items){if(f.shape.IsNull()&&f.type!="sketch"){error="Cannot record a null shape for feature: "+f.id;return false;}const auto label=features.FindChild(kFeatureTagBase+featureNumber(f.id),true);writeInteger(label,1,1);writeString(label,2,f.id);writeString(label,3,f.name);writeString(label,4,f.type);writeString(label,5,f.firstOperand);writeString(label,6,f.secondOperand);writeString(label,7,f.sketchId);writeString(label,8,f.targetFeatureId);writeReal(label,10,f.width);writeReal(label,11,f.depth);writeReal(label,12,f.height);writeReal(label,13,f.radius);writeReal(label,14,f.x);writeReal(label,15,f.y);writeReal(label,16,f.z);writeReal(label,17,f.rx);writeReal(label,18,f.ry);writeReal(label,19,f.rz);writeInteger(label,20,f.visible?1:0);writeInteger(label,21,f.reverse?1:0);writeInteger(label,22,f.throughAll?1:0);writeString(label,23,f.edges.joinIntoString("\n"));recordGeneratedOrModified(label,f.shape);}for(const auto& entry:operationHistory){for(TDF_ChildIterator it(features);it.More();it.Next())if(readString(it.Value(),2)==entry.featureId){recordOperationHistory(it.Value(),entry);break;}}const auto refs=root.FindChild(kReferenceContainerTag,true);for(TDF_ChildIterator it(refs);it.More();it.Next())writeInteger(it.Value(),1,0);for(size_t i=0;i<references.size();++i){const auto label=refs.FindChild((int)i+1,true);writeInteger(label,1,1);writeString(label,2,references[i].ownerFeatureId);writeString(label,3,references[i].topologyKind);writeString(label,4,references[i].semanticRole);const auto* owner=find(references[i].ownerFeatureId);if(owner==nullptr)continue;if(references[i].topologyKind=="edge"&&references[i].semanticRole=="box-bottom-x-edge"){TopoDS_Shape edge;if(!representativeBoxEdge(*owner,edge)){error="The supported persistent reference could not be mapped to current document geometry.";return false;}recordGeneratedOrModifiedAt(label.FindChild(kReferenceShapeTag,true).FindChild(kShapeTag,true),edge);}}
     // Face supports of sketches: one label per sketch holds the support feature, the face token and the current
