@@ -7,6 +7,9 @@ The application includes sketch/solid modeling, Boolean operations, an authorita
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 
+Independent protected-source engineering setups are available from **File → New Test Fixture** and **Window → Test Fixtures**.
+See [Mechanical test fixtures](docs/MECHANICAL_TEST_FIXTURES.md) for setup, persistence, available methods and solver limitations.
+
 ## Build
 
 Configure with CMake from a Visual Studio developer shell. The project expects the existing local JUCE and FrustLang checkouts used by the Djehuti suite; override `JUCE_PATH` and `FRUSTLANG_ROOT` when those locations differ.

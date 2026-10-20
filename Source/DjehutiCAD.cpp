@@ -9,6 +9,7 @@
 #include "CadIkCommands.h"
 #include "CadToolbox.h"
 #include "LocalAgentApi.h"
+#include "CadFixturesPanel.h"
 
 namespace
 {
@@ -46,7 +47,8 @@ std::string DjehutiCAD::runEngineeringCommand(const juce::Component::SafePointer
         if (safe == nullptr || safe->cadService == nullptr) return R"({"ok": false, "error": "DjehutiCAD is closing."})";
         const auto parsed = juce::JSON::parse(arguments.isEmpty() ? juce::String("{}") : arguments);
         const auto args = parsed.isObject() ? parsed : juce::var(new juce::DynamicObject());
-        const auto reply = name == "cad_catalog" ? safe->cadService->catalogCommand(args) : name == "cad_stock" ? safe->cadService->stockCommand(args) : name.rfind("cad_analysis_", 0) == 0 ? safe->cadService->analysisCommand(juce::String(name), args) : safe->cadService->materialCommand(juce::String(name), args);
+        const auto reply = name == "cad_fixture" ? safe->fixtureService->command(args) : name == "cad_catalog" ? safe->cadService->catalogCommand(args) : name == "cad_stock" ? safe->cadService->stockCommand(args) : name.rfind("cad_analysis_", 0) == 0 ? safe->cadService->analysisCommand(juce::String(name), args) : safe->cadService->materialCommand(juce::String(name), args);
+        if (name == "cad_fixture" && safe->fixturesPanel != nullptr) safe->fixturesPanel->synchronize(reply["id"].toString());
         if (safe->cadWorkspace != nullptr) safe->cadWorkspace->repaint();
         return juce::JSON::toString(reply, true).toStdString();
     };
@@ -160,7 +162,7 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
         }
         if (name == "cad_export") return runExportCommand(safeThis, arguments);
         if (name == "cad_list_faces" || name == "cad_create_face_sketch") return runFaceCommand(safeThis, name, arguments);
-        if (name == "cad_catalog" || name == "cad_stock" || name.rfind("cad_material_", 0) == 0 || name.rfind("cad_analysis_", 0) == 0) return runEngineeringCommand(safeThis, name, arguments);
+        if (name == "cad_fixture" || name == "cad_catalog" || name == "cad_stock" || name.rfind("cad_material_", 0) == 0 || name.rfind("cad_analysis_", 0) == 0) return runEngineeringCommand(safeThis, name, arguments);
         if (const auto ik = ikCommandForTool(name); ik.isNotEmpty()) return runIkCommand(safeThis, ik, arguments);
         if (name == "cad_motion_status")
         {
@@ -303,6 +305,7 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     dockManager = std::make_unique<CreationDock::DockManager>(*this);
     addAndMakeVisible(*dockManager);
     cadService = std::make_shared<djehuti::cad::CadCommandService>();
+    fixtureService = std::make_shared<djehuti::cad::CadFixtureService>();
     frust_engine::setCadCommandService(cadService);
     // One runtime pose shared by every view, and the DEWB motion endpoint that can drive it.
     motionRuntime = std::make_shared<djehuti::cad::CadMotionRuntime>(cadService);
@@ -352,6 +355,16 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     agentPanel = agentPanelContent.get();
     dockManager->registerPanel("agent", "Agent", std::move(agentPanelContent), CreationDock::DockTargetZone::CenterTab);
     dockManager->registerPanel("toolbox", "Toolbox", std::make_unique<CadToolbox>(*cadWorkspace), CreationDock::DockTargetZone::Left);
+    auto fixtureContent = std::make_unique<CadFixturesPanel>(fixtureService, cadService);
+    fixturesPanel = fixtureContent.get();
+    fixturesPanel->onOpenSource = [this](const juce::File& file)
+    {
+        auto* args = new juce::DynamicObject(); args->setProperty("action", "document"); args->setProperty("operation", "open"); args->setProperty("path", file.getFullPathName());
+        const auto reply = cadWorkspace->automation(juce::var(args));
+        if (!(bool)reply["ok"]) juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Open source CAD",reply["error"].toString());
+        else selectWorkspace(0);
+    };
+    dockManager->registerPanel("fixtures", "Test Fixtures", std::move(fixtureContent), CreationDock::DockTargetZone::CenterTab);
     const auto bindDocking = [this](WorkspaceMenu& menu, const juce::String& id)
     {
         menu.changeDocking = [this,id](bool floating)
@@ -363,6 +376,7 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     };
     bindDocking(cadWorkspace->workspaceMenu,"cad"); bindDocking(frustPanel->workspaceMenu,"frust");
     bindDocking(nodePanel->workspaceMenu,"nodes"); bindDocking(viewsPanel->workspaceMenu,"views");
+    bindDocking(fixturesPanel->workspaceMenu,"fixtures");
     viewsPanel->setContextCommand([safe = juce::Component::SafePointer<CadWorkspacePanel>(cadWorkspace)](const juce::String& action, const djehuti::cad::CadPick& pick)
     { if (safe != nullptr) safe->viewContextCommand(action,pick); });
     dockManager->activatePanel("cad"); defaultDockLayout = dockManager->captureLayout();
@@ -383,7 +397,8 @@ DjehutiCAD::~DjehutiCAD()
     saveSettings();
     authSession.cancelLogin();
     dockManager.reset();
-    cadWorkspace = nullptr; nodePanel = nullptr; frustPanel = nullptr; agentPanel = nullptr; viewsPanel = nullptr;
+    cadWorkspace = nullptr; nodePanel = nullptr; frustPanel = nullptr; agentPanel = nullptr; viewsPanel = nullptr; fixturesPanel = nullptr;
+    fixtureService.reset();
     frust_engine::setCadMotionHooks(nullptr, nullptr, nullptr);
     frust_engine::setCadIkHook(nullptr);
     frust_engine::setCadWorkspaceHook(nullptr);
@@ -410,15 +425,14 @@ void DjehutiCAD::resized()
 
 void DjehutiCAD::selectWorkspace(int tabIndex)
 {
-    const juce::StringArray ids { "cad","frust","nodes","views","agent" };
+    const juce::StringArray ids { "cad","frust","nodes","views","agent","fixtures" };
     if (dockManager != nullptr && juce::isPositiveAndBelow(tabIndex,ids.size())) { dockManager->showPanel(ids[tabIndex]); dockManager->activatePanel(ids[tabIndex]); }
 }
 
 void DjehutiCAD::confirmCloseThen(std::function<void()> closeCallback)
 {
     saveSettings();
-    if (closeCallback)
-        closeCallback();
+    if (closeCallback) { if (fixturesPanel != nullptr) fixturesPanel->confirmClose(std::move(closeCallback)); else closeCallback(); }
 }
 
 juce::StringArray DjehutiCAD::getMenuBarNames()
@@ -436,6 +450,9 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
         menu.addItem(kSaveCadDocument, "Save CAD Document");
         menu.addItem(kSaveCadDocumentAs, "Save CAD Document As...");
         menu.addSeparator();
+        menu.addItem(111, "New Test Fixture");
+        menu.addItem(112, "Open Test Fixture...");
+        menu.addSeparator();
         menu.addItem(kExportCad, "Export... (3MF, STL, STEP)", cadService != nullptr && !cadService->document().features().empty());
         menu.addSeparator();
         menu.addItem(10, "Close");
@@ -447,6 +464,7 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
         menu.addItem(kNodeEditor, "Node Editor");
         menu.addItem(kAgent, "BYOK Agent");
         menu.addItem(kThreeDViews, "3D Views");
+        menu.addItem(113, "Test Fixtures");
         menu.addSeparator();
         menu.addItem(500, "Toolbox", true, dockManager->isPanelOpen("toolbox"));
         menu.addItem(501, "Restore default workspace layout");
@@ -482,6 +500,9 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
         cadWorkspace->saveDocumentAs();
     else if (commandId == kExportCad)
         cadWorkspace->showExportDialog();
+    else if (commandId == 111) { selectWorkspace(5); fixturesPanel->createFixture(); }
+    else if (commandId == 112) { selectWorkspace(5); fixturesPanel->openFixture(); }
+    else if (commandId == 113) selectWorkspace(5);
     else if (commandId == kAgentSettings)
     {
         auto content = new DjehutiAgentSettings(properties, [] {});
@@ -569,7 +590,7 @@ void DjehutiCAD::applyWorkspaceLayout(const juce::var& saved)
             object->setProperty("w",bounds.getWidth()); object->setProperty("h",bounds.getHeight());
         }
     // CreationDock moves the listed panels; omitted panels must explicitly stay hidden on restore.
-    for (const auto& id : juce::StringArray { "cad", "frust", "nodes", "views", "agent", "toolbox" })
+    for (const auto& id : juce::StringArray { "cad", "frust", "nodes", "views", "agent", "toolbox", "fixtures" })
         if (!visible.contains(id)) dockManager->hidePanel(id);
     dockManager->applyLayout(layout);
 }
@@ -578,7 +599,7 @@ void DjehutiCAD::restoreSettings()
 {
     const auto savedDock = juce::JSON::parse(properties.getUserSettings()->getValue("workspaceDockLayout"));
     if (savedDock.isObject()) applyWorkspaceLayout(savedDock);
-    else selectWorkspace(juce::jlimit(0, 4, properties.getUserSettings()->getIntValue("selectedTab",0)));
+    else selectWorkspace(juce::jlimit(0, 5, properties.getUserSettings()->getIntValue("selectedTab",0)));
     cadWorkspace->restoreViewState(properties.getUserSettings()->getValue("cadReferenceGuides"));
     viewsPanel->restoreViewState(properties.getUserSettings()->getValue("multiReferenceGuides"));
     cadWorkspace->restoreLayoutState(properties.getUserSettings()->getValue("cadWorkspaceLayout"));
@@ -608,7 +629,7 @@ std::string DjehutiCAD::runWorkspaceCommand(const juce::Component::SafePointer<D
         const auto action=args.getProperty("action","state").toString(); const auto workspace=args.getProperty("workspace","cad").toString();
         if(error.isEmpty())
         {
-            const juce::StringArray ids{"cad","frust","nodes","views","agent","toolbox"};
+            const juce::StringArray ids{"cad","frust","nodes","views","agent","toolbox","fixtures"};
             if(!ids.contains(workspace)) error="Unknown workspace.";
             else if(action=="tool")
             {

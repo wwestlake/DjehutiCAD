@@ -243,7 +243,8 @@ public:
     bool resolveReference(const CadPersistentReference& reference, juce::String& error) const;
     bool referenceWorld(const juce::String& instanceId, gp_Trsf& world, juce::String& error) const;
 
-    std::shared_ptr<const CadRenderSnapshot> snapshot() const;
+    // Fixtures may explicitly display a referenced hidden body without changing source visibility.
+    std::shared_ptr<const CadRenderSnapshot> snapshot(bool includeHidden = false) const;
     // Maps a body's evaluated shape (which already carries its authored placement) onto an instance of it whose
     // frame is instanceWorld. Shared by the runtime pose and export so each placement is applied exactly once.
     gp_Trsf instanceShapeTransform(const juce::String& featureId, const gp_Trsf& instanceWorld) const;

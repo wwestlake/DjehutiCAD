@@ -1638,13 +1638,13 @@ gp_Trsf CadDocument::instanceShapeTransform(const juce::String& featureId, const
     return instanceWorld.Multiplied(anchor.Inverted());
 }
 
-std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
+std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot(bool includeHidden) const
 {
-    if (cachedSnapshot != nullptr && cachedRevision == documentRevision) return cachedSnapshot;
+    if (!includeHidden && cachedSnapshot != nullptr && cachedRevision == documentRevision) return cachedSnapshot;
     auto next = std::make_shared<CadRenderSnapshot>();
     next->revision = documentRevision;
     next->documentInstance = instanceId;
-    for (const auto& f : items) if (f.visible && !f.shape.IsNull())
+    for (const auto& f : items) if ((f.visible || includeHidden) && !f.shape.IsNull())
     {
         CadLocalFrame local; local.id=f.id; local.name=f.name; const auto transform=placement(f);
         for (int c=0;c<4;++c) for (int row=0;row<3;++row) local.matrix[(size_t)(c*4+row)]=(float)transform.Value(row+1,c+1);
@@ -1652,7 +1652,7 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
     }
 
     for (const auto& f : items)
-        if (f.visible && !f.shape.IsNull())
+        if ((f.visible || includeHidden) && !f.shape.IsNull())
         {
             BRepMesh_IncrementalMesh mesh(f.shape, 0.1, false, 0.5, true);
             int faceIndex = -1;
@@ -1771,6 +1771,7 @@ std::shared_ptr<const CadRenderSnapshot> CadDocument::snapshot() const
         { const auto size = 6.0; segment(fr.origin, at(size, 0)); segment(fr.origin, at(0, size)); }
         if (!outline.points.empty()) next->sketchOutlines.push_back(std::move(outline));
     }
+    if (includeHidden) return next;
     cachedSnapshot = next;
     cachedRevision = documentRevision;
     return cachedSnapshot;

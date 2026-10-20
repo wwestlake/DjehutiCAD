@@ -16,6 +16,8 @@ class NodeDesignerPanel;
 class DjehutiAgentPanel;
 class ThreeDViewsPanel;
 class CadWorkspacePanel;
+class CadFixturesPanel;
+namespace djehuti::cad { class CadFixtureService; }
 
 class DjehutiCAD final : public juce::Component,
                          private juce::MenuBarModel
@@ -57,6 +59,8 @@ private:
     DjehutiAgentPanel* agentPanel = nullptr; // owned by DockManager
     ThreeDViewsPanel* viewsPanel = nullptr; // owned by DockManager
     CadWorkspacePanel* cadWorkspace = nullptr; // owned by DockManager
+    CadFixturesPanel* fixturesPanel = nullptr; // owned by DockManager
+    std::shared_ptr<djehuti::cad::CadFixtureService> fixtureService;
     std::shared_ptr<djehuti::cad::CadCommandService> cadService;
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;
     static std::string runFaceCommand(const juce::Component::SafePointer<DjehutiCAD>& safe, const std::string& name, const juce::String& arguments);

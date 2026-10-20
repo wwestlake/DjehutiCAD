@@ -125,6 +125,11 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadMaterialsManager.cpp
     Source/CadMaterialsManager.h
     Source/CadStockChecks.cpp
+    Source/CadTestFixture.cpp
+    Source/CadTestFixture.h
+    Source/CadFixturesPanel.cpp
+    Source/CadFixturesPanel.h
+    Source/CadFixtureChecks.cpp
     Source/CadMaterials.cpp
     Source/CadEngineeringUnits.h
     Source/CadEngineeringUnits.cpp
@@ -165,7 +170,7 @@ target_link_libraries(DjehutiCAD PRIVATE
     juce::juce_opengl
 )
 if(WIN32)
-    target_link_libraries(DjehutiCAD PRIVATE crypt32)
+    target_link_libraries(DjehutiCAD PRIVATE crypt32 bcrypt)
 endif()
 
 if(EXISTS "${OCCT_INCLUDE_DIR}/TopoDS_Shape.hxx")

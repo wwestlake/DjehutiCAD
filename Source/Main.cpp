@@ -10,6 +10,7 @@
 #include "CadIkCommands.h"
 #include "Viewport3D.h"
 #include "CadMaterialsManager.h"
+#include "CadFixturesPanel.h"
 namespace djehuti::cad { bool runCadStockCheck(juce::var&); }
 
 #include <BRepBndLib.hxx>
@@ -1248,10 +1249,26 @@ class DjehutiCADApplication final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "DjehutiCAD"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return false; }
+    bool moreThanOneInstanceAllowed() override { return getCommandLineParameters().startsWith("--cad-fixture-"); }
 
     void initialise(const juce::String& commandLine) override
     {
+        if (commandLine.startsWith("--cad-fixture-ui-check"))
+        {
+            const bool keepOpen=commandLine.contains("--interactive");
+            juce::MessageManager::callAsync([this,keepOpen]
+            {
+                const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/fixture-ui-check").getChildFile(juce::Uuid().toDashedString());
+                juce::var report;const bool passed=runCadFixtureUiCheck(report,folder,keepOpen);
+                juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-fixture-ui-check.result.json").replaceWithText(juce::JSON::toString(report));
+                setApplicationReturnValue(passed?0:1);if(!keepOpen)juce::MessageManager::callAsync([this]{quit();});
+            });return;
+        }
+        if (commandLine.startsWith("--cad-fixture-check"))
+        {
+            juce::var report;const bool passed=djehuti::cad::runCadFixtureCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-fixture-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(passed?0:1);
+        }
         if (commandLine.startsWith("--cad-stock-ui-check"))
         {
             juce::MessageManager::callAsync([this]
