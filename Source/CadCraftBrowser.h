@@ -21,6 +21,7 @@ public:
     bool craftPhase2Check(juce::var& report, const juce::File& folder);
     bool craftPhase3Check(juce::var& report, const juce::File& folder);
     bool craftPhase4Check(juce::var& report, const juce::File& folder);
+    bool craftPhase5Check(juce::var& report, const juce::File& folder);
     std::function<void(std::vector<djehuti::cad::CadOverlayLine>)> setOverlaysCallback;
 private:
     int getNumRows() override;
@@ -96,6 +97,23 @@ private:
     juce::TextButton createCaseButton {"New case"}, addSupportButton {"Add support"},
                      addLoadButton {"Add load"}, clearBoundaryButton {"Clear boundary"},
                      runSolverButton {"Run solver"}, showResultsButton {"Analysis results"};
+
+    // Phase 5: Interactive Craft Testing Laboratory
+    juce::Label labHeading, compareHeading;
+    juce::ComboBox experimentTemplateSelect, compareCaseA, compareCaseB;
+    juce::Slider loadSweepSlider;
+    juce::TextButton applyTemplateButton {"Apply test template"},
+                     runSweepButton {"Run load sweep"},
+                     resetExperimentButton {"Reset test"},
+                     compareButton {"Compare tests"},
+                     exportReportButton {"Laboratory report"};
+
+    void applySelectedTemplate();
+    void runInteractiveLoadSweep();
+    void resetCurrentExperiment();
+    void compareSelectedExperiments();
+    void showLaboratoryReport();
+
     juce::var lastSolveResult;
     juce::Array<juce::var> records, materialRecords;
     std::vector<int> shown;
@@ -109,4 +127,6 @@ bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool intera
 bool runCadCraftPhase2UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 bool runCadCraftPhase3UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 bool runCadCraftPhase4UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
+bool runCadCraftPhase5UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
+bool runCadCraftPhase5Check(juce::var& report);
 }

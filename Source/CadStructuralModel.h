@@ -143,4 +143,47 @@ std::vector<CadOverlayLine> generateOverlays(const std::vector<Node>& nodes,
                                              const StructuralResult& result,
                                              const StructuralOptions& options);
 
+// ---------------------------------------------------------------------------------------------------------------
+// Phase 5: Interactive Craft Testing Laboratory
+// ---------------------------------------------------------------------------------------------------------------
+struct LoadStepResult
+{
+    double loadMagnitudeN = 0.0;
+    double maxDeflectionMm = 0.0;
+    double maxNormalStressMPa = 0.0;
+    double maxUtilizationRatio = 0.0;
+    bool solved = false;
+};
+
+struct ExperimentComparison
+{
+    juce::String caseIdA, nameA;
+    juce::String caseIdB, nameB;
+    StructuralResult resultA, resultB;
+    double deflectionA_Mm = 0.0, deflectionB_Mm = 0.0;
+    double deltaDeflectionMm = 0.0;
+    double percentDeflectionChange = 0.0;
+    double stressA_MPa = 0.0, stressB_MPa = 0.0;
+    double deltaStressMPa = 0.0;
+    double percentStressChange = 0.0;
+    juce::String summary;
+};
+
+// Executes a quasi-static load sweep across a range of load magnitudes
+std::vector<LoadStepResult> runLoadSweep(const CadDocument& doc, const CadAnalysisCase& baseCase,
+                                        double startMagnitudeN, double endMagnitudeN, int numSteps,
+                                        const StructuralOptions& options = {});
+
+// Compares two test cases on the same structure or different design iterations
+ExperimentComparison compareCases(const CadDocument& doc, const CadAnalysisCase& caseA,
+                                  const CadAnalysisCase& caseB, const StructuralOptions& options = {});
+
+// Creates a pre-configured standardized laboratory experiment template
+CadAnalysisCase createTemplateCase(const CadDocument& doc, const juce::String& templateType,
+                                   const juce::String& targetInstance, double loadMagnitudeN = 10.0);
+
+// Generates a comprehensive markdown / plain text test laboratory report
+juce::String generateLabReport(const CadDocument& doc, const CadAnalysisCase& analysisCase,
+                               const StructuralResult& result, const ExperimentComparison* comparison = nullptr);
+
 } // namespace djehuti::cad::structural

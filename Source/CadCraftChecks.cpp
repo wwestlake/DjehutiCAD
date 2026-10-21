@@ -758,4 +758,207 @@ bool runCadCraftPhase4Check(juce::var& report)
 
     return passed;
 }
+
+bool runCadCraftPhase5Check(juce::var& report)
+{
+    const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/craft-check-p5").getChildFile(juce::Uuid().toDashedString());
+    folder.createDirectory();
+    juce::Array<juce::var> checks;
+    bool passed = true;
+
+    const auto check = [&](bool ok, const juce::String& label, const juce::String& detail = juce::String())
+    {
+        auto item = object();
+        put(item, "check", label);
+        put(item, "passed", ok);
+        if (detail.isNotEmpty()) put(item, "detail", detail);
+        checks.add(item);
+        passed &= ok;
+        report = object();
+        put(report, "passed", passed);
+        put(report, "checks", checks);
+        put(report, "folder", folder.getFullPathName());
+        juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-craft-phase5-check.result.json").replaceWithText(juce::JSON::toString(report));
+        return ok;
+    };
+
+    const auto close = [](double a, double b, double tol = 1e-4) {
+        return std::abs(a - b) <= tol * juce::jmax(1.0, std::abs(b));
+    };
+
+    CadCommandService service;
+    service.setComponentLibraryFile(folder.getChildFile("library.json"));
+    service.setCatalogFile(folder.getChildFile("materials.json"));
+    auto& doc = service.document();
+    const auto command = [&](const char* action, juce::var args = object()) {
+        put(args, "action", action);
+        return service.componentCommand(args);
+    };
+
+    // 1. Insert two wooden craft sticks: stick 1 (root), stick 2 (extended)
+    auto r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto stick1 = r["id"].toString();
+    check(stick1.isNotEmpty(), "Insert primary craft stock component: " + stick1);
+
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto stick2 = r["id"].toString();
+    check(stick2.isNotEmpty(), "Insert secondary craft stock component: " + stick2);
+
+    // Position stick 2 at x = 120 mm
+    CadFrame pStick2; pStick2.x = 120.0;
+    juce::String err;
+    check(doc.setInstancePlacement(stick2, pStick2, err), "Position second stick end-to-end");
+
+    // 2. Create standardized laboratory experiment templates
+    // 2a. Cantilever test template
+    auto caseCantilever = structural::createTemplateCase(doc, "cantilever", stick1, 1.0);
+    check(caseCantilever.name.contains("Cantilever") && caseCantilever.supports.size() == 1 &&
+          caseCantilever.supports.front().fixed.size() == 6 && caseCantilever.loads.size() == 1,
+          "Generate Cantilever Bending Test laboratory template with fixed root and tip load");
+
+    // Evaluate cantilever
+    auto resCantilever = structural::evaluateCase(doc, caseCantilever);
+    check(resCantilever.solved && resCantilever.status == "completed",
+          "Solve Cantilever Bending Test template");
+    const double cantDeflMm = resCantilever.maxDeflectionM * 1000.0;
+    // Analytical cantilever deflection: delta = P * L^3 / (3 * E * I)
+    const double expectedCant = 1.0 * std::pow(0.12, 3) / (3.0 * 9500e6 * 2.25e-11) * 1000.0;
+    check(close(cantDeflMm, expectedCant, 2e-3),
+          "Cantilever template deflection matches Euler-Bernoulli analytical formula (" + juce::String(expectedCant, 3) + " mm)",
+          "Calculated: " + juce::String(cantDeflMm, 4) + " mm");
+
+    // 2b. Simply Supported Beam test template
+    auto caseSimple = structural::createTemplateCase(doc, "simplySupported", stick1, 2.0);
+    check(caseSimple.name.contains("Simply Supported") && caseSimple.supports.size() == 2 &&
+          caseSimple.loads.size() == 1,
+          "Generate Simply Supported Beam laboratory template with pinned and roller supports");
+    auto resSimple = structural::evaluateCase(doc, caseSimple);
+    check(resSimple.solved && resSimple.status == "completed",
+          "Solve Simply Supported Beam template");
+    const double simpleDeflMm = resSimple.maxDeflectionM * 1000.0;
+    // Analytical simply supported deflection: delta = P * L^3 / (48 * E * I)
+    const double expectedSimple = 2.0 * std::pow(0.12, 3) / (48.0 * 9500e6 * 2.25e-11) * 1000.0;
+    check(close(simpleDeflMm, expectedSimple, 2e-3),
+          "Simply Supported beam template deflection matches analytical solution (" + juce::String(expectedSimple, 3) + " mm)",
+          "Calculated: " + juce::String(simpleDeflMm, 4) + " mm");
+
+    // 2c. Axial Tension test template
+    auto caseTension = structural::createTemplateCase(doc, "axialTension", stick1, 100.0);
+    check(caseTension.name.contains("Axial Tension") && caseTension.loads.front().direction[0] > 0.0,
+          "Generate Axial Tension laboratory template (tensile direction +X)");
+    auto resTension = structural::evaluateCase(doc, caseTension);
+    check(resTension.solved && resTension.status == "completed", "Solve Axial Tension template");
+    const double tensExtMm = resTension.maxDeflectionM * 1000.0;
+    const double expectedAxial = 100.0 * 0.12 / (9500e6 * 3.0e-5) * 1000.0;
+    check(close(tensExtMm, expectedAxial, 2e-3),
+          "Axial Tension template elongation matches analytical Hooke's law (" + juce::String(expectedAxial, 3) + " mm)",
+          "Calculated: " + juce::String(tensExtMm, 4) + " mm");
+
+    // 2d. Axial Compression test template
+    auto caseCompression = structural::createTemplateCase(doc, "axialCompression", stick1, 100.0);
+    check(caseCompression.name.contains("Axial Compression") && caseCompression.loads.front().direction[0] < 0.0,
+          "Generate Axial Compression laboratory template (compressive direction -X)");
+    auto resCompression = structural::evaluateCase(doc, caseCompression);
+    check(resCompression.solved && resCompression.status == "completed", "Solve Axial Compression template");
+    const double compDeflMm = resCompression.maxDeflectionM * 1000.0;
+    check(close(compDeflMm, expectedAxial, 2e-3),
+          "Axial Compression template shortening matches analytical Hooke's law (" + juce::String(expectedAxial, 3) + " mm)",
+          "Calculated: " + juce::String(compDeflMm, 4) + " mm");
+
+    // 3. Quasi-static load sweep
+    // Sweep cantilever from 0 to 5 N across 5 steps (0, 1, 2, 3, 4, 5 N)
+    const auto sweepResults = structural::runLoadSweep(doc, caseCantilever, 0.0, 5.0, 5);
+    check(sweepResults.size() == 6, "Quasi-static load sweep executes all 6 requested load steps");
+    bool sweepMonotonic = true;
+    bool sweepLinear = true;
+    for (size_t i = 1; i < sweepResults.size(); ++i)
+    {
+        if (!sweepResults[i].solved) { sweepMonotonic = false; break; }
+        if (sweepResults[i].maxDeflectionMm <= sweepResults[i - 1].maxDeflectionMm) sweepMonotonic = false;
+        // Verify linearity: deflection proportional to load magnitude
+        const double expected = (sweepResults[i].loadMagnitudeN / 1.0) * cantDeflMm;
+        if (!close(sweepResults[i].maxDeflectionMm, expected, 2e-3)) sweepLinear = false;
+    }
+    check(sweepMonotonic, "Quasi-static sweep deflections increase monotonically with load");
+    check(sweepLinear, "Quasi-static sweep deflections follow exact linear proportionality (P vs delta)");
+
+    // 4. Experiment Comparison
+    // Create Case A (1 N) and Case B (2 N)
+    auto caseA = caseCantilever; caseA.name = "Cantilever Baseline 1.0 N";
+    auto caseB = caseCantilever; caseB.name = "Cantilever High-Load 2.0 N";
+    caseB.loads[0].magnitude = 2.0;
+
+    const auto compAB = structural::compareCases(doc, caseA, caseB);
+    check(compAB.resultA.solved && compAB.resultB.solved, "Compare two experimental load cases");
+    check(close(compAB.deltaDeflectionMm, cantDeflMm, 2e-3),
+          "Delta deflection between 2 N and 1 N cases equals 1 N deflection (" + juce::String(compAB.deltaDeflectionMm, 3) + " mm)");
+    check(close(compAB.percentDeflectionChange, 100.0, 1e-2),
+          "Percentage deflection change between 1 N and 2 N cases is exactly +100.0%");
+    check(compAB.summary.contains("+100.0%"),
+          "Comparison summary properly formatted with percentage indicators");
+
+    // 5. Bonded Joint Shear Transfer Test
+    // Apply PVA adhesive bond between stick 1 and stick 2
+    auto bondArgs = object();
+    put(bondArgs, "instanceA", stick1); put(bondArgs, "instanceB", stick2);
+    put(bondArgs, "type", "surface"); put(bondArgs, "adhesive", "adh-pva");
+    r = command("createBond", bondArgs);
+    const auto bondId = r["joint"]["id"].toString();
+    const auto* bj = doc.mechanicsData().findBondedJoint(bondId);
+    check(bj != nullptr && bj->status == "valid", "Establish valid PVA bond between stick 1 and stick 2");
+
+    auto caseBonded = structural::createTemplateCase(doc, "bondedTransfer", stick1, 5.0);
+    check(caseBonded.name.contains("Bonded Joint Shear Test"),
+          "Generate Bonded Joint Shear Test template");
+    auto resBonded = structural::evaluateCase(doc, caseBonded);
+    check(resBonded.solved && resBonded.status == "completed",
+          "Solve bonded joint shear load transfer across adhesive interface");
+
+    // 6. Comprehensive Laboratory Report Generation
+    const auto labReport = structural::generateLabReport(doc, caseB, compAB.resultB, &compAB);
+    check(labReport.contains("# Craft Testing Laboratory Report"),
+          "Generate Markdown laboratory report header");
+    check(labReport.contains("## 1. Engineering Assumptions & Formulation"),
+          "Laboratory report includes 3D frame formulation assumptions");
+    check(labReport.contains("## 2. Boundary Conditions & Restraints"),
+          "Laboratory report documents restraints and boundary conditions");
+    check(labReport.contains("## 3. Applied Loading Conditions"),
+          "Laboratory report documents applied load vectors and magnitudes");
+    check(labReport.contains("## 4. Predicted Structural Response"),
+          "Laboratory report contains static equilibrium response summary");
+    check(labReport.contains("## 5. Experiment Comparison"),
+          "Laboratory report includes comparison table and delta metrics");
+    check(labReport.contains("## 6. Engineering Safety & Diagnostics"),
+          "Laboratory report includes engineering safety diagnostics and alerts");
+    check(labReport.contains("| Member / Instance | Axial Force (N) | Bending Moment (N*m) |"),
+          "Laboratory report includes tabular member forces and stress utilization");
+
+    // 7. Native .djo persistence of laboratory cases
+    juce::String caseAId, caseBId, caseBondedId;
+    check(doc.createAnalysisCase(caseA, caseAId, err), "Store Case A in CadDocument");
+    check(doc.createAnalysisCase(caseB, caseBId, err), "Store Case B in CadDocument");
+    check(doc.createAnalysisCase(caseBonded, caseBondedId, err), "Store Bonded Transfer Case in CadDocument");
+
+    const auto nativeFile = folder.getChildFile("craft-laboratory-phase5.djo");
+    check(doc.save(nativeFile, err), "Save document with multiple laboratory experiments to native .djo", err);
+
+    CadDocument reopened;
+    check(reopened.load(nativeFile, err), "Reopen document with laboratory experiments from native .djo", err);
+    check(reopened.analysisData().cases.size() >= 3,
+          "Reopen preserves all laboratory experiment cases");
+
+    const auto* reopenedA = reopened.analysisData().find(caseAId);
+    const auto* reopenedB = reopened.analysisData().find(caseBId);
+    check(reopenedA != nullptr && reopenedB != nullptr,
+          "Reopen successfully locates persisted experiment cases by ID");
+
+    // Re-run solver on reopened document
+    const auto reopenedComp = structural::compareCases(reopened, *reopenedA, *reopenedB);
+    check(reopenedComp.resultA.solved && reopenedComp.resultB.solved &&
+          close(reopenedComp.deflectionA_Mm, compAB.deflectionA_Mm, 1e-4) &&
+          close(reopenedComp.deflectionB_Mm, compAB.deflectionB_Mm, 1e-4),
+          "Re-evaluating experiments on reopened document produces identical results");
+
+    return passed;
+}
 }

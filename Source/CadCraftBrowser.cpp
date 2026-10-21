@@ -101,6 +101,37 @@ CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : se
     runSolverButton.onClick = [this]{ runStructuralSolver(); };
     showResultsButton.onClick = [this]{ showStructuralResults(); };
 
+    // Phase 5: Interactive Craft Testing Laboratory
+    labHeading.setText("Craft Testing Laboratory", juce::dontSendNotification);
+    labHeading.setColour(juce::Label::textColourId, juce::Colour(0xff88ddff));
+    labHeading.setFont(juce::Font(14.0f, juce::Font::bold));
+
+    experimentTemplateSelect.addItem("Cantilever Bending Test", 1);
+    experimentTemplateSelect.addItem("Simply Supported Beam Test", 2);
+    experimentTemplateSelect.addItem("Axial Tension Test", 3);
+    experimentTemplateSelect.addItem("Axial Compression Test", 4);
+    experimentTemplateSelect.addItem("Craft Bridge Load Test", 5);
+    experimentTemplateSelect.addItem("Bonded Joint Shear Test", 6);
+    experimentTemplateSelect.setSelectedId(1, juce::dontSendNotification);
+    applyTemplateButton.onClick = [this]{ applySelectedTemplate(); };
+
+    loadSweepSlider.setRange(0.0, 100.0, 1.0);
+    loadSweepSlider.setValue(10.0, juce::dontSendNotification);
+    loadSweepSlider.setTextValueSuffix(" N");
+    loadSweepSlider.onValueChange = [this]{
+        loadMagnitude.setText(juce::String(loadSweepSlider.getValue(), 1));
+    };
+
+    runSweepButton.onClick = [this]{ runInteractiveLoadSweep(); };
+    resetExperimentButton.onClick = [this]{ resetCurrentExperiment(); };
+
+    compareHeading.setText("Experiment Comparison", juce::dontSendNotification);
+    compareHeading.setColour(juce::Label::textColourId, juce::Colour(0xff88ddff));
+    compareHeading.setFont(juce::Font(14.0f, juce::Font::bold));
+
+    compareButton.onClick = [this]{ compareSelectedExperiments(); };
+    exportReportButton.onClick = [this]{ showLaboratoryReport(); };
+
     content.addAndMakeVisible(analysisHeading);
     content.addAndMakeVisible(analysisCaseSelect);
     content.addAndMakeVisible(createCaseButton);
@@ -118,6 +149,18 @@ CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : se
     content.addAndMakeVisible(runSolverButton);
     content.addAndMakeVisible(showResultsButton);
 
+    content.addAndMakeVisible(labHeading);
+    content.addAndMakeVisible(experimentTemplateSelect);
+    content.addAndMakeVisible(applyTemplateButton);
+    content.addAndMakeVisible(loadSweepSlider);
+    content.addAndMakeVisible(runSweepButton);
+    content.addAndMakeVisible(resetExperimentButton);
+    content.addAndMakeVisible(compareHeading);
+    content.addAndMakeVisible(compareCaseA);
+    content.addAndMakeVisible(compareCaseB);
+    content.addAndMakeVisible(compareButton);
+    content.addAndMakeVisible(exportReportButton);
+
     reload();startTimerHz(3);
 }
 CadCraftBrowser::~CadCraftBrowser(){stopTimer();scroll.setViewedComponent(nullptr,false);}
@@ -125,7 +168,7 @@ void CadCraftBrowser::paint(juce::Graphics& g){g.fillAll(juce::Colour(0xff1d222b
 void CadCraftBrowser::resized()
 {
     auto a=getLocalBounds();workspaceMenu.setBounds(a.removeFromTop(28));scroll.setBounds(a);
-    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 2080);
+    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 2480);
     auto r=content.getLocalBounds().reduced(8);heading.setBounds(r.removeFromTop(32));category.setBounds(r.removeFromTop(30).reduced(0,2));search.setBounds(r.removeFromTop(30).reduced(0,2));
     list.setBounds(r.removeFromTop(145));auto row=r.removeFromTop(32);editPiece.setBounds(row.removeFromLeft(row.getWidth()*2/3).reduced(1));templatesButton.setBounds(row.reduced(1));
     mode.setBounds(r.removeFromTop(30));details.setBounds(r.removeFromTop(105));
@@ -208,6 +251,24 @@ void CadCraftBrowser::resized()
     runSolverButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
     showResultsButton.setBounds(row.reduced(1));
     clearBoundaryButton.setBounds(r.removeFromTop(32).reduced(1));
+
+    // Phase 5: Interactive Craft Testing Laboratory
+    labHeading.setBounds(r.removeFromTop(26));
+    row = r.removeFromTop(30);
+    experimentTemplateSelect.setBounds(row.removeFromLeft(row.getWidth()*3/5).reduced(1));
+    applyTemplateButton.setBounds(row.reduced(1));
+    row = r.removeFromTop(30);
+    loadSweepSlider.setBounds(row.removeFromLeft(row.getWidth()*3/5).reduced(1));
+    runSweepButton.setBounds(row.reduced(1));
+    resetExperimentButton.setBounds(r.removeFromTop(32).reduced(1));
+
+    compareHeading.setBounds(r.removeFromTop(26));
+    row = r.removeFromTop(30);
+    compareCaseA.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    compareCaseB.setBounds(row.reduced(1));
+    row = r.removeFromTop(32);
+    compareButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    exportReportButton.setBounds(row.reduced(1));
 
     row=r.removeFromTop(32);saveDefaults.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));duplicate.setBounds(row.reduced(1));
     row=r.removeFromTop(32);materialsButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));reloadButton.setBounds(row.reduced(1));status.setBounds(r);
@@ -621,12 +682,21 @@ void CadCraftBrowser::saveTemplate(bool copy)
 void CadCraftBrowser::refreshAnalysisCases()
 {
     const int currentId = analysisCaseSelect.getSelectedId();
+    const int currentA = compareCaseA.getSelectedId();
+    const int currentB = compareCaseB.getSelectedId();
     analysisCaseSelect.clear();
+    compareCaseA.clear();
+    compareCaseB.clear();
+
     const auto& cases = service->document().analysisData().cases;
     int id = 1;
     for (const auto& c : cases)
     {
-        analysisCaseSelect.addItem(c.name.isNotEmpty() ? c.name : c.id, id++);
+        const auto label = c.name.isNotEmpty() ? c.name : c.id;
+        analysisCaseSelect.addItem(label, id);
+        compareCaseA.addItem(label, id);
+        compareCaseB.addItem(label, id);
+        id++;
     }
     if (analysisCaseSelect.getNumItems() > 0)
     {
@@ -634,6 +704,16 @@ void CadCraftBrowser::refreshAnalysisCases()
             analysisCaseSelect.setSelectedId(currentId, juce::dontSendNotification);
         else
             analysisCaseSelect.setSelectedId(1, juce::dontSendNotification);
+
+        if (currentA > 0 && currentA <= compareCaseA.getNumItems())
+            compareCaseA.setSelectedId(currentA, juce::dontSendNotification);
+        else
+            compareCaseA.setSelectedId(1, juce::dontSendNotification);
+
+        if (currentB > 0 && currentB <= compareCaseB.getNumItems())
+            compareCaseB.setSelectedId(currentB, juce::dontSendNotification);
+        else
+            compareCaseB.setSelectedId(juce::jmin(2, compareCaseB.getNumItems()), juce::dontSendNotification);
     }
 }
 void CadCraftBrowser::createNewCase()
@@ -815,6 +895,179 @@ void CadCraftBrowser::showStructuralResults()
         }
     }
     details.setText(text);
+}
+void CadCraftBrowser::applySelectedTemplate()
+{
+    const auto& instances = service->document().mechanicsData().instances;
+    if (instances.empty())
+    {
+        message("No components in document. Insert craft stock first.", true);
+        return;
+    }
+
+    juce::String target = editingInstance.isNotEmpty() ? editingInstance : (selectedOccurrence ? selectedOccurrence() : "");
+    if (target.isEmpty())
+        target = instances.front().id;
+
+    const int sel = experimentTemplateSelect.getSelectedId();
+    juce::String templateType = "cantilever";
+    if (sel == 2) templateType = "simplySupported";
+    else if (sel == 3) templateType = "axialTension";
+    else if (sel == 4) templateType = "axialCompression";
+    else if (sel == 5) templateType = "bridge";
+    else if (sel == 6) templateType = "bondedTransfer";
+
+    double mag = loadSweepSlider.getValue();
+    if (mag <= 0.0)
+    {
+        numeric(loadMagnitude.getText(), mag);
+        if (mag <= 0.0) mag = 10.0;
+    }
+
+    auto c = structural::createTemplateCase(service->document(), templateType, target, mag);
+    juce::String id, error;
+    if (service->document().createAnalysisCase(c, id, error))
+    {
+        refreshAnalysisCases();
+        analysisCaseSelect.setSelectedId(analysisCaseSelect.getNumItems(), juce::dontSendNotification);
+        message("Configured experiment: " + c.name);
+    }
+    else message(error, true);
+}
+void CadCraftBrowser::runInteractiveLoadSweep()
+{
+    const auto& cases = service->document().analysisData().cases;
+    if (cases.empty())
+    {
+        message("No test case to sweep. Apply a template first.", true);
+        return;
+    }
+    const int idx = analysisCaseSelect.getSelectedItemIndex();
+    const auto& baseCase = (idx >= 0 && idx < (int)cases.size()) ? cases[(size_t)idx] : cases.front();
+
+    structural::StructuralOptions opt;
+    double scale = 20.0;
+    numeric(defScale.getText(), scale);
+    opt.visualDeformationScale = scale > 0.0 ? scale : 20.0;
+    opt.showDeformed = showDeformedToggle.getToggleState();
+
+    const double endMag = loadSweepSlider.getValue() > 0.0 ? loadSweepSlider.getValue() : 10.0;
+    const auto sweep = structural::runLoadSweep(service->document(), baseCase, 0.0, endMag, 5, opt);
+
+    juce::String sweepText = "=== Quasi-Static Load Sweep ===\n";
+    sweepText += "Experiment: " + (baseCase.name.isNotEmpty() ? baseCase.name : baseCase.id) + "\n";
+    sweepText += "Steps: 0.0 N -> " + juce::String(endMag, 1) + " N (5 increments)\n\n";
+    sweepText += "| Load (N) | Deflection (mm) | Stress (MPa) | Status |\n";
+    for (const auto& step : sweep)
+    {
+        sweepText += "| " + juce::String(step.loadMagnitudeN, 1) + " N | " +
+                     juce::String(step.maxDeflectionMm, 4) + " mm | " +
+                     juce::String(step.maxNormalStressMPa, 2) + " MPa | " +
+                     (step.solved ? "OK" : "FAILED") + " |\n";
+    }
+
+    details.setText(sweepText);
+
+    runStructuralSolver();
+    message("Quasi-static sweep complete (" + juce::String(endMag, 1) + " N max)");
+}
+void CadCraftBrowser::resetCurrentExperiment()
+{
+    const auto& cases = service->document().analysisData().cases;
+    if (cases.empty()) { message("No active experiment to reset.", true); return; }
+    const int idx = analysisCaseSelect.getSelectedItemIndex();
+    if (idx < 0 || idx >= (int)cases.size()) { message("Select an experiment to reset.", true); return; }
+
+    const auto caseId = cases[(size_t)idx].id;
+    auto c = cases[(size_t)idx];
+    c.supports.clear();
+    c.loads.clear();
+    juce::String error;
+    if (service->document().updateAnalysisCase(caseId, c, error))
+    {
+        lastSolveResult = juce::var();
+        if (setOverlaysCallback)
+            setOverlaysCallback({});
+        details.setText("Experiment reset. Boundary conditions and loads cleared.");
+        message("Reset experiment " + (c.name.isNotEmpty() ? c.name : c.id));
+    }
+    else message(error, true);
+}
+void CadCraftBrowser::compareSelectedExperiments()
+{
+    const auto& cases = service->document().analysisData().cases;
+    if (cases.size() < 2)
+    {
+        message("Need at least 2 analysis cases to compare.", true);
+        return;
+    }
+    const int idxA = compareCaseA.getSelectedItemIndex();
+    const int idxB = compareCaseB.getSelectedItemIndex();
+    if (idxA < 0 || idxA >= (int)cases.size() || idxB < 0 || idxB >= (int)cases.size())
+    {
+        message("Select two valid cases to compare.", true);
+        return;
+    }
+
+    structural::StructuralOptions opt;
+    double scale = 20.0;
+    numeric(defScale.getText(), scale);
+    opt.visualDeformationScale = scale > 0.0 ? scale : 20.0;
+
+    const auto comp = structural::compareCases(service->document(), cases[(size_t)idxA], cases[(size_t)idxB], opt);
+
+    juce::String text = "=== Experiment Comparison ===\n";
+    text += comp.summary + "\n\n";
+    text += "Case A: " + comp.nameA + "\n";
+    text += "  Deflection: " + juce::String(comp.deflectionA_Mm, 4) + " mm\n";
+    text += "  Normal Stress: " + juce::String(comp.stressA_MPa, 2) + " MPa\n\n";
+    text += "Case B: " + comp.nameB + "\n";
+    text += "  Deflection: " + juce::String(comp.deflectionB_Mm, 4) + " mm\n";
+    text += "  Normal Stress: " + juce::String(comp.stressB_MPa, 2) + " MPa\n\n";
+    text += "Delta Deflection: " + juce::String(comp.deltaDeflectionMm, 4) + " mm (" + juce::String(comp.percentDeflectionChange, 1) + "%)\n";
+    text += "Delta Stress: " + juce::String(comp.deltaStressMPa, 2) + " MPa (" + juce::String(comp.percentStressChange, 1) + "%)\n";
+
+    details.setText(text);
+    message(comp.summary);
+}
+void CadCraftBrowser::showLaboratoryReport()
+{
+    const auto& cases = service->document().analysisData().cases;
+    if (cases.empty())
+    {
+        message("No analysis case available for report.", true);
+        return;
+    }
+    const int idx = analysisCaseSelect.getSelectedItemIndex();
+    const auto& c = (idx >= 0 && idx < (int)cases.size()) ? cases[(size_t)idx] : cases.front();
+
+    structural::StructuralOptions opt;
+    double scale = 20.0;
+    numeric(defScale.getText(), scale);
+    opt.visualDeformationScale = scale > 0.0 ? scale : 20.0;
+    opt.showDeformed = showDeformedToggle.getToggleState();
+
+    const auto res = structural::evaluateCase(service->document(), c, opt);
+    lastSolveResult = res.toVar();
+    if (setOverlaysCallback)
+        setOverlaysCallback(res.overlays);
+
+    structural::ExperimentComparison comp;
+    structural::ExperimentComparison* compPtr = nullptr;
+    if (cases.size() >= 2)
+    {
+        const int idxA = compareCaseA.getSelectedItemIndex();
+        const int idxB = compareCaseB.getSelectedItemIndex();
+        if (idxA >= 0 && idxA < (int)cases.size() && idxB >= 0 && idxB < (int)cases.size() && idxA != idxB)
+        {
+            comp = structural::compareCases(service->document(), cases[(size_t)idxA], cases[(size_t)idxB], opt);
+            compPtr = &comp;
+        }
+    }
+
+    const auto report = structural::generateLabReport(service->document(), c, res, compPtr);
+    details.setText(report);
+    message("Laboratory Report generated (" + juce::String(report.length()) + " characters)");
 }
 void CadCraftBrowser::timerCallback()
 {
@@ -1207,6 +1460,131 @@ bool CadCraftBrowser::craftPhase4Check(juce::var& report, const juce::File& fold
     put(report, "folder", folder.getFullPathName());
     return passed;
 }
+bool CadCraftBrowser::craftPhase5Check(juce::var& report, const juce::File& folder)
+{
+    juce::Array<juce::var> checks; bool passed = true;
+    const auto check = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto v = object(); put(v, "check", name); put(v, "passed", ok);
+        if (detail.isNotEmpty()) put(v, "detail", detail);
+        checks.add(v); passed &= ok;
+    };
+
+    // 1. Select wood strip template
+    category.setSelectedId(2); // Wood
+    search.setText("strip");
+    filter();
+    check(shown.size() == 1, "Select wood strip template in library");
+    if (material.getSelectedId() <= 0 && material.getNumItems() > 0)
+        material.setSelectedId(1, juce::sendNotificationSync);
+
+    // 2. Insert two wooden craft sticks and align them end-to-end
+    juce::String currentSelected;
+    selectedOccurrence = [&]{ return currentSelected; };
+    onInserted = [&](const juce::String& id){ currentSelected = id; };
+
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto firstId = currentSelected;
+    check(firstId.isNotEmpty(), "Insert first wooden craft stick: " + firstId);
+
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto secondId = currentSelected;
+    check(secondId.isNotEmpty() && secondId != firstId, "Insert second wooden craft stick: " + secondId);
+
+    // Align second stick to end of first stick (butt joint)
+    currentSelected = secondId;
+    editSelected();
+    refreshAlignTargets();
+    alignTarget.setSelectedId(1);
+    alignType.setSelectedId(1); // butt joint
+    applyAlign();
+    check(service->document().mechanicsData().findInstance(secondId)->placement.x > 50.0,
+          "Align second stick to end of first stick");
+
+    // 3. Create valid adhesive bond between them
+    refreshBondTargets();
+    bondTarget.setSelectedId(1);
+    bondType.setSelectedId(1); // surface bond
+    bondAdhesive.setSelectedId(1); // PVA wood glue
+    applyBond();
+    check(!service->document().mechanicsData().bondedJoints.empty() &&
+          service->document().mechanicsData().bondedJoints.back().status == "valid",
+          "Create valid adhesive joint between sticks");
+
+    // 4. Apply Cantilever Bending Test template via UI
+    currentSelected = firstId;
+    editSelected();
+    experimentTemplateSelect.setSelectedId(1); // Cantilever
+    loadSweepSlider.setValue(10.0, juce::dontSendNotification);
+    applySelectedTemplate();
+
+    const auto& cases = service->document().analysisData().cases;
+    check(!cases.empty() && cases.back().name.contains("Cantilever"),
+          "Configure Cantilever Bending Test experiment template via UI");
+
+    // 5. Run interactive load sweep (0 to 10 N) via UI
+    std::vector<djehuti::cad::CadOverlayLine> capturedOverlays;
+    setOverlaysCallback = [&](std::vector<djehuti::cad::CadOverlayLine> lines){ capturedOverlays = lines; };
+    runInteractiveLoadSweep();
+
+    check(details.getText().contains("Quasi-Static Load Sweep") && details.getText().contains("10.0 N"),
+          "Run interactive quasi-static load sweep via UI and display stepped table");
+    check(!capturedOverlays.empty(),
+          "Generate deformation visualization overlays in viewport during sweep");
+
+    // 6. Apply Simply Supported Beam Test template via UI
+    experimentTemplateSelect.setSelectedId(2); // Simply Supported
+    loadSweepSlider.setValue(20.0, juce::dontSendNotification);
+    applySelectedTemplate();
+    const auto& casesAfter2 = service->document().analysisData().cases;
+    check(casesAfter2.size() >= 2 && casesAfter2.back().name.contains("Simply Supported"),
+          "Configure Simply Supported Beam experiment template via UI");
+
+    // 7. Solve simply supported beam and verify results
+    runStructuralSolver();
+    check(!lastSolveResult.isVoid() && (double)lastSolveResult["maxDeflectionMm"] > 0.0,
+          "Execute structural solver for Simply Supported test");
+
+    // 8. Experiment comparison via UI
+    refreshAnalysisCases();
+    compareCaseA.setSelectedId(1);
+    compareCaseB.setSelectedId(2);
+    compareSelectedExperiments();
+    check(details.getText().contains("Experiment Comparison") &&
+          details.getText().contains("Delta Deflection"),
+          "Execute experiment comparison between two test cases via UI");
+
+    // 9. Generate comprehensive Markdown Laboratory Report via UI
+    showLaboratoryReport();
+    const juce::String reportText = details.getText();
+    check(reportText.contains("# Craft Testing Laboratory Report") &&
+          reportText.contains("## 1. Engineering Assumptions") &&
+          reportText.contains("## 2. Boundary Conditions") &&
+          reportText.contains("## 3. Applied Loading") &&
+          reportText.contains("## 4. Predicted Structural Response") &&
+          reportText.contains("## 5. Experiment Comparison") &&
+          reportText.contains("## 6. Engineering Safety"),
+          "Generate comprehensive engineering laboratory report with comparison in UI");
+
+    // 10. Reset experiment via UI
+    resetCurrentExperiment();
+    check(details.getText().contains("Experiment reset"),
+          "Reset experiment boundary conditions and loads via UI");
+
+    // 11. Save UI snapshot
+    juce::FileOutputStream stream(folder.getChildFile("craft-browser-phase5.png"));
+    check(stream.openedOk() && juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()), stream),
+          "Craft Designer Phase 5 browser snapshot saved");
+
+    report = object();
+    put(report, "passed", passed);
+    put(report, "checks", checks);
+    put(report, "verification", "Craft Designer Phase 5 UI: Interactive Craft Testing Laboratory, standardized templates, quasi-static sweeps, experiment comparison, and laboratory reports");
+    put(report, "folder", folder.getFullPathName());
+    return passed;
+}
 namespace djehuti::cad
 {
 bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool interactive)
@@ -1302,6 +1680,30 @@ bool runCadCraftPhase4UiCheck(juce::var& report, const juce::File& folder, bool 
         return true;
     }
     const auto ok = browser->craftPhase4Check(report, folder);
+    dialog->exitModalState(0);
+    return ok;
+}
+bool runCadCraftPhase5UiCheck(juce::var& report, const juce::File& folder, bool interactive)
+{
+    folder.createDirectory();
+    auto service = std::make_shared<CadCommandService>();
+    service->setComponentLibraryFile(folder.getChildFile("library.json"));
+    service->setCatalogFile(folder.getChildFile("materials.json"));
+    auto* browser = new CadCraftBrowser(service);
+    browser->setSize(400, 1400);
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(browser);
+    options.dialogTitle = "Craft Designer Phase 5 UI check";
+    options.useNativeTitleBar = true;
+    auto* dialog = options.launchAsync();
+    if (interactive)
+    {
+        report = object();
+        put(report, "folder", folder.getFullPathName());
+        put(report, "verification", "Native test window prepared; no programmatic controls invoked.");
+        return true;
+    }
+    const auto ok = browser->craftPhase5Check(report, folder);
     dialog->exitModalState(0);
     return ok;
 }

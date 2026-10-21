@@ -473,7 +473,11 @@ bool extractModel(const CadDocument& doc, const CadAnalysisCase& analysisCase,
         if (targetRaw != nullptr)
         {
             Vec3 targetPos = targetRaw->startWorldM;
-            if (sup.target.face.contains("end") || sup.name.toLowerCase().contains("right") || sup.name.toLowerCase().contains("end"))
+            if (sup.target.face == "end")
+                targetPos = targetRaw->endWorldM;
+            else if (sup.target.face == "start")
+                targetPos = targetRaw->startWorldM;
+            else if (sup.name.toLowerCase().contains("right") || sup.name.toLowerCase().contains("end"))
                 targetPos = targetRaw->endWorldM;
 
             double minDist = 1e9;
@@ -534,10 +538,14 @@ bool extractModel(const CadDocument& doc, const CadAnalysisCase& analysisCase,
             if (targetRaw != nullptr)
             {
                 Vec3 targetPos = targetRaw->startWorldM;
-                if (load.target.face.contains("end"))
+                if (load.target.face == "end")
                     targetPos = targetRaw->endWorldM;
+                else if (load.target.face == "start")
+                    targetPos = targetRaw->startWorldM;
                 else if (load.target.face.contains("center") || load.target.face.contains("midspan") || load.name.toLowerCase().contains("midspan"))
                     targetPos = (targetRaw->startWorldM + targetRaw->endWorldM) * 0.5;
+                else if (load.name.toLowerCase().contains("right") || load.name.toLowerCase().contains("end"))
+                    targetPos = targetRaw->endWorldM;
 
                 double minDist = 1e9;
                 for (const auto& nd : nodes)
@@ -1135,6 +1143,333 @@ juce::var StructuralResult::toVar() const
     obj->setProperty("nodes", nList);
 
     return juce::var(obj);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Phase 5: Interactive Craft Testing Laboratory
+// ---------------------------------------------------------------------------------------------------------------
+std::vector<LoadStepResult> runLoadSweep(const CadDocument& doc, const CadAnalysisCase& baseCase,
+                                        double startMagnitudeN, double endMagnitudeN, int numSteps,
+                                        const StructuralOptions& options)
+{
+    std::vector<LoadStepResult> results;
+    if (numSteps < 1) numSteps = 1;
+
+    for (int step = 0; step <= numSteps; ++step)
+    {
+        const double frac = (double) step / (double) numSteps;
+        const double mag = startMagnitudeN + frac * (endMagnitudeN - startMagnitudeN);
+
+        CadAnalysisCase stepCase = baseCase;
+        for (auto& l : stepCase.loads)
+        {
+            l.magnitude = mag;
+        }
+
+        const auto res = evaluateCase(doc, stepCase, options);
+        LoadStepResult lsr;
+        lsr.loadMagnitudeN = mag;
+        lsr.solved = res.solved;
+        if (res.solved)
+        {
+            lsr.maxDeflectionMm = res.maxDeflectionM * 1000.0;
+            lsr.maxNormalStressMPa = res.maxNormalStressPa / 1e6;
+            lsr.maxUtilizationRatio = res.maxUtilizationRatio;
+        }
+        results.push_back(lsr);
+    }
+    return results;
+}
+
+ExperimentComparison compareCases(const CadDocument& doc, const CadAnalysisCase& caseA,
+                                  const CadAnalysisCase& caseB, const StructuralOptions& options)
+{
+    ExperimentComparison comp;
+    comp.caseIdA = caseA.id; comp.nameA = caseA.name.isNotEmpty() ? caseA.name : caseA.id;
+    comp.caseIdB = caseB.id; comp.nameB = caseB.name.isNotEmpty() ? caseB.name : caseB.id;
+
+    comp.resultA = evaluateCase(doc, caseA, options);
+    comp.resultB = evaluateCase(doc, caseB, options);
+
+    if (comp.resultA.solved && comp.resultB.solved)
+    {
+        comp.deflectionA_Mm = comp.resultA.maxDeflectionM * 1000.0;
+        comp.deflectionB_Mm = comp.resultB.maxDeflectionM * 1000.0;
+        comp.deltaDeflectionMm = comp.deflectionB_Mm - comp.deflectionA_Mm;
+        comp.percentDeflectionChange = (comp.deflectionA_Mm > 1e-6) ? ((comp.deltaDeflectionMm / comp.deflectionA_Mm) * 100.0) : 0.0;
+
+        comp.stressA_MPa = comp.resultA.maxNormalStressPa / 1e6;
+        comp.stressB_MPa = comp.resultB.maxNormalStressPa / 1e6;
+        comp.deltaStressMPa = comp.stressB_MPa - comp.stressA_MPa;
+        comp.percentStressChange = (comp.stressA_MPa > 1e-6) ? ((comp.deltaStressMPa / comp.stressA_MPa) * 100.0) : 0.0;
+
+        const juce::String deflSign = (comp.percentDeflectionChange > 0.0) ? "+" : "";
+        const juce::String stressSign = (comp.percentStressChange > 0.0) ? "+" : "";
+        comp.summary = comp.nameB + " vs " + comp.nameA + ": Delta Deflection = " +
+                       juce::String(comp.deltaDeflectionMm, 3) + " mm (" + deflSign +
+                       juce::String(comp.percentDeflectionChange, 1) + "%), Delta Stress = " +
+                       juce::String(comp.deltaStressMPa, 2) + " MPa (" + stressSign +
+                       juce::String(comp.percentStressChange, 1) + "%).";
+    }
+    else
+    {
+        comp.summary = "One or both cases failed to solve (Case A: " + comp.resultA.status +
+                       ", Case B: " + comp.resultB.status + ").";
+    }
+    return comp;
+}
+
+CadAnalysisCase createTemplateCase(const CadDocument& doc, const juce::String& templateType,
+                                   const juce::String& targetInstance, double loadMagnitudeN)
+{
+    CadAnalysisCase c;
+    c.analysisType = "linearStatic";
+
+    if (templateType == "cantilever")
+    {
+        CadAnalysisTarget pt; pt.instance = targetInstance; c.parts.push_back(pt);
+        c.name = "Cantilever Test: " + targetInstance;
+        CadAnalysisSupport s;
+        s.id = "sup-1"; s.name = "Fixed Root";
+        s.target.instance = targetInstance; s.target.face = "start";
+        s.fixed = { "ux", "uy", "uz", "rx", "ry", "rz" };
+        c.supports.push_back(s);
+
+        CadAnalysisLoad l;
+        l.id = "load-1"; l.name = "Tip Load (" + juce::String(loadMagnitudeN) + " N)";
+        l.target.instance = targetInstance; l.target.face = "end";
+        l.direction = { 0, 0, -1 };
+        l.magnitude = loadMagnitudeN;
+        c.loads.push_back(l);
+    }
+    else if (templateType == "simplySupported")
+    {
+        CadAnalysisTarget pt; pt.instance = targetInstance; c.parts.push_back(pt);
+        c.name = "Simply Supported Beam Test: " + targetInstance;
+        CadAnalysisSupport s1;
+        s1.id = "sup-1"; s1.name = "Pinned Left";
+        s1.target.instance = targetInstance; s1.target.face = "start";
+        s1.fixed = { "ux", "uy", "uz", "rx" };
+        c.supports.push_back(s1);
+
+        CadAnalysisSupport s2;
+        s2.id = "sup-2"; s2.name = "Roller Right";
+        s2.target.instance = targetInstance; s2.target.face = "end";
+        s2.fixed = { "uy", "uz" };
+        c.supports.push_back(s2);
+
+        CadAnalysisLoad l;
+        l.id = "load-1"; l.name = "Midspan Force (" + juce::String(loadMagnitudeN) + " N)";
+        l.target.instance = targetInstance; l.target.face = "center";
+        l.direction = { 0, 0, -1 };
+        l.magnitude = loadMagnitudeN;
+        c.loads.push_back(l);
+    }
+    else if (templateType == "axialTension")
+    {
+        CadAnalysisTarget pt; pt.instance = targetInstance; c.parts.push_back(pt);
+        c.name = "Axial Tension Test: " + targetInstance;
+        CadAnalysisSupport s;
+        s.id = "sup-1"; s.name = "Fixed Root";
+        s.target.instance = targetInstance; s.target.face = "start";
+        s.fixed = { "ux", "uy", "uz", "rx", "ry", "rz" };
+        c.supports.push_back(s);
+
+        CadAnalysisLoad l;
+        l.id = "load-1"; l.name = "Tensile Force (" + juce::String(loadMagnitudeN) + " N)";
+        l.target.instance = targetInstance; l.target.face = "end";
+        l.direction = { 1, 0, 0 };
+        l.magnitude = loadMagnitudeN;
+        c.loads.push_back(l);
+    }
+    else if (templateType == "axialCompression")
+    {
+        CadAnalysisTarget pt; pt.instance = targetInstance; c.parts.push_back(pt);
+        c.name = "Axial Compression Test: " + targetInstance;
+        CadAnalysisSupport s;
+        s.id = "sup-1"; s.name = "Fixed Root";
+        s.target.instance = targetInstance; s.target.face = "start";
+        s.fixed = { "ux", "uy", "uz", "rx", "ry", "rz" };
+        c.supports.push_back(s);
+
+        CadAnalysisLoad l;
+        l.id = "load-1"; l.name = "Compressive Force (" + juce::String(loadMagnitudeN) + " N)";
+        l.target.instance = targetInstance; l.target.face = "end";
+        l.direction = { -1, 0, 0 };
+        l.magnitude = loadMagnitudeN;
+        c.loads.push_back(l);
+    }
+    else if (templateType == "bridge")
+    {
+        for (const auto& inst : doc.mechanicsData().instances)
+        {
+            CadAnalysisTarget pt; pt.instance = inst.id;
+            c.parts.push_back(pt);
+        }
+        c.name = "Craft Bridge Load Test";
+        int supIdx = 1;
+        for (const auto& inst : doc.mechanicsData().instances)
+        {
+            if (inst.id != targetInstance)
+            {
+                CadAnalysisSupport s1;
+                s1.id = "sup-" + juce::String(supIdx++);
+                s1.name = "Pinned " + inst.id;
+                s1.target.instance = inst.id; s1.target.face = "start";
+                s1.fixed = { "ux", "uy", "uz", "rx" };
+                c.supports.push_back(s1);
+
+                CadAnalysisSupport s2;
+                s2.id = "sup-" + juce::String(supIdx++);
+                s2.name = "Roller " + inst.id;
+                s2.target.instance = inst.id; s2.target.face = "end";
+                s2.fixed = { "uy", "uz" };
+                c.supports.push_back(s2);
+            }
+        }
+
+        CadAnalysisLoad l;
+        l.id = "load-1"; l.name = "Deck Load (" + juce::String(loadMagnitudeN) + " N)";
+        l.target.instance = targetInstance.isNotEmpty() ? targetInstance : (doc.mechanicsData().instances.empty() ? "" : doc.mechanicsData().instances.back().id);
+        l.target.face = "end";
+        l.direction = { 0, 0, -1 };
+        l.magnitude = loadMagnitudeN;
+        c.loads.push_back(l);
+    }
+    else // bondedTransfer
+    {
+        CadAnalysisTarget pt; pt.instance = targetInstance; c.parts.push_back(pt);
+        c.name = "Bonded Joint Shear Test: " + targetInstance;
+        CadAnalysisSupport s;
+        s.id = "sup-1"; s.name = "Restrained Substrate";
+        s.target.instance = targetInstance; s.target.face = "start";
+        s.fixed = { "ux", "uy", "uz", "rx", "ry", "rz" };
+        c.supports.push_back(s);
+
+        juce::String bondedOther;
+        for (const auto& bj : doc.mechanicsData().bondedJoints)
+        {
+            if (bj.status == "valid")
+            {
+                if (bj.instanceA == targetInstance) { bondedOther = bj.instanceB; break; }
+                if (bj.instanceB == targetInstance) { bondedOther = bj.instanceA; break; }
+            }
+        }
+        if (bondedOther.isEmpty() && doc.mechanicsData().instances.size() > 1)
+            bondedOther = doc.mechanicsData().instances.back().id;
+
+        if (bondedOther.isNotEmpty() && bondedOther != targetInstance)
+        {
+            CadAnalysisTarget ptOther; ptOther.instance = bondedOther; c.parts.push_back(ptOther);
+        }
+
+        CadAnalysisLoad l;
+        l.id = "load-1"; l.name = "Shear Load (" + juce::String(loadMagnitudeN) + " N)";
+        l.target.instance = bondedOther.isNotEmpty() ? bondedOther : targetInstance;
+        l.target.face = "end";
+        l.direction = { 0, 0, -1 };
+        l.magnitude = loadMagnitudeN;
+        c.loads.push_back(l);
+    }
+
+    return c;
+}
+
+juce::String generateLabReport(const CadDocument& doc, const CadAnalysisCase& analysisCase,
+                               const StructuralResult& result, const ExperimentComparison* comparison)
+{
+    juce::String r = "# Craft Testing Laboratory Report\n\n";
+    r += "**Experiment:** " + (analysisCase.name.isNotEmpty() ? analysisCase.name : analysisCase.id) + "\n";
+    r += "**Document Model:** " + doc.mechanicsData().modelId + "\n";
+    r += "**Status:** " + result.status + "\n\n";
+
+    r += "## 1. Engineering Assumptions & Formulation\n";
+    r += "- **Model Type:** 3D Euler-Bernoulli linear-elastic frame analysis (6 DOFs per node).\n";
+    r += "- **Kinematics:** Small-displacement assumption; axial, torsion, and biaxial bending.\n";
+    r += "- **Joint Connectivity:** Valid Phase 3 bonded adhesive joints provide rigid continuity; separated or invalid bonds provide no load transfer.\n\n";
+
+    r += "## 2. Boundary Conditions & Restraints\n";
+    for (const auto& s : analysisCase.supports)
+    {
+        r += "- **" + s.name + "** (" + s.id + "): Restrains `" + s.target.instance + "` (" + s.target.face + ") DOFs: [" +
+             s.fixed.joinIntoString(", ") + "]\n";
+    }
+    r += "\n";
+
+    r += "## 3. Applied Loading Conditions\n";
+    for (const auto& l : analysisCase.loads)
+    {
+        r += "- **" + l.name + "** (" + l.id + "): " + juce::String(l.magnitude, 2) + " N acting on `" +
+             l.target.instance + "` in direction [" + juce::String(l.direction[0], 2) + ", " +
+             juce::String(l.direction[1], 2) + ", " + juce::String(l.direction[2], 2) + "]\n";
+    }
+    if (analysisCase.gravity)
+    {
+        r += "- **Self-Weight Gravity:** Enabled [0, 0, -9.81] m/s^2\n";
+    }
+    r += "\n";
+
+    r += "## 4. Predicted Structural Response\n";
+    if (result.solved)
+    {
+        r += "- **Peak Deflection:** " + juce::String(result.maxDeflectionM * 1000.0, 4) + " mm\n";
+        r += "- **Peak Normal Stress:** " + juce::String(result.maxNormalStressPa / 1e6, 3) + " MPa\n";
+        r += "- **Peak Shear Stress:** " + juce::String(result.maxShearStressPa / 1e6, 3) + " MPa\n";
+        r += "- **Maximum Utilization Ratio:** " + juce::String(result.maxUtilizationRatio * 100.0, 1) + "%\n";
+        r += "- **Static Equilibrium Reactions:** Rx=" + juce::String(result.totalReactionForceN[0], 2) +
+             " N, Ry=" + juce::String(result.totalReactionForceN[1], 2) +
+             " N, Rz=" + juce::String(result.totalReactionForceN[2], 2) + " N\n\n";
+
+        r += "### Member Forces & Utilization Summary\n";
+        r += "| Member / Instance | Axial Force (N) | Bending Moment (N*m) | Peak Stress (MPa) | Utilization (%) |\n";
+        r += "|---|---|---|---|---|\n";
+        for (const auto& m : result.memberResults)
+        {
+            r += "| `" + m.instanceId + "` | " + juce::String(m.axialForceN, 2) + " | " +
+                 juce::String(m.maxBendingMomentNm, 3) + " | " +
+                 juce::String(m.maxNormalStressPa / 1e6, 2) + " | " +
+                 juce::String(m.utilizationRatio * 100.0, 1) + "% |\n";
+        }
+        r += "\n";
+    }
+    else
+    {
+        r += "**Solver Failure:** " + result.status + "\n";
+        r += "**Diagnostic:** " + result.diagnostic + "\n\n";
+    }
+
+    if (comparison != nullptr)
+    {
+        r += "## 5. Experiment Comparison\n";
+        r += "**Comparison:** `" + comparison->nameB + "` versus Baseline `" + comparison->nameA + "`\n\n";
+        r += "| Parameter | Baseline (A) | Comparison (B) | Delta | Change (%) |\n";
+        r += "|---|---|---|---|---|\n";
+        r += "| Max Deflection | " + juce::String(comparison->deflectionA_Mm, 3) + " mm | " +
+             juce::String(comparison->deflectionB_Mm, 3) + " mm | " +
+             juce::String(comparison->deltaDeflectionMm, 3) + " mm | " +
+             juce::String(comparison->percentDeflectionChange, 1) + "% |\n";
+        r += "| Peak Normal Stress | " + juce::String(comparison->stressA_MPa, 2) + " MPa | " +
+             juce::String(comparison->stressB_MPa, 2) + " MPa | " +
+             juce::String(comparison->deltaStressMPa, 2) + " MPa | " +
+             juce::String(comparison->percentStressChange, 1) + "% |\n\n";
+        r += "**Summary:** " + comparison->summary + "\n\n";
+    }
+
+    r += "## 6. Engineering Safety & Diagnostics\n";
+    if (result.maxUtilizationRatio > 1.0)
+    {
+        r += "> [!CAUTION] Overstressed Member Detected: Peak stress exceeds allowable material strength limit (utilization > 100%). Structural yield or fracture may occur under physical loading.\n";
+    }
+    else if (result.maxUtilizationRatio > 0.8)
+    {
+        r += "> [!WARNING] High Stress Warning: Structural utilization is above 80% of limit.\n";
+    }
+    else
+    {
+        r += "> [!NOTE] Design within safe elastic allowable limits (utilization <= 80%).\n";
+    }
+
+    return r;
 }
 
 } // namespace djehuti::cad::structural
