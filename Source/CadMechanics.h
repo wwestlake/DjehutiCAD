@@ -101,6 +101,12 @@ struct CadIkTask
     double angleToleranceRad = 1.0e-4;
 };
 
+struct CadAssemblyGroup
+{
+    juce::String id, name;
+    std::vector<juce::String> instanceIds;
+};
+
 struct CadMechanics
 {
     static constexpr int kSchemaVersion = 3;
@@ -112,14 +118,16 @@ struct CadMechanics
     std::vector<CadCoupling> couplings;
     std::vector<CadSignalMapping> mappings;
     std::vector<CadIkTask> ikTasks;
+    std::vector<CadAssemblyGroup> assemblies;
 
     const CadMechanicalInstance* findInstance(const juce::String& id) const;
     const CadJoint* findJoint(const juce::String& id) const;
     const CadCoupling* findCoupling(const juce::String& id) const;
     const CadSignalMapping* mappingForJoint(const juce::String& jointId) const;
     const CadIkTask* findIkTask(const juce::String& id) const;
+    const CadAssemblyGroup* findAssembly(const juce::String& id) const;
     bool instanceHasJoints(const juce::String& instanceId) const;
-    bool empty() const { return instances.empty() && joints.empty() && couplings.empty() && mappings.empty() && ikTasks.empty(); }
+    bool empty() const { return instances.empty() && joints.empty() && couplings.empty() && mappings.empty() && ikTasks.empty() && assemblies.empty(); }
 };
 
 namespace mech

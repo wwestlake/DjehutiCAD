@@ -261,6 +261,14 @@ public:
     const juce::var* componentFor(const juce::String& feature) const;
     bool insertComponent(const juce::var& record,const CadFrame& placement,juce::String& instance,juce::String& error);
     bool updateCraftStock(const juce::String& feature, const juce::var& geometry, juce::String& error);
+    bool addCraftCut(const juce::String& feature, const juce::var& cutSpec, juce::String& error);
+    bool clearCraftCuts(const juce::String& feature, juce::String& error);
+    bool alignInstances(const juce::String& targetInstance, const juce::String& sourceInstance, const juce::String& alignType, const juce::var& options, juce::String& error);
+    bool createAssemblyGroup(const juce::String& name, const std::vector<juce::String>& instanceIds, juce::String& groupId, juce::String& error);
+    bool addToAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error);
+    bool removeFromAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error);
+    bool moveAssemblyGroup(const juce::String& groupId, const CadFrame& deltaPlacement, juce::String& error);
+    juce::var generateCutList() const;
     std::uint64_t revision() const { return documentRevision; }
     // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
     std::uint64_t documentInstance() const { return instanceId; }
@@ -388,6 +396,14 @@ public:
     bool remove(const juce::String& id, juce::String& error) { return model.remove(id, error); }
     bool createInstance(const juce::String& featureId, const juce::String& name, juce::String& id, juce::String& error) { return model.createInstance(featureId, name, id, error); }
     bool setInstancePlacement(const juce::String& id, const CadFrame& placement, juce::String& error) { return model.setInstancePlacement(id, placement, error); }
+    bool addCraftCut(const juce::String& feature, const juce::var& cutSpec, juce::String& error) { return model.addCraftCut(feature, cutSpec, error); }
+    bool clearCraftCuts(const juce::String& feature, juce::String& error) { return model.clearCraftCuts(feature, error); }
+    bool alignInstances(const juce::String& targetInstance, const juce::String& sourceInstance, const juce::String& alignType, const juce::var& options, juce::String& error) { return model.alignInstances(targetInstance, sourceInstance, alignType, options, error); }
+    bool createAssemblyGroup(const juce::String& name, const std::vector<juce::String>& instanceIds, juce::String& groupId, juce::String& error) { return model.createAssemblyGroup(name, instanceIds, groupId, error); }
+    bool addToAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error) { return model.addToAssemblyGroup(groupId, instanceIds, error); }
+    bool removeFromAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error) { return model.removeFromAssemblyGroup(groupId, instanceIds, error); }
+    bool moveAssemblyGroup(const juce::String& groupId, const CadFrame& deltaPlacement, juce::String& error) { return model.moveAssemblyGroup(groupId, deltaPlacement, error); }
+    juce::var generateCutList() const { return model.generateCutList(); }
     bool removeInstance(const juce::String& id, juce::String& error) { return model.removeInstance(id, error); }
     bool renameMechanical(const juce::String& id, const juce::String& name, juce::String& error) { return model.renameMechanical(id, name, error); }
     bool createJoint(const CadJointRequest& request, juce::String& id, juce::String& error) { return model.createJoint(request, id, error); }

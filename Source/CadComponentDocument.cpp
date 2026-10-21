@@ -1,8 +1,16 @@
 #include "CadDocument.h"
 #include "CadCraftStock.h"
 #include <TDataStd_AsciiString.hxx>
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+#include <gp_Trsf.hxx>
+#include <gp_Vec.hxx>
+#include <gp_Ax1.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pnt.hxx>
 #include <set>
 #include <cmath>
+#include <algorithm>
 
 namespace djehuti::cad
 {
@@ -84,5 +92,194 @@ bool CadDocument::updateCraftStock(const juce::String& feature, const juce::var&
         ++mechanics.interfaceRevision; ++mechanics.profileRevision;
         return true;
     }, error);
+}
+bool CadDocument::addCraftCut(const juce::String& feature, const juce::var& cutSpec, juce::String& error)
+{
+    const auto* existing = componentFor(feature);
+    if (!existing || !craft::isStock(*existing)) { error = "Select a parametric craft stock piece."; return false; }
+    auto nextGeometry = clone((*existing)["geometry"]);
+    juce::Array<juce::var> cuts;
+    if (const auto* existingCuts = nextGeometry.getProperty("cuts", {}).getArray())
+        cuts = *existingCuts;
+    cuts.add(clone(cutSpec));
+    put(nextGeometry, "cuts", cuts);
+    return updateCraftStock(feature, nextGeometry, error);
+}
+bool CadDocument::clearCraftCuts(const juce::String& feature, juce::String& error)
+{
+    const auto* existing = componentFor(feature);
+    if (!existing || !craft::isStock(*existing)) { error = "Select a parametric craft stock piece."; return false; }
+    auto nextGeometry = clone((*existing)["geometry"]);
+    nextGeometry.getDynamicObject()->removeProperty("cuts");
+    return updateCraftStock(feature, nextGeometry, error);
+}
+bool CadDocument::alignInstances(const juce::String& targetInstance, const juce::String& sourceInstance, const juce::String& alignType, const juce::var& options, juce::String& error)
+{
+    const auto* instA = mechanics.findInstance(targetInstance);
+    if (!instA) { error = "Target instance not found: " + targetInstance; return false; }
+    const auto* instB = mechanics.findInstance(sourceInstance);
+    if (!instB) { error = "Source instance not found: " + sourceInstance; return false; }
+
+    const auto* featA = find(instA->featureId);
+    const auto* featB = find(instB->featureId);
+    if (!featA || featA->shape.IsNull()) { error = "Target instance geometry not evaluated."; return false; }
+    if (!featB || featB->shape.IsNull()) { error = "Source instance geometry not evaluated."; return false; }
+
+    Bnd_Box bA, bB;
+    BRepBndLib::Add(featA->shape, bA);
+    BRepBndLib::Add(featB->shape, bB);
+    Standard_Real ax1, ay1, az1, ax2, ay2, az2;
+    Standard_Real bx1, by1, bz1, bx2, by2, bz2;
+    bA.Get(ax1, ay1, az1, ax2, ay2, az2);
+    bB.Get(bx1, by1, bz1, bx2, by2, bz2);
+
+    const double dx = options.getProperty("dx", 0.0);
+    const double dy = options.getProperty("dy", 0.0);
+    const double dz = options.getProperty("dz", 0.0);
+
+    const gp_Trsf TA = instA->placement.toTrsf();
+    gp_Trsf TB_new;
+
+    if (alignType == "butt")
+    {
+        gp_Trsf local;
+        local.SetTranslation(gp_Vec(ax2 - bx1 + dx, ay1 - by1 + dy, az1 - bz1 + dz));
+        TB_new = TA * local;
+    }
+    else if (alignType == "corner90")
+    {
+        gp_Trsf rot;
+        rot.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), juce::MathConstants<double>::halfPi);
+        gp_Trsf tr;
+        tr.SetTranslation(gp_Vec(ax2 + dx, ay1 + dy, az1 + dz));
+        TB_new = TA * tr * rot;
+    }
+    else if (alignType == "corner90_neg")
+    {
+        gp_Trsf rot;
+        rot.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), -juce::MathConstants<double>::halfPi);
+        gp_Trsf tr;
+        tr.SetTranslation(gp_Vec(ax2 + dx, ay1 + dy, az1 + dz));
+        TB_new = TA * tr * rot;
+    }
+    else if (alignType == "stack")
+    {
+        gp_Trsf local;
+        local.SetTranslation(gp_Vec(ax1 - bx1 + dx, ay1 - by1 + dy, az2 - bz1 + dz));
+        TB_new = TA * local;
+    }
+    else if (alignType == "flush")
+    {
+        gp_Trsf local;
+        local.SetTranslation(gp_Vec(dx, ay1 - by1 + dy, az1 - bz1 + dz));
+        TB_new = TA * local;
+    }
+    else if (alignType == "relative")
+    {
+        const double rx = options.getProperty("rx", 0.0);
+        const double ry = options.getProperty("ry", 0.0);
+        const double rz = options.getProperty("rz", 0.0);
+        const CadFrame localFrame = mech::frameFromEulerDegrees(dx, dy, dz, rx, ry, rz);
+        TB_new = TA * localFrame.toTrsf();
+    }
+    else
+    {
+        error = "Unknown alignment type: " + alignType;
+        return false;
+    }
+
+    const CadFrame newPlacement = CadFrame::fromTrsf(TB_new);
+    return setInstancePlacement(sourceInstance, newPlacement, error);
+}
+bool CadDocument::createAssemblyGroup(const juce::String& name, const std::vector<juce::String>& instanceIds, juce::String& groupId, juce::String& error)
+{
+    if (instanceIds.empty()) { error = "Select at least one piece to form an assembly."; return false; }
+    return mutate([&](juce::String& e)
+    {
+        CadAssemblyGroup group;
+        group.id = newId("asm", nextNumber++);
+        group.name = name.isNotEmpty() ? name : ("Assembly " + group.id);
+        for (const auto& id : instanceIds)
+        {
+            if (mechanics.findInstance(id) == nullptr) { e = "Unknown instance: " + id; return false; }
+            group.instanceIds.push_back(id);
+        }
+        mechanics.assemblies.push_back(group);
+        groupId = group.id;
+        ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        return true;
+    }, error);
+}
+bool CadDocument::addToAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto& g : mechanics.assemblies)
+        {
+            if (g.id == groupId)
+            {
+                for (const auto& id : instanceIds)
+                {
+                    if (mechanics.findInstance(id) == nullptr) { e = "Unknown instance: " + id; return false; }
+                    if (std::find(g.instanceIds.begin(), g.instanceIds.end(), id) == g.instanceIds.end())
+                        g.instanceIds.push_back(id);
+                }
+                ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+                return true;
+            }
+        }
+        e = "Assembly group not found: " + groupId;
+        return false;
+    }, error);
+}
+bool CadDocument::removeFromAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto& g : mechanics.assemblies)
+        {
+            if (g.id == groupId)
+            {
+                for (const auto& id : instanceIds)
+                {
+                    g.instanceIds.erase(std::remove(g.instanceIds.begin(), g.instanceIds.end(), id), g.instanceIds.end());
+                }
+                ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+                return true;
+            }
+        }
+        e = "Assembly group not found: " + groupId;
+        return false;
+    }, error);
+}
+bool CadDocument::moveAssemblyGroup(const juce::String& groupId, const CadFrame& deltaPlacement, juce::String& error)
+{
+    const auto* group = mechanics.findAssembly(groupId);
+    if (!group) { error = "Assembly group not found: " + groupId; return false; }
+    const gp_Trsf delta = deltaPlacement.toTrsf();
+    return mutate([&](juce::String&)
+    {
+        const auto* g = mechanics.findAssembly(groupId);
+        if (!g) return false;
+        for (const auto& id : g->instanceIds)
+        {
+            for (auto& inst : mechanics.instances)
+            {
+                if (inst.id == id)
+                {
+                    const gp_Trsf cur = inst.placement.toTrsf();
+                    const gp_Trsf moved = delta * cur;
+                    inst.placement = CadFrame::fromTrsf(moved);
+                    break;
+                }
+            }
+        }
+        ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        return true;
+    }, error);
+}
+juce::var CadDocument::generateCutList() const
+{
+    return craft::cutList(*this);
 }
 }

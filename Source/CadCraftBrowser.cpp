@@ -17,7 +17,10 @@ bool numeric(const juce::String& text, double& value)
 CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : service(std::move(shared))
 {
     addAndMakeVisible(workspaceMenu); addAndMakeVisible(scroll); scroll.setViewedComponent(&content,false); scroll.setScrollBarsShown(true,false);
-    for(auto* c:std::vector<juce::Component*>{&heading,&category,&search,&list,&mode,&details,&materialLabel,&material,&placementLabel,&status,&editPiece,&templatesButton,&insert,&apply,&assign,&move,&linked,&saveDefaults,&duplicate,&materialsButton,&reloadButton})content.addAndMakeVisible(c);
+    for(auto* c:std::vector<juce::Component*>{&heading,&category,&search,&list,&mode,&details,&materialLabel,&material,&placementLabel,&status,&editPiece,&templatesButton,&insert,&apply,&assign,&move,&linked,&saveDefaults,&duplicate,&materialsButton,&reloadButton,
+        &cutHeading,&cutType,&cutSide,&cutPosition,&cutAngle,&applyCutButton,&clearCutsButton,
+        &alignHeading,&alignTarget,&alignType,&alignButton,
+        &assemblyHeading,&assemblyName,&groupButton,&moveAssemblyButton,&cutListButton}) content.addAndMakeVisible(c);
     heading.setText("Craft Stock",juce::dontSendNotification); heading.setFont(juce::Font(22.0f));
     category.addItemList({"All categories","Wood","Plastic","Cardboard","Foam board"},1);category.setSelectedId(1);
     category.onChange=[this]{filter();};search.setTextToShowWhenEmpty("Search craft templates...",juce::Colours::grey);search.onTextChange=[this]{filter();};
@@ -32,6 +35,31 @@ CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : se
     apply.onClick=[this]{applyDimensions();};assign.onClick=[this]{applyMaterial();};move.onClick=[this]{applyPlacement();};linked.onClick=[this]{linkedCopy();};
     saveDefaults.onClick=[this]{saveTemplate(false);};duplicate.onClick=[this]{saveTemplate(true);};materialsButton.onClick=[this]{if(onMaterials)onMaterials();};
     reloadButton.onClick=[this]{auto a=object();put(a,"action","reload");service->componentCommand(a);reload();};
+
+    // Phase 2 setup
+    cutHeading.setText("Cutting & Trimming", juce::dontSendNotification); cutHeading.setFont(juce::Font(16.0f, juce::Font::bold));
+    cutType.addItemList({"Cut to length", "Miter (angle)"}, 1); cutType.setSelectedId(1);
+    cutSide.addItemList({"Remove end (+X)", "Remove start (-X)"}, 1); cutSide.setSelectedId(1);
+    cutPosition.setText("90"); cutAngle.setText("45");
+    applyCutButton.onClick = [this]{ applyCut(); };
+    clearCutsButton.onClick = [this]{ clearCuts(); };
+
+    alignHeading.setText("Placement & Alignment", juce::dontSendNotification); alignHeading.setFont(juce::Font(16.0f, juce::Font::bold));
+    alignType.addItemList({"Butt joint (End-to-End)", "Corner 90 deg", "Corner -90 deg", "Stack on top", "Flush"}, 1); alignType.setSelectedId(1);
+    alignButton.onClick = [this]{ applyAlign(); };
+    for (const auto* name : {"DX", "DY", "DZ"})
+    {
+        auto* ed = alignOffsets.add(new juce::TextEditor());
+        ed->setText("0"); ed->setName(juce::String("Align ") + name);
+        content.addAndMakeVisible(ed);
+    }
+
+    assemblyHeading.setText("Assembly Organization", juce::dontSendNotification); assemblyHeading.setFont(juce::Font(16.0f, juce::Font::bold));
+    assemblyName.setText("Frame Assembly");
+    groupButton.onClick = [this]{ groupAssembly(); };
+    moveAssemblyButton.onClick = [this]{ moveAssembly(); };
+    cutListButton.onClick = [this]{ showCutList(); };
+
     reload();startTimerHz(3);
 }
 CadCraftBrowser::~CadCraftBrowser(){stopTimer();scroll.setViewedComponent(nullptr,false);}
@@ -39,7 +67,7 @@ void CadCraftBrowser::paint(juce::Graphics& g){g.fillAll(juce::Colour(0xff1d222b
 void CadCraftBrowser::resized()
 {
     auto a=getLocalBounds();workspaceMenu.setBounds(a.removeFromTop(28));scroll.setBounds(a);
-    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 850);
+    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 1280);
     auto r=content.getLocalBounds().reduced(8);heading.setBounds(r.removeFromTop(32));category.setBounds(r.removeFromTop(30).reduced(0,2));search.setBounds(r.removeFromTop(30).reduced(0,2));
     list.setBounds(r.removeFromTop(145));auto row=r.removeFromTop(32);editPiece.setBounds(row.removeFromLeft(row.getWidth()*2/3).reduced(1));templatesButton.setBounds(row.reduced(1));
     mode.setBounds(r.removeFromTop(30));details.setBounds(r.removeFromTop(105));
@@ -49,6 +77,42 @@ void CadCraftBrowser::resized()
     insert.setBounds(r.removeFromTop(32).reduced(1));
     row=r.removeFromTop(32);apply.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));assign.setBounds(row.reduced(1));
     row=r.removeFromTop(32);move.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));linked.setBounds(row.reduced(1));
+
+    // Phase 2 cutting rows
+    cutHeading.setBounds(r.removeFromTop(26));
+    row = r.removeFromTop(30);
+    cutType.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    cutSide.setBounds(row.reduced(1));
+    row = r.removeFromTop(30);
+    cutPosition.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    cutAngle.setBounds(row.reduced(1));
+    row = r.removeFromTop(32);
+    applyCutButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    clearCutsButton.setBounds(row.reduced(1));
+
+    // Phase 2 alignment rows
+    alignHeading.setBounds(r.removeFromTop(26));
+    row = r.removeFromTop(30);
+    alignTarget.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    alignType.setBounds(row.reduced(1));
+    row = r.removeFromTop(30);
+    const int offWidth = row.getWidth() / 3;
+    for (int i = 0; i < 3; ++i)
+    {
+        alignOffsets[i]->setBounds(row.removeFromLeft(offWidth).reduced(1));
+    }
+    alignButton.setBounds(r.removeFromTop(32).reduced(1));
+
+    // Phase 2 assembly rows
+    assemblyHeading.setBounds(r.removeFromTop(26));
+    assemblyName.setBounds(r.removeFromTop(30).reduced(1));
+    row = r.removeFromTop(32);
+    groupButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    moveAssemblyButton.setBounds(row.reduced(1));
+
+    // Cut list button
+    cutListButton.setBounds(r.removeFromTop(32).reduced(1));
+
     row=r.removeFromTop(32);saveDefaults.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));duplicate.setBounds(row.reduced(1));
     row=r.removeFromTop(32);materialsButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));reloadButton.setBounds(row.reduced(1));status.setBounds(r);
 }
@@ -87,10 +151,15 @@ void CadCraftBrowser::fill(const juce::var& record,const juce::String& materialI
     for(int i=0;i<3;++i){const bool used=i<keys.size();dimensionLabels[i]->setVisible(used);dimensions[i]->setVisible(used);if(used){dimensionLabels[i]->setText(craft::dimensionLabel(keys[i]),juce::dontSendNotification);dimensions[i]->setText(record["geometry"][juce::Identifier(keys[i])].toString());}}
     const bool editing=editingFeature.isNotEmpty();mode.setText(editing?"Editing piece: "+editingInstance:"Template: "+record["name"].toString(),juce::dontSendNotification);
     auto text=record["description"].toString()+"\nProfile: "+record["geometry"]["profile"].toString()+"; length along +X.\nTemplate: "+record.getProperty("templateId",record["id"]).toString()+" / revision "+record.getProperty("templateRevision",record["revision"]).toString();
-    if(editing){int count=0;for(const auto& instance:service->document().mechanicsData().instances)if(instance.featureId==editingFeature)++count;text+="\nLinked occurrences of this definition: "+juce::String(count)+". Dimension/material edits affect them all.";}
+    if(editing){int count=0;for(const auto& instance:service->document().mechanicsData().instances)if(instance.featureId==editingFeature)++count;text+="\nLinked occurrences of this definition: "+juce::String(count)+". Dimension/material edits affect them all.";
+        if(const auto* cuts=record["geometry"].getProperty("cuts",{}).getArray();cuts&&cuts->size()>0)text+="\nAuthored cuts: "+juce::String(cuts->size())+" applied.";
+    }
     details.setText(text,false);loadMaterials(materialId);
     insert.setEnabled(!editing&&record.isObject());saveDefaults.setEnabled(!editing&&record.isObject());duplicate.setEnabled(!editing&&record.isObject());apply.setEnabled(editing);assign.setEnabled(editing);move.setEnabled(editing);
-    message(editing?"Edit dimensions, material or placement, then apply that change.":"Illustrative dimensions and densities. Enter your actual stock measurements.");
+    applyCutButton.setEnabled(editing);clearCutsButton.setEnabled(editing);alignButton.setEnabled(editing);
+    groupButton.setEnabled(service->document().mechanicsData().instances.size()>=2);
+    moveAssemblyButton.setEnabled(!service->document().mechanicsData().assemblies.empty());
+    message(editing?"Edit dimensions, cuts, material or placement, then apply that change.":"Illustrative dimensions and densities. Enter your actual stock measurements.");
 }
 void CadCraftBrowser::loadMaterials(const juce::String& materialId)
 {
@@ -141,6 +210,159 @@ void CadCraftBrowser::editSelected()
     fill(draft,materialId);
     if(instance){const auto p=instance->placement;double rx=0,ry=0,rz=0;mech::eulerDegreesFromFrame(p,rx,ry,rz);const double values[]{p.x,p.y,p.z,rx,ry,rz};for(int i=0;i<6;++i)placements[i]->setText(juce::String(values[i],8));}
     move.setEnabled(instance!=nullptr);
+    refreshAlignTargets();
+}
+void CadCraftBrowser::refreshAlignTargets()
+{
+    alignTarget.clear(juce::dontSendNotification);
+    const auto& instances = service->document().mechanicsData().instances;
+    int idx = 1;
+    for (const auto& inst : instances)
+    {
+        if (inst.id != editingInstance)
+        {
+            alignTarget.addItem(inst.id + " (" + inst.name + ")", idx);
+            if (alignTarget.getSelectedId() == 0) alignTarget.setSelectedId(idx, juce::dontSendNotification);
+            ++idx;
+        }
+    }
+}
+void CadCraftBrowser::applyCut()
+{
+    if (editingFeature.isEmpty()) { message("Select and edit a craft piece first.", true); return; }
+    auto a = object(), cut = object();
+    const int typeId = cutType.getSelectedId();
+    if (typeId == 1)
+    {
+        put(cut, "type", "length");
+        double pos = 0;
+        if (!numeric(cutPosition.getText(), pos)) { message("Enter numeric cut position in mm.", true); return; }
+        put(cut, "positionMm", pos);
+        put(cut, "side", cutSide.getSelectedId() == 2 ? "start" : "end");
+    }
+    else
+    {
+        put(cut, "type", "miter");
+        double pos = 0, angle = 0;
+        if (!numeric(cutPosition.getText(), pos) || !numeric(cutAngle.getText(), angle))
+        { message("Enter numeric cut position and miter angle.", true); return; }
+        put(cut, "positionMm", pos);
+        put(cut, "angleDeg", angle);
+        put(cut, "side", cutSide.getSelectedId() == 2 ? "start" : "end");
+    }
+    put(a, "action", "addCut");
+    put(a, "feature", editingFeature);
+    put(a, "cut", cut);
+    const auto result = service->componentCommand(a);
+    if (!(bool)result["ok"]) message(result["error"].toString(), true);
+    else
+    {
+        editSelected();
+        message("Cut applied to piece through OCAF.");
+    }
+}
+void CadCraftBrowser::clearCuts()
+{
+    if (editingFeature.isEmpty()) { message("Select and edit a craft piece first.", true); return; }
+    auto a = object();
+    put(a, "action", "clearCuts");
+    put(a, "feature", editingFeature);
+    const auto result = service->componentCommand(a);
+    if (!(bool)result["ok"]) message(result["error"].toString(), true);
+    else
+    {
+        editSelected();
+        message("All cuts cleared from piece.");
+    }
+}
+void CadCraftBrowser::applyAlign()
+{
+    if (editingInstance.isEmpty()) { message("Select and edit a piece as alignment source.", true); return; }
+    const auto targetText = alignTarget.getText();
+    const auto targetId = targetText.upToFirstOccurrenceOf(" ", false, false);
+    if (targetId.isEmpty()) { message("Select a target piece to align to.", true); return; }
+    auto a = object(), opt = object();
+    put(opt, "dx", alignOffsets[0]->getText().getDoubleValue());
+    put(opt, "dy", alignOffsets[1]->getText().getDoubleValue());
+    put(opt, "dz", alignOffsets[2]->getText().getDoubleValue());
+    const juce::String types[] = {"butt", "corner90", "corner90_neg", "stack", "flush"};
+    const int idx = juce::jlimit(1, 5, alignType.getSelectedId()) - 1;
+    put(a, "action", "align");
+    put(a, "target", targetId);
+    put(a, "source", editingInstance);
+    put(a, "alignType", types[idx]);
+    put(a, "options", opt);
+    const auto result = service->componentCommand(a);
+    if (!(bool)result["ok"]) message(result["error"].toString(), true);
+    else
+    {
+        editSelected();
+        message("Aligned " + editingInstance + " to " + targetId + ".");
+    }
+}
+void CadCraftBrowser::groupAssembly()
+{
+    const auto& instances = service->document().mechanicsData().instances;
+    if (instances.size() < 2) { message("Insert at least two pieces to group into an assembly.", true); return; }
+    std::vector<juce::String> ids;
+    for (const auto& inst : instances) ids.push_back(inst.id);
+    juce::String groupId, error;
+    if (!service->createAssemblyGroup(assemblyName.getText().trim(), ids, groupId, error))
+        message(error, true);
+    else
+        message("Created assembly " + groupId + " with " + juce::String(ids.size()) + " pieces.");
+}
+void CadCraftBrowser::moveAssembly()
+{
+    CadFrame delta;
+    if (!readPlacement(delta)) return;
+    const auto& mechanics = service->document().mechanicsData();
+    if (mechanics.assemblies.empty()) { message("No assembly created yet.", true); return; }
+    juce::String targetGroup = mechanics.assemblies.front().id;
+    for (const auto& asmGroup : mechanics.assemblies)
+    {
+        for (const auto& id : asmGroup.instanceIds)
+            if (id == editingInstance) { targetGroup = asmGroup.id; break; }
+    }
+    juce::String error;
+    if (!service->moveAssemblyGroup(targetGroup, delta, error))
+        message(error, true);
+    else
+    {
+        editSelected();
+        message("Moved assembly " + targetGroup + " as a unit.");
+    }
+}
+void CadCraftBrowser::showCutList()
+{
+    const auto list = service->generateCutList();
+    juce::String text = "=== CRAFT CUT LIST ===\n";
+    text += "Total pieces: " + list["totalPieces"].toString() + "\n\n";
+    text += "--- Summary by Piece Specification ---\n";
+    if (const auto* summary = list["summary"].getArray())
+    {
+        for (const auto& entry : *summary)
+        {
+            text += "Qty: " + entry["quantity"].toString() + "x  "
+                 + entry["componentName"].toString() + " (" + entry["material"].toString() + ")\n"
+                 + "  Profile: " + entry["profile"].toString()
+                 + "  Nominal length: " + entry["originalLengthMm"].toString() + " mm"
+                 + "  Finished length: " + juce::String((double)entry["finishedLengthMm"], 1) + " mm"
+                 + "  Offcut: " + juce::String((double)entry["offcutMm"], 1) + " mm\n";
+            if (const auto* cuts = entry["cuts"].getArray(); cuts && cuts->size() > 0)
+            {
+                text += "  Cuts: ";
+                for (const auto& c : *cuts)
+                {
+                    text += c["type"].toString() + " @" + c["positionMm"].toString() + "mm ";
+                    if (c.hasProperty("angleDeg")) text += "(" + c["angleDeg"].toString() + " deg) ";
+                }
+                text += "\n";
+            }
+        }
+    }
+    details.setText(text, false);
+    message("Cut list generated from current construction.");
 }
 void CadCraftBrowser::applyDimensions()
 {
@@ -185,7 +407,7 @@ void CadCraftBrowser::timerCallback()
 bool CadCraftBrowser::craftCheck(juce::var& report, const juce::File& folder)
 {
     juce::Array<juce::var> checks; bool passed = true;
-    const auto check = [&](bool ok, const char* name, const juce::String& detail = {})
+    const auto check = [&](bool ok, const juce::String& name, const juce::String& detail = {})
     {
         auto v = object(); put(v, "check", name); put(v, "passed", ok);
         if (detail.isNotEmpty()) put(v, "detail", detail);
@@ -246,6 +468,100 @@ bool CadCraftBrowser::craftCheck(juce::var& report, const juce::File& folder)
     put(report, "folder", folder.getFullPathName());
     return passed;
 }
+bool CadCraftBrowser::craftPhase2Check(juce::var& report, const juce::File& folder)
+{
+    juce::Array<juce::var> checks; bool passed = true;
+    const auto check = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto v = object(); put(v, "check", name); put(v, "passed", ok);
+        if (detail.isNotEmpty()) put(v, "detail", detail);
+        checks.add(v); passed &= ok;
+    };
+
+    juce::String currentSelected;
+    selectedOccurrence = [&currentSelected] { return currentSelected; };
+    onInserted = [&currentSelected](const juce::String& id) { currentSelected = id; };
+
+    // 1. Insert piece 1: Wooden craft stick
+    search.setText("strip");
+    filter();
+    check(shown.size() == 1, "Select wood strip template");
+    if (material.getSelectedId() <= 0 && material.getNumItems() > 0)
+        material.setSelectedId(1, juce::dontSendNotification);
+    dimensions[0]->setText("120"); dimensions[1]->setText("10"); dimensions[2]->setText("3");
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto firstId = currentSelected;
+    check(firstId.isNotEmpty(), "Insert first wooden craft stick: " + firstId);
+
+    // 2. Insert piece 2: Second wooden craft stick
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto secondId = currentSelected;
+    check(secondId.isNotEmpty() && secondId != firstId, "Insert second wooden craft stick: " + secondId);
+
+    // 3. Cut first piece to 90 mm
+    currentSelected = firstId;
+    editSelected();
+    check(editingInstance == firstId, "Select and edit first piece");
+    cutType.setSelectedId(1); // length
+    cutPosition.setText("90");
+    cutSide.setSelectedId(1); // end
+    applyCut();
+    const auto* feat1 = service->document().componentFor(editingFeature);
+    check(feat1 != nullptr && feat1->hasProperty("geometry") && (*feat1)["geometry"].hasProperty("cuts"),
+          "Apply length cut to first stick via UI");
+
+    // 4. Apply miter cut to second piece (45 deg at 90 mm)
+    currentSelected = secondId;
+    editSelected();
+    check(editingInstance == secondId, "Select and edit second piece");
+    cutType.setSelectedId(2); // miter
+    cutPosition.setText("90");
+    cutAngle.setText("45");
+    cutSide.setSelectedId(1); // end
+    applyCut();
+    const auto* feat2 = service->document().componentFor(editingFeature);
+    check(feat2 != nullptr && feat2->hasProperty("geometry") && (*feat2)["geometry"].hasProperty("cuts"),
+          "Apply 45-degree miter cut to second stick via UI");
+
+    // 5. Align second piece to first piece using corner90
+    alignTarget.setSelectedId(1); // target is firstId
+    alignType.setSelectedId(2); // corner90
+    applyAlign();
+    const auto* inst2 = service->document().mechanicsData().findInstance(secondId);
+    check(inst2 != nullptr && inst2->placement.x != 0,
+          "Align second stick to first stick with corner 90 joint via UI");
+
+    // 6. Group into assembly
+    assemblyName.setText("Frame Construction");
+    groupAssembly();
+    check(!service->document().mechanicsData().assemblies.empty() && service->document().mechanicsData().assemblies.front().instanceIds.size() == 2,
+          "Group frame pieces into an assembly via UI");
+
+    // 7. Move assembly as unit
+    placements[0]->setText("50"); placements[1]->setText("20"); placements[2]->setText("0");
+    moveAssembly();
+    check(service->document().mechanicsData().findInstance(firstId)->placement.x == 50,
+          "Move assembly as a unit via UI");
+
+    // 8. Generate cut list
+    showCutList();
+    const auto cutListData = service->generateCutList();
+    check((int)cutListData["totalPieces"] == 2 && cutListData["summary"].size() > 0,
+          "Generate and display craft cut list via UI");
+
+    juce::FileOutputStream stream(folder.getChildFile("craft-browser-phase2.png"));
+    check(stream.openedOk() && juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()), stream),
+          "Craft Designer Phase 2 browser snapshot saved");
+
+    report = object();
+    put(report, "passed", passed);
+    put(report, "checks", checks);
+    put(report, "verification", "Craft Designer Phase 2 UI: cutting, miter, alignment, assembly grouping, move unit, and cut list");
+    put(report, "folder", folder.getFullPathName());
+    return passed;
+}
 namespace djehuti::cad
 {
 bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool interactive)
@@ -269,6 +585,30 @@ bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool intera
         return true;
     }
     const auto ok = browser->craftCheck(report, folder);
+    dialog->exitModalState(0);
+    return ok;
+}
+bool runCadCraftPhase2UiCheck(juce::var& report, const juce::File& folder, bool interactive)
+{
+    folder.createDirectory();
+    auto service = std::make_shared<CadCommandService>();
+    service->setComponentLibraryFile(folder.getChildFile("library.json"));
+    service->setCatalogFile(folder.getChildFile("materials.json"));
+    auto* browser = new CadCraftBrowser(service);
+    browser->setSize(400, 1100);
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(browser);
+    options.dialogTitle = "Craft Designer Phase 2 UI check";
+    options.useNativeTitleBar = true;
+    auto* dialog = options.launchAsync();
+    if (interactive)
+    {
+        report = object();
+        put(report, "folder", folder.getFullPathName());
+        put(report, "verification", "Native test window prepared; no programmatic controls invoked.");
+        return true;
+    }
+    const auto ok = browser->craftPhase2Check(report, folder);
     dialog->exitModalState(0);
     return ok;
 }

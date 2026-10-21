@@ -36,6 +36,7 @@ const CadJoint* CadMechanics::findJoint(const juce::String& id) const { for (con
 const CadCoupling* CadMechanics::findCoupling(const juce::String& id) const { for (const auto& c : couplings) if (c.id == id) return &c; return nullptr; }
 const CadSignalMapping* CadMechanics::mappingForJoint(const juce::String& jointId) const { for (const auto& m : mappings) if (m.jointId == jointId) return &m; return nullptr; }
 const CadIkTask* CadMechanics::findIkTask(const juce::String& id) const { for (const auto& t : ikTasks) if (t.id == id) return &t; return nullptr; }
+const CadAssemblyGroup* CadMechanics::findAssembly(const juce::String& id) const { for (const auto& a : assemblies) if (a.id == id) return &a; return nullptr; }
 bool CadMechanics::instanceHasJoints(const juce::String& id) const { for (const auto& j : joints) if (j.parentInstance == id || j.childInstance == id) return true; return false; }
 
 namespace mech
@@ -362,7 +363,17 @@ juce::var toJson(const CadMechanics& model)
     juce::Array<juce::var> tasks;
     for (const auto& t : model.ikTasks) tasks.add(ikTaskToJson(t));
     root->setProperty("instances", instances); root->setProperty("joints", joints); root->setProperty("couplings", couplings); root->setProperty("mappings", mappings);
-    root->setProperty("ikTasks", tasks);
+    juce::Array<juce::var> assemblies;
+    for (const auto& a : model.assemblies)
+    {
+        auto o = std::make_unique<juce::DynamicObject>();
+        o->setProperty("id", a.id); o->setProperty("name", a.name);
+        juce::Array<juce::var> ids;
+        for (const auto& id : a.instanceIds) ids.add(id);
+        o->setProperty("instances", ids);
+        assemblies.add(juce::var(o.release()));
+    }
+    root->setProperty("ikTasks", tasks); root->setProperty("assemblies", assemblies);
     return juce::var(root.release());
 }
 
@@ -420,6 +431,16 @@ bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error)
             CadIkTask task;
             if (!ikTaskFromJson(v, task, error)) return false;
             loaded.ikTasks.push_back(task);
+        }
+    if (const auto* list = json.getProperty("assemblies", {}).getArray())
+        for (const auto& v : *list)
+        {
+            CadAssemblyGroup group;
+            group.id = v.getProperty("id", "").toString();
+            group.name = v.getProperty("name", "").toString();
+            if (const auto* ids = v.getProperty("instances", {}).getArray())
+                for (const auto& id : *ids) group.instanceIds.push_back(id.toString());
+            if (group.id.isNotEmpty()) loaded.assemblies.push_back(std::move(group));
         }
     if (schema < 2)
     {

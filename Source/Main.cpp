@@ -1256,6 +1256,16 @@ public:
 
     void initialise(const juce::String& commandLine) override
     {
+        if(commandLine.startsWith("--cad-craft-phase2-check"))
+        {
+            juce::var report;const bool ok=djehuti::cad::runCadCraftPhase2Check(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-craft-phase2-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(ok?0:1);
+        }
+        if(commandLine.startsWith("--cad-craft-phase2-ui-check"))
+        {
+            const bool interactive=commandLine.contains("--interactive");juce::MessageManager::callAsync([this,interactive]
+            {const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/craft-ui-check-p2").getChildFile(juce::Uuid().toDashedString());juce::var report;const bool ok=djehuti::cad::runCadCraftPhase2UiCheck(report,folder,interactive);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-craft-phase2-ui-check.result.json").replaceWithText(juce::JSON::toString(report));setApplicationReturnValue(ok?0:1);if(!interactive)juce::MessageManager::callAsync([this]{quit();});});return;
+        }
         if(commandLine.startsWith("--cad-craft-check"))
         {
             juce::var report;const bool ok=djehuti::cad::runCadCraftCheck(report);

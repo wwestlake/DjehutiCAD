@@ -97,4 +97,121 @@ bool runCadCraftCheck(juce::var& report)
     check((bool)state["ok"]&&retained,"User template dimensions persist in existing local component library");
     return passed;
 }
+bool runCadCraftPhase2Check(juce::var& report)
+{
+    const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/craft-check-p2").getChildFile(juce::Uuid().toDashedString());
+    folder.createDirectory();
+    juce::Array<juce::var> checks; bool passed = true;
+    const auto check = [&](bool ok, const juce::String& label, const juce::String& detail = juce::String())
+    {
+        auto item = object(); put(item, "check", label); put(item, "passed", ok); put(item, "detail", detail);
+        checks.add(item); passed &= ok;
+        report = object(); put(report, "passed", passed); put(report, "checks", checks); put(report, "folder", folder.getFullPathName());
+        return ok;
+    };
+    const auto close = [](double a, double b) { return std::abs(a - b) < 1e-5 * juce::jmax(1.0, std::abs(b)); };
+    juce::String error;
+
+    CadCommandService service;
+    service.setComponentLibraryFile(folder.getChildFile("library.json"));
+    service.setCatalogFile(folder.getChildFile("materials.json"));
+    const auto command = [&](const char* action, juce::var args = object())
+    {
+        put(args, "action", action);
+        return service.componentCommand(args);
+    };
+
+    // 1. Insert craft wood strip (120 x 10 x 3 mm, volume = 3600 mm^3)
+    auto r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto inst1 = r["id"].toString();
+    auto& doc = service.document();
+    const auto feat1 = doc.mechanicsData().findInstance(inst1)->featureId;
+    const double initialVol = geom::ofFeature(doc, feat1).volumeMm3;
+    check((bool)r["ok"] && close(initialVol, 3600.0), "Insert craft wood strip with nominal 3600 mm^3 solid");
+
+    // 2. Cut to length: shorten to 90 mm from end (+X)
+    auto cut1 = object(); put(cut1, "type", "length"); put(cut1, "positionMm", 90); put(cut1, "side", "end");
+    auto a = object(); put(a, "feature", feat1); put(a, "cut", cut1);
+    r = command("addCut", a);
+    const double cut90Vol = geom::ofFeature(doc, feat1).volumeMm3;
+    check((bool)r["ok"] && close(cut90Vol, 2700.0), "Cut to length (120 mm -> 90 mm) yields exact proportional solid (2700 mm^3)");
+
+    // 3. Second cut: 45 degree miter at end (X = 90)
+    auto cut2 = object(); put(cut2, "type", "miter"); put(cut2, "positionMm", 90); put(cut2, "angleDeg", 45); put(cut2, "side", "end");
+    put(a, "cut", cut2);
+    r = command("addCut", a);
+    const double miterVol = geom::ofFeature(doc, feat1).volumeMm3;
+    check((bool)r["ok"] && close(miterVol, 2550.0), "Second sequential cut (45-deg miter at end) produces exact 2550 mm^3 mitered solid");
+
+    // 4. Upstream parametric editing recalculation: change base length to 140 mm
+    auto geomModified = clone((*doc.componentFor(feat1))["geometry"]);
+    put(geomModified, "lengthMm", 140);
+    a = object(); put(a, "feature", feat1); put(a, "geometry", geomModified);
+    r = command("editStock", a);
+    const double updatedVol = geom::ofFeature(doc, feat1).volumeMm3;
+    check((bool)r["ok"] && close(updatedVol, miterVol), "Upstream dimension change recalculates and reapplies sequential cuts");
+
+    // 5. Test cutting hollow tube: insert tube and cut at 30 deg
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-plastic-tube"); return a; }());
+    const auto instTube = r["id"].toString();
+    const auto featTube = doc.mechanicsData().findInstance(instTube)->featureId;
+    const double tubeInitialVol = geom::ofFeature(doc, featTube).volumeMm3;
+    auto cutTube = object(); put(cutTube, "type", "miter"); put(cutTube, "positionMm", 80); put(cutTube, "angleDeg", 30);
+    a = object(); put(a, "feature", featTube); put(a, "cut", cutTube);
+    r = command("addCut", a);
+    const double tubeCutVol = geom::ofFeature(doc, featTube).volumeMm3;
+    check((bool)r["ok"] && tubeCutVol < tubeInitialVol && tubeCutVol > 1000.0, "Cut hollow plastic tube produces valid manifold solid with intact bore");
+
+    // 6. Test invalid cut rejection: cut outside bounds
+    auto badCut = object(); put(badCut, "type", "length"); put(badCut, "positionMm", 300);
+    put(a, "feature", feat1); put(a, "cut", badCut);
+    r = command("addCut", a);
+    check(!(bool)r["ok"], "Out-of-bounds cut is rejected without modifying document state");
+
+    // 7. Insert second stick and test alignment (corner90)
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto inst2 = r["id"].toString();
+    a = object(); put(a, "target", inst1); put(a, "source", inst2); put(a, "alignType", "corner90");
+    r = command("align", a);
+    const auto* p2 = doc.mechanicsData().findInstance(inst2);
+    check((bool)r["ok"] && p2 != nullptr && p2->placement.x != 0, "Align second stick to first with 90-degree corner joint");
+
+    // 8. Test assembly group creation and group movement
+    a = object(); put(a, "name", "Test Frame");
+    juce::Array<juce::var> groupIds { inst1, inst2 };
+    put(a, "instances", groupIds);
+    r = command("createAssembly", a);
+    const auto asmId = r["id"].toString();
+    check((bool)r["ok"] && asmId.startsWith("asm-") && doc.mechanicsData().assemblies.size() == 1, "Group pieces into logical assembly");
+
+    // Move assembly as a unit
+    auto moveArgs = object();
+    put(moveArgs, "group", asmId);
+    auto deltaP = object(); put(deltaP, "x", 50.0); put(deltaP, "y", 30.0); put(deltaP, "z", 0.0);
+    put(moveArgs, "placement", deltaP);
+    r = command("moveAssembly", moveArgs);
+    const double inst1_newX = doc.mechanicsData().findInstance(inst1)->placement.x;
+    check((bool)r["ok"] && close(inst1_newX, 50.0), "Move assembly translates all member pieces as a unit");
+
+    // 9. Cut list generation
+    r = command("cutList");
+    const auto cutListData = r["cutList"];
+    check((bool)r["ok"] && (int)cutListData["totalPieces"] >= 2 && cutListData["summary"].size() > 0, "Generate structured cut list with quantities, dimensions, and offcuts");
+
+    // 10. Undo/Redo of assembly move
+    check(doc.undo(error) && close(doc.mechanicsData().findInstance(inst1)->placement.x, 0.0), "Undo restores assembly positions", error);
+    check(doc.redo(error) && close(doc.mechanicsData().findInstance(inst1)->placement.x, 50.0), "Redo reapplies assembly positions", error);
+
+    // 11. Native OCAF save and reopen verification
+    const auto nativeFile = folder.getChildFile("phase2-construction.djo");
+    check(doc.save(nativeFile, error), "Save Phase 2 construction to native .djo", error);
+    CadDocument reopened;
+    check(reopened.load(nativeFile, error), "Reopen Phase 2 construction from .djo", error);
+    check(reopened.mechanicsData().assemblies.size() == 1 && reopened.mechanicsData().assemblies.front().instanceIds.size() == 2,
+          "Reopen preserves assembly grouping and relationships");
+    check(close(geom::ofFeature(reopened, feat1).volumeMm3, geom::ofFeature(doc, feat1).volumeMm3),
+          "Reopen preserves exact cut geometry and volumes");
+
+    return passed;
+}
 }

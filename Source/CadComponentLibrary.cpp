@@ -77,6 +77,24 @@ juce::var CadComponentLibrary::command(const juce::var& args,CadDocument& docume
     if(ok&&(action=="list"||action=="reload")){put(response,"records",clone(entries));put(response,"path",file.getFullPathName());}
     else if(ok&&action=="document")put(response,"definitions",document.componentData());
     else if(ok&&action=="editStock")ok=document.updateCraftStock(args["feature"].toString(),args["geometry"],error);
+    else if(ok&&action=="addCut")ok=document.addCraftCut(args["feature"].toString(),args["cut"],error);
+    else if(ok&&action=="clearCuts")ok=document.clearCraftCuts(args["feature"].toString(),error);
+    else if(ok&&action=="align")ok=document.alignInstances(args["target"].toString(),args["source"].toString(),args["alignType"].toString(),args["options"],error);
+    else if(ok&&action=="createAssembly")
+    {
+        std::vector<juce::String> ids;
+        if(const auto* array=args.getProperty("instances",{}).getArray())
+            for(const auto& id:*array) ids.push_back(id.toString());
+        ok=document.createAssemblyGroup(args.getProperty("name","").toString(),ids,identity,error);
+    }
+    else if(ok&&action=="moveAssembly")
+    {
+        const auto p=args["placement"];
+        const auto delta=mech::frameFromEulerDegrees((double)p.getProperty("x",0.0),(double)p.getProperty("y",0.0),(double)p.getProperty("z",0.0),
+                                                     (double)p.getProperty("rx",0.0),(double)p.getProperty("ry",0.0),(double)p.getProperty("rz",0.0));
+        ok=document.moveAssemblyGroup(args["group"].toString(),delta,error);
+    }
+    else if(ok&&action=="cutList")put(response,"cutList",document.generateCutList());
     else if(ok&&action=="importFile")
     {
         const auto path=args["path"].toString();juce::Array<juce::var> records;auto parsing=object(),importing=object();
