@@ -268,6 +268,12 @@ public:
     bool addToAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error);
     bool removeFromAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error);
     bool moveAssemblyGroup(const juce::String& groupId, const CadFrame& deltaPlacement, juce::String& error);
+    bool createBondedJoint(const CadBondedJoint& spec, juce::String& jointId, juce::String& error);
+    bool updateBondedJoint(const juce::String& jointId, const CadBondedJoint& spec, juce::String& error);
+    bool removeBondedJoint(const juce::String& jointId, juce::String& error);
+    bool reevaluateBondedJoints(juce::String& error);
+    bool moveBondedGroup(const juce::String& instanceId, const CadFrame& deltaPlacement, juce::String& error);
+    juce::var adhesiveBom() const;
     juce::var generateCutList() const;
     std::uint64_t revision() const { return documentRevision; }
     // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
@@ -404,6 +410,12 @@ public:
     bool removeFromAssemblyGroup(const juce::String& groupId, const std::vector<juce::String>& instanceIds, juce::String& error) { return model.removeFromAssemblyGroup(groupId, instanceIds, error); }
     bool moveAssemblyGroup(const juce::String& groupId, const CadFrame& deltaPlacement, juce::String& error) { return model.moveAssemblyGroup(groupId, deltaPlacement, error); }
     juce::var generateCutList() const { return model.generateCutList(); }
+    bool createBondedJoint(const CadBondedJoint& spec, juce::String& jointId, juce::String& error) { return model.createBondedJoint(spec, jointId, error); }
+    bool updateBondedJoint(const juce::String& jointId, const CadBondedJoint& spec, juce::String& error) { return model.updateBondedJoint(jointId, spec, error); }
+    bool removeBondedJoint(const juce::String& jointId, juce::String& error) { return model.removeBondedJoint(jointId, error); }
+    bool reevaluateBondedJoints(juce::String& error) { return model.reevaluateBondedJoints(error); }
+    bool moveBondedGroup(const juce::String& instanceId, const CadFrame& deltaPlacement, juce::String& error) { return model.moveBondedGroup(instanceId, deltaPlacement, error); }
+    juce::var adhesiveBom() const { return model.adhesiveBom(); }
     bool removeInstance(const juce::String& id, juce::String& error) { return model.removeInstance(id, error); }
     bool renameMechanical(const juce::String& id, const juce::String& name, juce::String& error) { return model.renameMechanical(id, name, error); }
     bool createJoint(const CadJointRequest& request, juce::String& id, juce::String& error) { return model.createJoint(request, id, error); }

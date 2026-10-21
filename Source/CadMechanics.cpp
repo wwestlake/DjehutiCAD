@@ -37,6 +37,18 @@ const CadCoupling* CadMechanics::findCoupling(const juce::String& id) const { fo
 const CadSignalMapping* CadMechanics::mappingForJoint(const juce::String& jointId) const { for (const auto& m : mappings) if (m.jointId == jointId) return &m; return nullptr; }
 const CadIkTask* CadMechanics::findIkTask(const juce::String& id) const { for (const auto& t : ikTasks) if (t.id == id) return &t; return nullptr; }
 const CadAssemblyGroup* CadMechanics::findAssembly(const juce::String& id) const { for (const auto& a : assemblies) if (a.id == id) return &a; return nullptr; }
+const CadAdhesive* CadMechanics::findAdhesive(const juce::String& id) const
+{
+    for (const auto& a : adhesives) if (a.id == id) return &a;
+    static const auto defaults = mech::defaultAdhesives();
+    for (const auto& a : defaults) if (a.id == id) return &a;
+    return nullptr;
+}
+const CadBondedJoint* CadMechanics::findBondedJoint(const juce::String& id) const
+{
+    for (const auto& b : bondedJoints) if (b.id == id) return &b;
+    return nullptr;
+}
 bool CadMechanics::instanceHasJoints(const juce::String& id) const { for (const auto& j : joints) if (j.parentInstance == id || j.childInstance == id) return true; return false; }
 
 namespace mech
@@ -320,6 +332,190 @@ std::map<juce::String, gp_Trsf> legacyReferencePlacements(const CadMechanics& mo
 }
 }
 
+std::vector<CadAdhesive> defaultAdhesives()
+{
+    std::vector<CadAdhesive> list;
+    {
+        CadAdhesive pva;
+        pva.id = "adh-pva";
+        pva.name = "PVA Wood Glue";
+        pva.category = "Wood glue";
+        pva.compatibleSubstrates = { "Wood", "Cardboard" };
+        pva.shearStrengthMPa = 15.0;
+        pva.recommendedThicknessMm = 0.1;
+        pva.openTime = "5-10 min";
+        pva.cureTime = "24 hours";
+        pva.notes = "Water-based polyvinyl acetate. Clamping required. Porous substrates only.";
+        pva.provenance = "Djehuti illustrative craft reference";
+        list.push_back(std::move(pva));
+    }
+    {
+        CadAdhesive ca;
+        ca.id = "adh-ca";
+        ca.name = "Cyanoacrylate (CA Glue)";
+        ca.category = "Cyanoacrylate";
+        ca.compatibleSubstrates = { "Wood", "Plastic", "Cardboard" };
+        ca.shearStrengthMPa = 18.0;
+        ca.recommendedThicknessMm = 0.05;
+        ca.openTime = "10-30 sec";
+        ca.cureTime = "1-2 hours";
+        ca.notes = "Fast-acting cyanoacrylate. Attacks/melts polystyrene foam board; do not use on foam board.";
+        ca.provenance = "Djehuti illustrative craft reference";
+        list.push_back(std::move(ca));
+    }
+    {
+        CadAdhesive epoxy;
+        epoxy.id = "adh-epoxy";
+        epoxy.name = "Two-Part Epoxy";
+        epoxy.category = "Epoxy";
+        epoxy.compatibleSubstrates = { "Wood", "Plastic", "Cardboard", "Foam board" };
+        epoxy.shearStrengthMPa = 22.0;
+        epoxy.recommendedThicknessMm = 0.2;
+        epoxy.openTime = "5-10 min";
+        epoxy.cureTime = "24 hours";
+        epoxy.notes = "Gap-filling two-part resin and hardener. Excellent bond to diverse craft substrates.";
+        epoxy.provenance = "Djehuti illustrative craft reference";
+        list.push_back(std::move(epoxy));
+    }
+    {
+        CadAdhesive hotmelt;
+        hotmelt.id = "adh-hotmelt";
+        hotmelt.name = "Hot-Melt Glue (EVA)";
+        hotmelt.category = "Hot-melt";
+        hotmelt.compatibleSubstrates = { "Wood", "Cardboard", "Foam board", "Plastic" };
+        hotmelt.shearStrengthMPa = 4.0;
+        hotmelt.recommendedThicknessMm = 0.8;
+        hotmelt.openTime = "30-60 sec";
+        hotmelt.cureTime = "5 min";
+        hotmelt.notes = "Thermoplastic adhesive applied hot. High gap filling, quick setting, moderate strength.";
+        hotmelt.provenance = "Djehuti illustrative craft reference";
+        list.push_back(std::move(hotmelt));
+    }
+    {
+        CadAdhesive contact;
+        contact.id = "adh-contact";
+        contact.name = "Contact Cement";
+        contact.category = "Contact cement";
+        contact.compatibleSubstrates = { "Wood", "Plastic", "Cardboard", "Foam board" };
+        contact.shearStrengthMPa = 2.5;
+        contact.recommendedThicknessMm = 0.15;
+        contact.openTime = "10-20 min";
+        contact.cureTime = "24 hours";
+        contact.notes = "Apply to both mating surfaces, allow to tack dry, join with firm pressure. Instant grab.";
+        contact.provenance = "Djehuti illustrative craft reference";
+        list.push_back(std::move(contact));
+    }
+    {
+        CadAdhesive solvent;
+        solvent.id = "adh-solvent";
+        solvent.name = "Plastic Solvent Cement";
+        solvent.category = "Solvent cement";
+        solvent.compatibleSubstrates = { "Plastic" };
+        solvent.shearStrengthMPa = 12.0;
+        solvent.recommendedThicknessMm = 0.05;
+        solvent.openTime = "1-2 min";
+        solvent.cureTime = "24 hours";
+        solvent.notes = "Chemical welding cement for thermoplastics (polystyrene, acrylic, ABS). Incompatible with wood, cardboard, and foam board.";
+        solvent.provenance = "Djehuti illustrative craft reference";
+        list.push_back(std::move(solvent));
+    }
+    return list;
+}
+
+juce::var adhesiveToJson(const CadAdhesive& adh)
+{
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty("id", adh.id);
+    o->setProperty("name", adh.name);
+    o->setProperty("category", adh.category);
+    o->setProperty("revision", adh.revision);
+    juce::Array<juce::var> subs;
+    for (const auto& s : adh.compatibleSubstrates) subs.add(s);
+    o->setProperty("compatibleSubstrates", subs);
+    if (adh.shearStrengthMPa) o->setProperty("shearStrengthMPa", *adh.shearStrengthMPa);
+    if (adh.recommendedThicknessMm) o->setProperty("recommendedThicknessMm", *adh.recommendedThicknessMm);
+    o->setProperty("openTime", adh.openTime);
+    o->setProperty("cureTime", adh.cureTime);
+    o->setProperty("notes", adh.notes);
+    o->setProperty("provenance", adh.provenance);
+    return juce::var(o.release());
+}
+
+bool adhesiveFromJson(const juce::var& json, CadAdhesive& adh, juce::String& error)
+{
+    if (!json.isObject()) { error = "Adhesive must be an object."; return false; }
+    adh.id = json.getProperty("id", "").toString();
+    adh.name = json.getProperty("name", "").toString();
+    adh.category = json.getProperty("category", "").toString();
+    adh.revision = (int) json.getProperty("revision", 1);
+    adh.compatibleSubstrates.clear();
+    if (const auto* subs = json.getProperty("compatibleSubstrates", {}).getArray())
+        for (const auto& s : *subs) adh.compatibleSubstrates.add(s.toString());
+    if (json.hasProperty("shearStrengthMPa")) adh.shearStrengthMPa = (double) json["shearStrengthMPa"];
+    if (json.hasProperty("recommendedThicknessMm")) adh.recommendedThicknessMm = (double) json["recommendedThicknessMm"];
+    adh.openTime = json.getProperty("openTime", "").toString();
+    adh.cureTime = json.getProperty("cureTime", "").toString();
+    adh.notes = json.getProperty("notes", "").toString();
+    adh.provenance = json.getProperty("provenance", "").toString();
+    if (adh.id.isEmpty() || adh.name.isEmpty()) { error = "Adhesive requires id and name."; return false; }
+    return true;
+}
+
+juce::var bondedJointToJson(const CadBondedJoint& j)
+{
+    auto o = std::make_unique<juce::DynamicObject>();
+    o->setProperty("id", j.id);
+    o->setProperty("name", j.name);
+    o->setProperty("instanceA", j.instanceA);
+    o->setProperty("instanceB", j.instanceB);
+    o->setProperty("surfaceA", j.surfaceA);
+    o->setProperty("surfaceB", j.surfaceB);
+    o->setProperty("adhesiveId", j.adhesiveId);
+    o->setProperty("adhesiveRevision", j.adhesiveRevision);
+    o->setProperty("type", j.type);
+    o->setProperty("bondThicknessMm", j.bondThicknessMm);
+    o->setProperty("beadLegMm", j.beadLegMm);
+    o->setProperty("createBeadSolid", j.createBeadSolid);
+    o->setProperty("beadFeatureId", j.beadFeatureId);
+    o->setProperty("contactAreaMm2", j.contactAreaMm2);
+    o->setProperty("contactLengthMm", j.contactLengthMm);
+    o->setProperty("estimatedVolumeMm3", j.estimatedVolumeMm3);
+    o->setProperty("status", j.status);
+    o->setProperty("failureReason", j.failureReason);
+    o->setProperty("separationDistanceMm", j.separationDistanceMm);
+    return juce::var(o.release());
+}
+
+bool bondedJointFromJson(const juce::var& json, CadBondedJoint& j, juce::String& error)
+{
+    if (!json.isObject()) { error = "Bonded joint must be an object."; return false; }
+    j.id = json.getProperty("id", "").toString();
+    j.name = json.getProperty("name", "").toString();
+    j.instanceA = json.getProperty("instanceA", "").toString();
+    j.instanceB = json.getProperty("instanceB", "").toString();
+    j.surfaceA = json.getProperty("surfaceA", "auto").toString();
+    j.surfaceB = json.getProperty("surfaceB", "auto").toString();
+    j.adhesiveId = json.getProperty("adhesiveId", "").toString();
+    j.adhesiveRevision = (int) json.getProperty("adhesiveRevision", 1);
+    j.type = json.getProperty("type", "surface").toString();
+    j.bondThicknessMm = (double) json.getProperty("bondThicknessMm", 0.1);
+    j.beadLegMm = (double) json.getProperty("beadLegMm", 2.0);
+    j.createBeadSolid = (bool) json.getProperty("createBeadSolid", false);
+    j.beadFeatureId = json.getProperty("beadFeatureId", "").toString();
+    j.contactAreaMm2 = (double) json.getProperty("contactAreaMm2", 0.0);
+    j.contactLengthMm = (double) json.getProperty("contactLengthMm", 0.0);
+    j.estimatedVolumeMm3 = (double) json.getProperty("estimatedVolumeMm3", 0.0);
+    j.status = json.getProperty("status", "valid").toString();
+    j.failureReason = json.getProperty("failureReason", "").toString();
+    j.separationDistanceMm = (double) json.getProperty("separationDistanceMm", 0.0);
+    if (j.id.isEmpty() || j.instanceA.isEmpty() || j.instanceB.isEmpty())
+    {
+        error = "Bonded joint requires id, instanceA, and instanceB.";
+        return false;
+    }
+    return true;
+}
+
 juce::var toJson(const CadMechanics& model)
 {
     auto root = std::make_unique<juce::DynamicObject>();
@@ -374,6 +570,12 @@ juce::var toJson(const CadMechanics& model)
         assemblies.add(juce::var(o.release()));
     }
     root->setProperty("ikTasks", tasks); root->setProperty("assemblies", assemblies);
+    juce::Array<juce::var> adhesives;
+    for (const auto& a : model.adhesives) adhesives.add(adhesiveToJson(a));
+    juce::Array<juce::var> bondedJoints;
+    for (const auto& b : model.bondedJoints) bondedJoints.add(bondedJointToJson(b));
+    root->setProperty("adhesives", adhesives);
+    root->setProperty("bondedJoints", bondedJoints);
     return juce::var(root.release());
 }
 
@@ -441,6 +643,18 @@ bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error)
             if (const auto* ids = v.getProperty("instances", {}).getArray())
                 for (const auto& id : *ids) group.instanceIds.push_back(id.toString());
             if (group.id.isNotEmpty()) loaded.assemblies.push_back(std::move(group));
+        }
+    if (const auto* list = json.getProperty("adhesives", {}).getArray())
+        for (const auto& v : *list)
+        {
+            CadAdhesive adh;
+            if (adhesiveFromJson(v, adh, error)) loaded.adhesives.push_back(std::move(adh));
+        }
+    if (const auto* list = json.getProperty("bondedJoints", {}).getArray())
+        for (const auto& v : *list)
+        {
+            CadBondedJoint joint;
+            if (bondedJointFromJson(v, joint, error)) loaded.bondedJoints.push_back(std::move(joint));
         }
     if (schema < 2)
     {

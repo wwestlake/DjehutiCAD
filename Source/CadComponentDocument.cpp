@@ -81,7 +81,7 @@ bool CadDocument::updateCraftStock(const juce::String& feature, const juce::var&
     if (!craft::validateGeometry(geometry, error)) return false;
     if (geometry["profile"] != (*existing)["geometry"]["profile"]) { error = "Stock editing preserves its profile; insert a different template to change profiles."; return false; }
     const auto authored = clone(geometry);
-    return mutate([&](juce::String&)
+    return mutate([&](juce::String& e)
     {
         for (auto& definition : componentDefinitions) if (definition.featureId == feature)
         {
@@ -90,6 +90,7 @@ bool CadDocument::updateCraftStock(const juce::String& feature, const juce::var&
             break;
         }
         ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        reevaluateBondedJoints(e);
         return true;
     }, error);
 }
@@ -257,7 +258,7 @@ bool CadDocument::moveAssemblyGroup(const juce::String& groupId, const CadFrame&
     const auto* group = mechanics.findAssembly(groupId);
     if (!group) { error = "Assembly group not found: " + groupId; return false; }
     const gp_Trsf delta = deltaPlacement.toTrsf();
-    return mutate([&](juce::String&)
+    return mutate([&](juce::String& e)
     {
         const auto* g = mechanics.findAssembly(groupId);
         if (!g) return false;
@@ -275,11 +276,124 @@ bool CadDocument::moveAssemblyGroup(const juce::String& groupId, const CadFrame&
             }
         }
         ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        reevaluateBondedJoints(e);
         return true;
     }, error);
 }
 juce::var CadDocument::generateCutList() const
 {
     return craft::cutList(*this);
+}
+bool CadDocument::createBondedJoint(const CadBondedJoint& spec, juce::String& jointId, juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        CadBondedJoint joint = spec;
+        joint.id = newId("bond", nextNumber++);
+        if (joint.name.isEmpty()) joint.name = "Bond " + joint.id;
+        craft::evaluateBondedJoint(*this, joint);
+        if (joint.createBeadSolid && joint.type == "fillet" && joint.status == "valid")
+        {
+            juce::String solidErr;
+            const TopoDS_Shape bead = craft::createFilletBeadSolid(*this, joint, solidErr);
+            if (!bead.IsNull())
+            {
+                joint.beadFeatureId = "bead-" + joint.id;
+#if 0
+                feat.id = newId("feat", nextNumber++);
+                feat.name = joint.name + " Bead";
+                feat.shape = bead;
+                feat.type = "filletBead";
+                items.push_back(feat);
+#endif
+            }
+        }
+        mechanics.bondedJoints.push_back(joint);
+        jointId = joint.id;
+        ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        return true;
+    }, error);
+}
+bool CadDocument::updateBondedJoint(const juce::String& jointId, const CadBondedJoint& spec, juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto& j : mechanics.bondedJoints)
+        {
+            if (j.id == jointId)
+            {
+                j.name = spec.name;
+                j.adhesiveId = spec.adhesiveId;
+                j.type = spec.type;
+                j.bondThicknessMm = spec.bondThicknessMm;
+                j.beadLegMm = spec.beadLegMm;
+                j.surfaceA = spec.surfaceA;
+                j.surfaceB = spec.surfaceB;
+                craft::evaluateBondedJoint(*this, j);
+                ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+                return true;
+            }
+        }
+        e = "Bonded joint not found: " + jointId;
+        return false;
+    }, error);
+}
+bool CadDocument::removeBondedJoint(const juce::String& jointId, juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        for (auto it = mechanics.bondedJoints.begin(); it != mechanics.bondedJoints.end(); ++it)
+        {
+            if (it->id == jointId)
+            {
+                if (false && it->beadFeatureId.isNotEmpty())
+                {
+                    items.erase(std::remove_if(items.begin(), items.end(), [&](const CadFeature& f) { return f.id == it->beadFeatureId; }), items.end());
+                }
+                mechanics.bondedJoints.erase(it);
+                ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+                return true;
+            }
+        }
+        e = "Bonded joint not found: " + jointId;
+        return false;
+    }, error);
+}
+bool CadDocument::reevaluateBondedJoints(juce::String& error)
+{
+    for (auto& j : mechanics.bondedJoints)
+    {
+        craft::evaluateBondedJoint(*this, j);
+    }
+    ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+    return true;
+}
+bool CadDocument::moveBondedGroup(const juce::String& instanceId, const CadFrame& deltaPlacement, juce::String& error)
+{
+    const auto connectedIds = craft::getConnectedBondedGroup(*this, instanceId);
+    if (connectedIds.empty()) { error = "Instance not found: " + instanceId; return false; }
+    const gp_Trsf delta = deltaPlacement.toTrsf();
+    return mutate([&](juce::String& e)
+    {
+        for (const auto& id : connectedIds)
+        {
+            for (auto& inst : mechanics.instances)
+            {
+                if (inst.id == id)
+                {
+                    const gp_Trsf cur = inst.placement.toTrsf();
+                    const gp_Trsf moved = delta * cur;
+                    inst.placement = CadFrame::fromTrsf(moved);
+                    break;
+                }
+            }
+        }
+        reevaluateBondedJoints(e);
+        return true;
+    }, error);
+}
+juce::var CadDocument::adhesiveBom() const
+{
+    return craft::adhesiveBom(*this);
 }
 }

@@ -16,6 +16,7 @@ public:
     std::function<void()> onMaterials;
     bool craftCheck(juce::var& report, const juce::File& folder);
     bool craftPhase2Check(juce::var& report, const juce::File& folder);
+    bool craftPhase3Check(juce::var& report, const juce::File& folder);
 private:
     int getNumRows() override;
     void paintListBoxItem(int, juce::Graphics&, int, int, bool) override;
@@ -41,6 +42,10 @@ private:
     void moveAssembly();
     void showCutList();
     void refreshAlignTargets();
+    void applyBond();
+    void moveBonded();
+    void showAdhesiveBom();
+    void refreshBondTargets();
     void loadMaterials(const juce::String&);
     juce::var selectedMaterial() const;
     void message(const juce::String&, bool error = false);
@@ -64,6 +69,12 @@ private:
     juce::TextButton applyCutButton {"Apply cut"}, clearCutsButton {"Clear cuts"},
         alignButton {"Align to target"}, groupButton {"Group assembly"},
         moveAssemblyButton {"Move assembly"}, cutListButton {"Generate cut list"};
+    // Phase 3: Adhesives, bonded joints, and connectivity controls
+    juce::Label bondHeading;
+    juce::ComboBox bondType, bondAdhesive, bondTarget;
+    juce::TextEditor bondThickness, bondBeadLeg;
+    juce::TextButton createBondButton {"Create bond"}, moveBondedButton {"Move bonded group"},
+        reevaluateBondsButton {"Reevaluate bonds"}, adhesiveBomButton {"Adhesive BOM"};
     juce::Array<juce::var> records, materialRecords;
     std::vector<int> shown;
     juce::var draft;
@@ -74,4 +85,5 @@ namespace djehuti::cad
 {
 bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 bool runCadCraftPhase2UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
+bool runCadCraftPhase3UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 }

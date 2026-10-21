@@ -883,6 +883,7 @@ bool CadDocument::setInstancePlacement(const juce::String& id,const CadFrame& pl
                 if (!std::isfinite(placement.x) || !std::isfinite(placement.y) || !std::isfinite(placement.z) || !std::isfinite(norm) || norm < 1.0e-9) { e = "Instance placement must be finite with a non-zero rotation."; return false; }
                 instance.placement = placement;
                 instance.placement.qw /= norm; instance.placement.qx /= norm; instance.placement.qy /= norm; instance.placement.qz /= norm;
+                juce::String reevalErr; reevaluateBondedJoints(reevalErr);
                 ++mechanics.interfaceRevision; ++mechanics.profileRevision;
                 return true;
             }

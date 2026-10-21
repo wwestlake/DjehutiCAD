@@ -214,4 +214,182 @@ bool runCadCraftPhase2Check(juce::var& report)
 
     return passed;
 }
+
+bool runCadCraftPhase3Check(juce::var& report)
+{
+    const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/craft-check-p3").getChildFile(juce::Uuid().toDashedString());
+    folder.createDirectory();
+    juce::Array<juce::var> checks; bool passed = true;
+    const auto check = [&](bool ok, const juce::String& label, const juce::String& detail = juce::String())
+    {
+        auto item = object(); put(item, "check", label); put(item, "passed", ok);
+        if (detail.isNotEmpty()) put(item, "detail", detail);
+        checks.add(item); passed &= ok;
+        report = object(); put(report, "passed", passed); put(report, "checks", checks); put(report, "folder", folder.getFullPathName());
+        return ok;
+    };
+    const auto close = [](double a, double b) { return std::abs(a - b) < 1e-5 * juce::jmax(1.0, std::abs(b)); };
+
+    // 1. Adhesive catalog checks
+    const auto catalog = mech::defaultAdhesives();
+    check(catalog.size() == 6, "Adhesive catalog contains all six required craft adhesives");
+    bool foundPVA = false, foundCA = false, foundEpoxy = false, foundHotMelt = false, foundContact = false, foundSolvent = false;
+    for (const auto& a : catalog)
+    {
+        if (a.id == "adh-pva") { foundPVA = true; check(a.compatibleSubstrates.contains("Wood") && a.shearStrengthMPa && *a.shearStrengthMPa > 0, "PVA adhesive has wood compatibility and valid shear strength"); }
+        if (a.id == "adh-ca") { foundCA = true; check(a.compatibleSubstrates.contains("Plastic") && !a.compatibleSubstrates.contains("Foam board"), "Cyanoacrylate compatible with plastic but excludes polystyrene foam board"); }
+        if (a.id == "adh-epoxy") { foundEpoxy = true; check(a.compatibleSubstrates.size() >= 4 && a.shearStrengthMPa && *a.shearStrengthMPa >= 20.0, "Epoxy supports wide substrate compatibility and high strength"); }
+        if (a.id == "adh-hotmelt") { foundHotMelt = true; check(a.recommendedThicknessMm && *a.recommendedThicknessMm >= 0.5, "Hot melt adhesive supports gap-filling recommended thickness"); }
+        if (a.id == "adh-contact") { foundContact = true; check(a.openTime.isNotEmpty(), "Contact cement specifies required open/tack time"); }
+        if (a.id == "adh-solvent") { foundSolvent = true; check(a.compatibleSubstrates.size() == 1 && a.compatibleSubstrates[0] == "Plastic", "Solvent cement strictly restricted to weld-compatible plastics"); }
+    }
+    check(foundPVA && foundCA && foundEpoxy && foundHotMelt && foundContact && foundSolvent, "All required adhesive definitions resolve correctly with provenance");
+
+    // Initialize command service and test document
+    CadCommandService service;
+    service.setComponentLibraryFile(folder.getChildFile("library.json"));
+    service.setCatalogFile(folder.getChildFile("materials.json"));
+    const auto command = [&](const char* action, juce::var args = object()) { put(args, "action", action); return service.componentCommand(args); };
+    auto& doc = service.document();
+    juce::String error;
+
+    // 2. Insert two wood strips
+    auto r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto inst1 = r["id"].toString();
+    const auto feat1 = doc.mechanicsData().findInstance(inst1)->featureId;
+
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto inst2 = r["id"].toString();
+    const auto feat2 = doc.mechanicsData().findInstance(inst2)->featureId;
+    check(inst1.isNotEmpty() && inst2.isNotEmpty() && inst1 != inst2, "Insert two independent craft stock occurrences");
+
+    // 3. Align inst2 to inst1 as butt joint
+    auto alignArgs = object(); put(alignArgs, "target", inst1); put(alignArgs, "source", inst2); put(alignArgs, "alignType", "butt");
+    r = command("align", alignArgs);
+    check((bool)r["ok"], "Align second stick to end of first stick (butt joint)");
+
+    // 4. Create surface bond with PVA glue
+    auto bondArgs = object();
+    put(bondArgs, "instanceA", inst1);
+    put(bondArgs, "instanceB", inst2);
+    put(bondArgs, "type", "surface");
+    put(bondArgs, "adhesive", "adh-pva");
+    put(bondArgs, "bondThicknessMm", 0.1);
+    r = command("createBond", bondArgs);
+    const auto bond1Id = r["id"].toString();
+    const auto* bond1 = doc.mechanicsData().findBondedJoint(bond1Id);
+    check((bool)r["ok"] && bond1 != nullptr && bond1->status == "valid" && bond1->contactAreaMm2 > 0.0 && bond1->estimatedVolumeMm3 > 0.0,
+          "Create and evaluate valid PVA surface bond (contact area > 0, status == valid)");
+
+    // 5. Test substrate compatibility failure: try bonding wood pieces with plastic solvent cement
+    auto badBondArgs = object();
+    put(badBondArgs, "instanceA", inst1);
+    put(badBondArgs, "instanceB", inst2);
+    put(badBondArgs, "type", "surface");
+    put(badBondArgs, "adhesive", "adh-solvent");
+    r = command("createBond", badBondArgs);
+    const auto badBondId = r["id"].toString();
+    const auto* badBond = doc.mechanicsData().findBondedJoint(badBondId);
+    check((bool)r["ok"] && badBond != nullptr && badBond->status == "incompatible_substrate" && badBond->failureReason.contains("incompatible"),
+          "Solvent cement rejected on wood substrate with incompatible_substrate status and clear reason");
+
+    // 6. Test separation invalidation and automatic recovery
+    const CadFrame separatedPose = mech::frameFromEulerDegrees(200.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    check(doc.setInstancePlacement(inst2, separatedPose, error), "Move second stick away from contact");
+    const auto* bond1_sep = doc.mechanicsData().findBondedJoint(bond1Id);
+    check(bond1_sep != nullptr && bond1_sep->status == "separated" && bond1_sep->separationDistanceMm > 50.0 && bond1_sep->contactAreaMm2 == 0.0,
+          "Separation detected: joint invalidated with status 'separated' and measured gap");
+
+    // Re-align and verify status recovers to valid
+    r = command("align", alignArgs);
+    const auto* bond1_recovered = doc.mechanicsData().findBondedJoint(bond1Id);
+    check((bool)r["ok"] && bond1_recovered != nullptr && bond1_recovered->status == "valid" && bond1_recovered->contactAreaMm2 > 0.0,
+          "Joint automatically recovers to 'valid' when components return to contact");
+
+    // 7. Insert piece 3 and test edge and fillet bonds
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto inst3 = r["id"].toString();
+    auto cornerArgs = object(); put(cornerArgs, "target", inst1); put(cornerArgs, "source", inst3); put(cornerArgs, "alignType", "corner90");
+    r = command("align", cornerArgs);
+
+    // Fillet bond with epoxy and bead solid creation
+    auto filletArgs = object();
+    put(filletArgs, "instanceA", inst1);
+    put(filletArgs, "instanceB", inst3);
+    put(filletArgs, "type", "fillet");
+    put(filletArgs, "adhesive", "adh-epoxy");
+    put(filletArgs, "beadLegMm", 2.0);
+    put(filletArgs, "createBeadSolid", true);
+    r = command("createBond", filletArgs);
+    const auto filletId = r["id"].toString();
+    const auto* filletJoint = doc.mechanicsData().findBondedJoint(filletId);
+    check((bool)r["ok"] && filletJoint != nullptr && filletJoint->status == "valid" && filletJoint->contactLengthMm > 0.0 && filletJoint->beadFeatureId.isNotEmpty(),
+          "Create fillet bond with genuine OCCT triangular bead solid");
+
+    // 8. Connected construction behavior: move bonded group as a unit
+    const auto connected = craft::getConnectedBondedGroup(doc, inst2);
+    check(connected.size() >= 3, "Connected graph traversal identifies all pieces in bonded construction");
+
+    const double initialInst1X = doc.mechanicsData().findInstance(inst1)->placement.x;
+    const double initialInst2X = doc.mechanicsData().findInstance(inst2)->placement.x;
+    const double initialInst3X = doc.mechanicsData().findInstance(inst3)->placement.x;
+
+    auto moveGroupArgs = object();
+    put(moveGroupArgs, "instance", inst2);
+    auto deltaP = object(); put(deltaP, "x", 40.0); put(deltaP, "y", 25.0); put(deltaP, "z", 0.0);
+    put(moveGroupArgs, "placement", deltaP);
+    r = command("moveBondedGroup", moveGroupArgs);
+
+    const double newInst1X = doc.mechanicsData().findInstance(inst1)->placement.x;
+    const double newInst2X = doc.mechanicsData().findInstance(inst2)->placement.x;
+    const double newInst3X = doc.mechanicsData().findInstance(inst3)->placement.x;
+
+    check((bool)r["ok"] && close(newInst1X - initialInst1X, 40.0) && close(newInst2X - initialInst2X, 40.0) && close(newInst3X - initialInst3X, 40.0),
+          "Move bonded group translates all connected pieces rigidly by exact delta");
+
+    // Verify all joints remain valid after rigid group translation
+    const auto* bond1_afterMove = doc.mechanicsData().findBondedJoint(bond1Id);
+    const auto* fillet_afterMove = doc.mechanicsData().findBondedJoint(filletId);
+    check(bond1_afterMove && bond1_afterMove->status == "valid" && fillet_afterMove && fillet_afterMove->status == "valid",
+          "All bonded joints remain valid after connected group translation");
+
+    // 9. Cut list & Adhesive BOM reporting
+    r = command("cutList");
+    const auto cutListData = r["cutList"];
+    check(cutListData.hasProperty("adhesives"), "Cut list contains integrated adhesive usage section");
+
+    r = command("adhesiveBom");
+    const auto bom = r["adhesiveBom"];
+    check((bool)r["ok"] && (int)bom["totalJoints"] >= 3 && (int)bom["validJoints"] >= 2 && (double)bom["totalAdhesiveVolumeMm3"] > 0.0,
+          "Generate comprehensive Adhesive BOM (joint counts, valid/invalid breakdown, volumes, areas)");
+
+    // 10. Undo / Redo verification of bonded construction operations
+    check(doc.undo(error) && close(doc.mechanicsData().findInstance(inst1)->placement.x, initialInst1X),
+          "Undo restores pre-move positions of bonded construction", error);
+    check(doc.redo(error) && close(doc.mechanicsData().findInstance(inst1)->placement.x, newInst1X),
+          "Redo reapplies bonded construction movement", error);
+
+    // 11. Native .djo save and reopen persistence
+    const auto* docBond1 = doc.mechanicsData().findBondedJoint(bond1Id);
+    const double expectedContactArea = docBond1 != nullptr ? docBond1->contactAreaMm2 : -1.0;
+    const juce::String expectedStatus = docBond1 != nullptr ? docBond1->status : "";
+
+    const auto nativeFile = folder.getChildFile("phase3-construction.djo");
+    check(doc.save(nativeFile, error), "Save Phase 3 bonded construction to native .djo", error);
+
+    CadDocument reopened;
+    check(reopened.load(nativeFile, error), "Reopen Phase 3 bonded construction from native .djo", error);
+    check(reopened.mechanicsData().bondedJoints.size() == doc.mechanicsData().bondedJoints.size(),
+          "Reopen preserves all bonded joint entities");
+    const auto* reopenedBond1 = reopened.mechanicsData().findBondedJoint(bond1Id);
+    const bool matches = reopenedBond1 != nullptr && reopenedBond1->status == expectedStatus && close(reopenedBond1->contactAreaMm2, expectedContactArea);
+    if (!matches && reopenedBond1 != nullptr)
+    {
+        error = "Expected status " + expectedStatus + ", got " + reopenedBond1->status + 
+                "; expected area " + juce::String(expectedContactArea) + ", got " + juce::String(reopenedBond1->contactAreaMm2);
+    }
+    check(matches, "Reopen restores exact contact evaluation and validity state", error);
+
+    return passed;
+}
 }

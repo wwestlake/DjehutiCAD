@@ -60,6 +60,34 @@ CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : se
     moveAssemblyButton.onClick = [this]{ moveAssembly(); };
     cutListButton.onClick = [this]{ showCutList(); };
 
+    bondHeading.setText("Adhesives & Bonded Joints", juce::dontSendNotification); bondHeading.setFont(juce::Font(16.0f, juce::Font::bold));
+    bondType.addItem("Surface bond", 1); bondType.addItem("Edge bond", 2); bondType.addItem("Fillet bond", 3); bondType.setSelectedId(1);
+    bondThickness.setText("0.1"); bondThickness.setInputRestrictions(8, "0123456789.");
+    bondBeadLeg.setText("2.0"); bondBeadLeg.setInputRestrictions(8, "0123456789.");
+    createBondButton.onClick = [this]{ applyBond(); };
+    moveBondedButton.onClick = [this]{ moveBonded(); };
+    reevaluateBondsButton.onClick = [this]{
+        juce::String err;
+        service->reevaluateBondedJoints(err);
+        message("Reevaluated all bonded joints.");
+    };
+    adhesiveBomButton.onClick = [this]{ showAdhesiveBom(); };
+    content.addAndMakeVisible(bondHeading);
+    content.addAndMakeVisible(bondType);
+    content.addAndMakeVisible(bondAdhesive);
+    content.addAndMakeVisible(bondTarget);
+    content.addAndMakeVisible(bondThickness);
+    content.addAndMakeVisible(bondBeadLeg);
+    content.addAndMakeVisible(createBondButton);
+    content.addAndMakeVisible(moveBondedButton);
+    content.addAndMakeVisible(reevaluateBondsButton);
+    content.addAndMakeVisible(adhesiveBomButton);
+    /*
+    for (auto* c : (std::initializer_list<juce::Component*>) {
+        &bondHeading, &bondType, &bondAdhesive, &bondTarget, &bondThickness, &bondBeadLeg,
+        &createBondButton, &moveBondedButton, &reevaluateBondsButton, &adhesiveBomButton
+    }) content.addAndMakeVisible(c); */
+
     reload();startTimerHz(3);
 }
 CadCraftBrowser::~CadCraftBrowser(){stopTimer();scroll.setViewedComponent(nullptr,false);}
@@ -67,7 +95,7 @@ void CadCraftBrowser::paint(juce::Graphics& g){g.fillAll(juce::Colour(0xff1d222b
 void CadCraftBrowser::resized()
 {
     auto a=getLocalBounds();workspaceMenu.setBounds(a.removeFromTop(28));scroll.setBounds(a);
-    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 1280);
+    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 1580);
     auto r=content.getLocalBounds().reduced(8);heading.setBounds(r.removeFromTop(32));category.setBounds(r.removeFromTop(30).reduced(0,2));search.setBounds(r.removeFromTop(30).reduced(0,2));
     list.setBounds(r.removeFromTop(145));auto row=r.removeFromTop(32);editPiece.setBounds(row.removeFromLeft(row.getWidth()*2/3).reduced(1));templatesButton.setBounds(row.reduced(1));
     mode.setBounds(r.removeFromTop(30));details.setBounds(r.removeFromTop(105));
@@ -112,6 +140,21 @@ void CadCraftBrowser::resized()
 
     // Cut list button
     cutListButton.setBounds(r.removeFromTop(32).reduced(1));
+
+    // Phase 3 bonding rows
+    bondHeading.setBounds(r.removeFromTop(26));
+    row = r.removeFromTop(30);
+    bondType.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    bondAdhesive.setBounds(row.reduced(1));
+    row = r.removeFromTop(30);
+    bondTarget.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    bondThickness.setBounds(row.reduced(1));
+    row = r.removeFromTop(32);
+    createBondButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    moveBondedButton.setBounds(row.reduced(1));
+    row = r.removeFromTop(32);
+    reevaluateBondsButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    adhesiveBomButton.setBounds(row.reduced(1));
 
     row=r.removeFromTop(32);saveDefaults.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));duplicate.setBounds(row.reduced(1));
     row=r.removeFromTop(32);materialsButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));reloadButton.setBounds(row.reduced(1));status.setBounds(r);
@@ -177,6 +220,13 @@ void CadCraftBrowser::loadMaterials(const juce::String& materialId)
     // A customized template may hold a material snapshot not yet in this document/catalog.
     if(!chosen&&draft["material"].isObject()){materialRecords.add(clone(draft["material"]));chosen=materialRecords.size();material.addItem(draft["material"]["name"].toString(),chosen);}
     material.setSelectedId(chosen,juce::dontSendNotification);material.setTextWhenNothingSelected("Choose an existing material");
+    if (bondAdhesive.getNumItems() == 0)
+    {
+        int aid = 1;
+        for (const auto& a : mech::defaultAdhesives())
+            bondAdhesive.addItem(a.name, aid++);
+        bondAdhesive.setSelectedId(1, juce::dontSendNotification);
+    }
 }
 juce::var CadCraftBrowser::selectedMaterial()const
 {const int index=material.getSelectedItemIndex();return index>=0&&index<materialRecords.size()?clone(materialRecords[index]):juce::var();}
@@ -211,6 +261,7 @@ void CadCraftBrowser::editSelected()
     if(instance){const auto p=instance->placement;double rx=0,ry=0,rz=0;mech::eulerDegreesFromFrame(p,rx,ry,rz);const double values[]{p.x,p.y,p.z,rx,ry,rz};for(int i=0;i<6;++i)placements[i]->setText(juce::String(values[i],8));}
     move.setEnabled(instance!=nullptr);
     refreshAlignTargets();
+    refreshBondTargets();
 }
 void CadCraftBrowser::refreshAlignTargets()
 {
@@ -223,6 +274,21 @@ void CadCraftBrowser::refreshAlignTargets()
         {
             alignTarget.addItem(inst.id + " (" + inst.name + ")", idx);
             if (alignTarget.getSelectedId() == 0) alignTarget.setSelectedId(idx, juce::dontSendNotification);
+            ++idx;
+        }
+    }
+}
+void CadCraftBrowser::refreshBondTargets()
+{
+    bondTarget.clear(juce::dontSendNotification);
+    const auto& instances = service->document().mechanicsData().instances;
+    int idx = 1;
+    for (const auto& inst : instances)
+    {
+        if (inst.id != editingInstance)
+        {
+            bondTarget.addItem(inst.id + " (" + inst.name + ")", idx);
+            if (bondTarget.getSelectedId() == 0) bondTarget.setSelectedId(idx, juce::dontSendNotification);
             ++idx;
         }
     }
@@ -362,7 +428,116 @@ void CadCraftBrowser::showCutList()
         }
     }
     details.setText(text, false);
+    if (list.hasProperty("adhesives"))
+    {
+        const auto adhs = list["adhesives"];
+        text += "\n--- ADHESIVE USAGE (BOM) ---\n";
+        text += "Total joints: " + adhs["totalJoints"].toString() + "  (Valid: " + adhs["validJoints"].toString() + ")\n";
+        text += "Total adhesive volume: " + juce::String((double)adhs["totalAdhesiveVolumeMm3"], 2) + " mm^3\n";
+        if (const auto* arr = adhs["adhesives"].getArray())
+        {
+            for (const auto& a : *arr)
+            {
+                text += "  " + a["adhesiveName"].toString() + ": " + a["jointCount"].toString() + " joint(s), "
+                     + juce::String((double)a["totalAreaMm2"], 1) + " mm^2, "
+                     + juce::String((double)a["totalVolumeMm3"], 2) + " mm^3\n";
+            }
+        }
+        details.setText(text, false);
+    }
     message("Cut list generated from current construction.");
+}
+void CadCraftBrowser::applyBond()
+{
+    if (editingInstance.isEmpty()) { message("Select and edit a piece first.", true); return; }
+    const auto targetText = bondTarget.getText();
+    const auto targetId = targetText.upToFirstOccurrenceOf(" ", false, false);
+    if (targetId.isEmpty()) { message("Select a target piece to bond with.", true); return; }
+
+    const juce::String adhIds[] = { "adh-pva", "adh-ca", "adh-epoxy", "adh-hotmelt", "adh-contact", "adh-solvent" };
+    const int adhIdx = juce::jlimit(1, 6, bondAdhesive.getSelectedId()) - 1;
+    const juce::String types[] = { "surface", "edge", "fillet" };
+    const int typeIdx = juce::jlimit(1, 3, bondType.getSelectedId()) - 1;
+
+    CadBondedJoint joint;
+    joint.instanceA = editingInstance;
+    joint.instanceB = targetId;
+    joint.type = types[typeIdx];
+    joint.adhesiveId = adhIds[adhIdx];
+    joint.bondThicknessMm = bondThickness.getText().getDoubleValue();
+    if (joint.bondThicknessMm <= 0.0) joint.bondThicknessMm = 0.1;
+    joint.beadLegMm = bondBeadLeg.getText().getDoubleValue();
+    if (joint.beadLegMm <= 0.0) joint.beadLegMm = 2.0;
+    if (joint.type == "fillet") joint.createBeadSolid = true;
+
+    juce::String jointId, error;
+    if (!service->createBondedJoint(joint, jointId, error))
+    {
+        message(error, true);
+    }
+    else
+    {
+        const auto* created = service->document().mechanicsData().findBondedJoint(jointId);
+        if (created && created->status != "valid")
+            message("Bond " + jointId + " created: " + created->status + " (" + created->failureReason + ")", true);
+        else
+            message("Created " + joint.type + " bond " + jointId + " (" + (created ? juce::String((double)created->contactAreaMm2, 1) : "") + " mm^2).");
+    }
+}
+void CadCraftBrowser::moveBonded()
+{
+    if (editingInstance.isEmpty()) { message("Select and edit a piece in the bonded construction.", true); return; }
+    CadFrame delta;
+    if (!readPlacement(delta)) return;
+    juce::String error;
+    if (!service->moveBondedGroup(editingInstance, delta, error))
+        message(error, true);
+    else
+    {
+        editSelected();
+        message("Moved bonded construction as a unit.");
+    }
+}
+void CadCraftBrowser::showAdhesiveBom()
+{
+    const auto bom = service->adhesiveBom();
+    juce::String text = "=== ADHESIVE BILL OF MATERIALS (BOM) ===\n";
+    text += "Total joints: " + bom["totalJoints"].toString() + "  (Valid: " + bom["validJoints"].toString()
+         + ", Separated: " + bom["separatedJoints"].toString()
+         + ", Incompatible: " + bom["incompatibleJoints"].toString() + ")\n";
+    text += "Total bond area: " + juce::String((double)bom["totalBondAreaMm2"], 1) + " mm^2\n";
+    text += "Total adhesive volume: " + juce::String((double)bom["totalAdhesiveVolumeMm3"], 2) + " mm^3 ("
+         + juce::String((double)bom["totalAdhesiveVolumeMl"], 4) + " mL)\n\n";
+
+    text += "--- Adhesives Summary ---\n";
+    if (const auto* adhs = bom["adhesives"].getArray())
+    {
+        for (const auto& a : *adhs)
+        {
+            text += a["adhesiveName"].toString() + " (" + a["adhesiveId"].toString() + "):\n"
+                 + "  Joints: " + a["jointCount"].toString() + " (Valid: " + a["validJointCount"].toString() + ")\n"
+                 + "  Total area: " + juce::String((double)a["totalAreaMm2"], 1) + " mm^2\n"
+                 + "  Estimated volume: " + juce::String((double)a["totalVolumeMm3"], 2) + " mm^3 ("
+                 + juce::String((double)a["totalVolumeMl"], 4) + " mL)\n\n";
+        }
+    }
+
+    text += "--- Bonded Joints ---\n";
+    if (const auto* joints = bom["joints"].getArray())
+    {
+        for (const auto& j : *joints)
+        {
+            text += j["id"].toString() + " [" + j["status"].toString().toUpperCase() + "]: "
+                 + j["instanceA"].toString() + " <-> " + j["instanceB"].toString() + " (" + j["type"].toString() + ")\n"
+                 + "  Adhesive: " + j["adhesiveName"].toString()
+                 + "  Area: " + juce::String((double)j["contactAreaMm2"], 1) + " mm^2"
+                 + "  Vol: " + juce::String((double)j["estimatedVolumeMm3"], 2) + " mm^3\n";
+            if (j["status"].toString() != "valid")
+                text += "  Reason: " + j["failureReason"].toString() + "\n";
+        }
+    }
+    details.setText(text, false);
+    message("Adhesive BOM generated.");
 }
 void CadCraftBrowser::applyDimensions()
 {
@@ -562,6 +737,117 @@ bool CadCraftBrowser::craftPhase2Check(juce::var& report, const juce::File& fold
     put(report, "folder", folder.getFullPathName());
     return passed;
 }
+bool CadCraftBrowser::craftPhase3Check(juce::var& report, const juce::File& folder)
+{
+    juce::Array<juce::var> checks; bool passed = true;
+    const auto check = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto v = object(); put(v, "check", name); put(v, "passed", ok);
+        if (detail.isNotEmpty()) put(v, "detail", detail);
+        checks.add(v); passed &= ok;
+    };
+
+    juce::String currentSelected;
+    selectedOccurrence = [&currentSelected] { return currentSelected; };
+    onInserted = [&currentSelected](const juce::String& id) { currentSelected = id; };
+
+    // 1. Insert piece 1: Wooden craft stick
+    search.setText("strip");
+    filter();
+    check(shown.size() == 1, "Select wood strip template");
+    if (material.getSelectedId() <= 0 && material.getNumItems() > 0)
+        material.setSelectedId(1, juce::dontSendNotification);
+    dimensions[0]->setText("100"); dimensions[1]->setText("10"); dimensions[2]->setText("3");
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto firstId = currentSelected;
+    check(firstId.isNotEmpty(), "Insert first wooden craft stick: " + firstId);
+
+    // 2. Insert piece 2: Second wooden craft stick
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto secondId = currentSelected;
+    check(secondId.isNotEmpty() && secondId != firstId, "Insert second wooden craft stick: " + secondId);
+
+    // 3. Align second piece to first using butt
+    currentSelected = secondId;
+    editSelected();
+    alignTarget.setSelectedId(1); // target is firstId
+    alignType.setSelectedId(1); // butt
+    applyAlign();
+    const auto* p2 = service->document().mechanicsData().findInstance(secondId);
+    check(p2 != nullptr && p2->placement.x != 0, "Align second stick to end of first stick (butt joint)");
+
+    // 4. Create surface bond with PVA glue via UI
+    bondTarget.setSelectedId(1); // target firstId
+    bondType.setSelectedId(1); // surface bond
+    bondAdhesive.setSelectedId(1); // PVA wood glue
+    bondThickness.setText("0.1");
+    applyBond();
+    check(!service->document().mechanicsData().bondedJoints.empty() &&
+          service->document().mechanicsData().bondedJoints.back().status == "valid",
+          "Create valid PVA surface bond between wood sticks via UI");
+
+    // 5. Test incompatible adhesive detection via UI
+    bondAdhesive.setSelectedId(6); // Plastic solvent cement
+    applyBond();
+    check(!service->document().mechanicsData().bondedJoints.empty() &&
+          service->document().mechanicsData().bondedJoints.back().status == "incompatible_substrate",
+          "Plastic solvent cement flagged as incompatible with wood substrates via UI");
+
+    // 6. Insert piece 3 and create fillet bond
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto thirdId = currentSelected;
+    currentSelected = thirdId;
+    editSelected();
+    alignTarget.setSelectedId(1); // target firstId
+    alignType.setSelectedId(2); // corner90
+    applyAlign();
+
+    bondTarget.setSelectedId(1); // target firstId
+    bondType.setSelectedId(3); // fillet bond
+    bondAdhesive.setSelectedId(3); // Two-Part Epoxy
+    bondBeadLeg.setText("2.0");
+    applyBond();
+    check(service->document().mechanicsData().bondedJoints.size() >= 3 &&
+          service->document().mechanicsData().bondedJoints.back().status == "valid",
+          "Create fillet bond with epoxy bead via UI");
+
+    // 7. Move bonded construction as a unit
+    currentSelected = firstId;
+    editSelected();
+    placements[0]->setText("30"); placements[1]->setText("15"); placements[2]->setText("0");
+    moveBonded();
+    const auto* p1_after = service->document().mechanicsData().findInstance(firstId);
+    check(p1_after != nullptr && p1_after->placement.x == 30,
+          "Move bonded construction translates all connected pieces as a unit via UI");
+
+    // 8. Generate and display Adhesive BOM
+    showAdhesiveBom();
+    const auto bomData = service->adhesiveBom();
+    check((int)bomData["totalJoints"] >= 3 && (int)bomData["validJoints"] >= 2,
+          "Generate and display Adhesive BOM via UI");
+
+    // 9. Generate Cut list with integrated adhesive usage
+    showCutList();
+    const auto cutListData = service->generateCutList();
+    check((int)cutListData["totalPieces"] >= 3 && cutListData.hasProperty("adhesives"),
+          "Cut list includes integrated adhesive consumption BOM via UI");
+
+    juce::FileOutputStream stream(folder.getChildFile("craft-browser-phase3.png"));
+    check(stream.openedOk() && juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()), stream),
+          "Craft Designer Phase 3 browser snapshot saved");
+
+    report = object();
+    put(report, "passed", passed);
+    put(report, "checks", checks);
+    put(report, "verification", "Craft Designer Phase 3 UI: adhesives, bonded joints, substrate compatibility, fillet bonds, connected movement, and adhesive BOM");
+    put(report, "folder", folder.getFullPathName());
+    return passed;
+    put(report, "folder", folder.getFullPathName());
+    return passed;
+}
 namespace djehuti::cad
 {
 bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool interactive)
@@ -609,6 +895,30 @@ bool runCadCraftPhase2UiCheck(juce::var& report, const juce::File& folder, bool 
         return true;
     }
     const auto ok = browser->craftPhase2Check(report, folder);
+    dialog->exitModalState(0);
+    return ok;
+}
+bool runCadCraftPhase3UiCheck(juce::var& report, const juce::File& folder, bool interactive)
+{
+    folder.createDirectory();
+    auto service = std::make_shared<CadCommandService>();
+    service->setComponentLibraryFile(folder.getChildFile("library.json"));
+    service->setCatalogFile(folder.getChildFile("materials.json"));
+    auto* browser = new CadCraftBrowser(service);
+    browser->setSize(400, 1200);
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(browser);
+    options.dialogTitle = "Craft Designer Phase 3 UI check";
+    options.useNativeTitleBar = true;
+    auto* dialog = options.launchAsync();
+    if (interactive)
+    {
+        report = object();
+        put(report, "folder", folder.getFullPathName());
+        put(report, "verification", "Native test window prepared; no programmatic controls invoked.");
+        return true;
+    }
+    const auto ok = browser->craftPhase3Check(report, folder);
     dialog->exitModalState(0);
     return ok;
 }

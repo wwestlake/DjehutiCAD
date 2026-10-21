@@ -95,6 +95,41 @@ juce::var CadComponentLibrary::command(const juce::var& args,CadDocument& docume
         ok=document.moveAssemblyGroup(args["group"].toString(),delta,error);
     }
     else if(ok&&action=="cutList")put(response,"cutList",document.generateCutList());
+    else if(ok&&action=="createBond")
+    {
+        CadBondedJoint joint;
+        joint.instanceA = args["instanceA"].toString();
+        joint.instanceB = args["instanceB"].toString();
+        joint.type = args.getProperty("type", "surface").toString();
+        joint.adhesiveId = args.getProperty("adhesive", "adh-pva").toString();
+        joint.bondThicknessMm = (double)args.getProperty("bondThicknessMm", 0.1);
+        joint.beadLegMm = (double)args.getProperty("beadLegMm", 2.0);
+        joint.createBeadSolid = (bool)args.getProperty("createBeadSolid", false);
+        joint.surfaceA = args.getProperty("surfaceA", "auto").toString();
+        joint.surfaceB = args.getProperty("surfaceB", "auto").toString();
+        ok = document.createBondedJoint(joint, identity, error);
+        if (ok)
+        {
+            if (const auto* created = document.mechanicsData().findBondedJoint(identity))
+                put(response, "joint", mech::bondedJointToJson(*created));
+        }
+    }
+    else if(ok&&action=="removeBond") ok = document.removeBondedJoint(args["id"].toString(), error);
+    else if(ok&&action=="reevaluateBonds") ok = document.reevaluateBondedJoints(error);
+    else if(ok&&action=="moveBondedGroup")
+    {
+        const auto p = args["placement"];
+        const auto delta = mech::frameFromEulerDegrees((double)p.getProperty("x",0.0),(double)p.getProperty("y",0.0),(double)p.getProperty("z",0.0),
+                                                       (double)p.getProperty("rx",0.0),(double)p.getProperty("ry",0.0),(double)p.getProperty("rz",0.0));
+        ok = document.moveBondedGroup(args["instance"].toString(), delta, error);
+    }
+    else if(ok&&action=="adhesiveBom") put(response, "adhesiveBom", document.adhesiveBom());
+    else if(ok&&action=="adhesives")
+    {
+        juce::Array<juce::var> catalog;
+        for (const auto& a : mech::defaultAdhesives()) catalog.add(mech::adhesiveToJson(a));
+        put(response, "adhesives", catalog);
+    }
     else if(ok&&action=="importFile")
     {
         const auto path=args["path"].toString();juce::Array<juce::var> records;auto parsing=object(),importing=object();

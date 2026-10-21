@@ -101,6 +101,42 @@ struct CadIkTask
     double angleToleranceRad = 1.0e-4;
 };
 
+// Craft Designer Phase 3: Adhesives and bonded joints
+struct CadAdhesive
+{
+    juce::String id;
+    juce::String name;
+    juce::String category;
+    int revision = 1;
+    juce::StringArray compatibleSubstrates;
+    std::optional<double> shearStrengthMPa;
+    std::optional<double> recommendedThicknessMm;
+    juce::String openTime;
+    juce::String cureTime;
+    juce::String notes;
+    juce::String provenance;
+};
+
+struct CadBondedJoint
+{
+    juce::String id, name;
+    juce::String instanceA, instanceB;
+    juce::String surfaceA = "auto", surfaceB = "auto";
+    juce::String adhesiveId;
+    int adhesiveRevision = 1;
+    juce::String type = "surface"; // "surface" | "edge" | "fillet"
+    double bondThicknessMm = 0.1;
+    double beadLegMm = 2.0;
+    bool createBeadSolid = false;
+    juce::String beadFeatureId;
+    double contactAreaMm2 = 0.0;
+    double contactLengthMm = 0.0;
+    double estimatedVolumeMm3 = 0.0;
+    juce::String status = "valid"; // "valid" | "separated" | "incompatible_substrate" | "invalid_reference"
+    juce::String failureReason;
+    double separationDistanceMm = 0.0;
+};
+
 struct CadAssemblyGroup
 {
     juce::String id, name;
@@ -109,7 +145,7 @@ struct CadAssemblyGroup
 
 struct CadMechanics
 {
-    static constexpr int kSchemaVersion = 3;
+    static constexpr int kSchemaVersion = 4;
     juce::String modelId;
     int interfaceRevision = 0;   // advances when anything DEWB validates against changes (not on renames)
     int profileRevision = 0;     // advances when the interface or any mapping changes
@@ -119,6 +155,8 @@ struct CadMechanics
     std::vector<CadSignalMapping> mappings;
     std::vector<CadIkTask> ikTasks;
     std::vector<CadAssemblyGroup> assemblies;
+    std::vector<CadAdhesive> adhesives;
+    std::vector<CadBondedJoint> bondedJoints;
 
     const CadMechanicalInstance* findInstance(const juce::String& id) const;
     const CadJoint* findJoint(const juce::String& id) const;
@@ -126,8 +164,10 @@ struct CadMechanics
     const CadSignalMapping* mappingForJoint(const juce::String& jointId) const;
     const CadIkTask* findIkTask(const juce::String& id) const;
     const CadAssemblyGroup* findAssembly(const juce::String& id) const;
+    const CadAdhesive* findAdhesive(const juce::String& id) const;
+    const CadBondedJoint* findBondedJoint(const juce::String& id) const;
     bool instanceHasJoints(const juce::String& instanceId) const;
-    bool empty() const { return instances.empty() && joints.empty() && couplings.empty() && mappings.empty() && ikTasks.empty() && assemblies.empty(); }
+    bool empty() const { return instances.empty() && joints.empty() && couplings.empty() && mappings.empty() && ikTasks.empty() && assemblies.empty() && adhesives.empty() && bondedJoints.empty(); }
 };
 
 namespace mech
@@ -155,5 +195,10 @@ bool ikTaskFromJson(const juce::var& json, CadIkTask& task, juce::String& error)
 juce::var toJson(const CadMechanics& model);
 bool fromJson(const juce::var& json, CadMechanics& model, juce::String& error);
 juce::var frameToJson(const CadFrame& frame, double lengthScale);
+std::vector<CadAdhesive> defaultAdhesives();
+juce::var adhesiveToJson(const CadAdhesive& adhesive);
+bool adhesiveFromJson(const juce::var& json, CadAdhesive& adhesive, juce::String& error);
+juce::var bondedJointToJson(const CadBondedJoint& joint);
+bool bondedJointFromJson(const juce::var& json, CadBondedJoint& joint, juce::String& error);
 }
 }

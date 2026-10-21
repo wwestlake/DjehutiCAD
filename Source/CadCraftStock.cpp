@@ -20,6 +20,12 @@
 #include <gp_Pln.hxx>
 #include <gp_Vec.hxx>
 #include <gp_Dir.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <set>
+#include <queue>
 #include <cmath>
 #include <map>
 
@@ -305,8 +311,409 @@ juce::var cutList(const CadDocument& document)
     components::put(root, "items", items);
     components::put(root, "summary", summary);
     components::put(root, "totalPieces", items.size());
+    components::put(root, "adhesives", adhesiveBom(document));
     return root;
 }
+bool evaluateBondedJoint(const CadDocument& doc, CadBondedJoint& joint)
+{
+    const auto* instA = doc.mechanicsData().findInstance(joint.instanceA);
+    const auto* instB = doc.mechanicsData().findInstance(joint.instanceB);
+    if (!instA || !instB)
+    {
+        joint.status = "invalid_reference";
+        joint.failureReason = !instA ? ("Referenced instance not found: " + joint.instanceA)
+                                     : ("Referenced instance not found: " + joint.instanceB);
+        joint.contactAreaMm2 = 0.0;
+        joint.contactLengthMm = 0.0;
+        joint.estimatedVolumeMm3 = 0.0;
+        return true;
+    }
+
+    const CadAdhesive* adh = doc.mechanicsData().findAdhesive(joint.adhesiveId);
+    CadAdhesive defaultAdh;
+    if (!adh)
+    {
+        for (const auto& d : mech::defaultAdhesives())
+        {
+            if (d.id == joint.adhesiveId) { defaultAdh = d; adh = &defaultAdh; break; }
+        }
+    }
+    if (!adh)
+    {
+        joint.status = "invalid_reference";
+        joint.failureReason = "Adhesive definition not found: " + joint.adhesiveId;
+        joint.contactAreaMm2 = 0.0;
+        joint.contactLengthMm = 0.0;
+        joint.estimatedVolumeMm3 = 0.0;
+        return true;
+    }
+
+    auto getSubstrate = [&](const juce::String& featId) -> juce::String
+    {
+        if (const auto* comp = doc.componentFor(featId))
+        {
+            const auto cat = (*comp)["category"].toString();
+            if (cat.containsIgnoreCase("wood")) return "Wood";
+            if (cat.containsIgnoreCase("plastic")) return "Plastic";
+            if (cat.containsIgnoreCase("cardboard")) return "Cardboard";
+            if (cat.containsIgnoreCase("foam")) return "Foam board";
+        }
+        if (const auto* assign = doc.materialsData().assignmentFor(featId))
+        {
+            if (const auto* mat = doc.materialsData().find(assign->materialId))
+            {
+                if (mat->name.containsIgnoreCase("wood") || mat->family.containsIgnoreCase("wood")) return "Wood";
+                if (mat->name.containsIgnoreCase("plastic") || mat->family.containsIgnoreCase("plastic") || mat->name.containsIgnoreCase("pla") || mat->name.containsIgnoreCase("acrylic")) return "Plastic";
+                if (mat->name.containsIgnoreCase("cardboard")) return "Cardboard";
+                if (mat->name.containsIgnoreCase("foam")) return "Foam board";
+            }
+        }
+        return "Wood";
+    };
+
+    const juce::String subA = getSubstrate(instA->featureId);
+    const juce::String subB = getSubstrate(instB->featureId);
+
+    bool compatible = true;
+    juce::String incompatMsg;
+    if (!adh->compatibleSubstrates.contains(subA, true))
+    {
+        compatible = false;
+        incompatMsg = adh->name + " is incompatible with " + subA + " substrate (piece " + joint.instanceA + ")";
+    }
+    else if (!adh->compatibleSubstrates.contains(subB, true))
+    {
+        compatible = false;
+        incompatMsg = adh->name + " is incompatible with " + subB + " substrate (piece " + joint.instanceB + ")";
+    }
+
+    if (!compatible)
+    {
+        joint.status = "incompatible_substrate";
+        joint.failureReason = incompatMsg;
+        joint.contactAreaMm2 = 0.0;
+        joint.contactLengthMm = 0.0;
+        joint.estimatedVolumeMm3 = 0.0;
+        return true;
+    }
+
+    const auto* featA = doc.find(instA->featureId);
+    const auto* featB = doc.find(instB->featureId);
+    if (!featA || featA->shape.IsNull() || !featB || featB->shape.IsNull())
+    {
+        joint.status = "invalid_reference";
+        joint.failureReason = "Instance shapes are not evaluated.";
+        return true;
+    }
+
+    const gp_Trsf trsfA = instA->placement.toTrsf();
+    const gp_Trsf trsfB = instB->placement.toTrsf();
+    const TopoDS_Shape shapeA_world = featA->shape.Moved(trsfA);
+    const TopoDS_Shape shapeB_world = featB->shape.Moved(trsfB);
+
+    BRepExtrema_DistShapeShape distCalc(shapeA_world, shapeB_world);
+    distCalc.Perform();
+    if (!distCalc.IsDone() || distCalc.NbSolution() == 0)
+    {
+        joint.status = "invalid_reference";
+        joint.failureReason = "Distance evaluation failed between shapes.";
+        return true;
+    }
+
+    const double minDist = distCalc.Value();
+    joint.separationDistanceMm = minDist;
+    const double tolerance = std::max(0.6, joint.bondThicknessMm * 1.5 + 0.1);
+
+    if (minDist > tolerance)
+    {
+        joint.status = "separated";
+        joint.failureReason = "Pieces separated by " + juce::String(minDist, 2) + " mm (tolerance: " + juce::String(tolerance, 2) + " mm)";
+        joint.contactAreaMm2 = 0.0;
+        joint.contactLengthMm = 0.0;
+        joint.estimatedVolumeMm3 = 0.0;
+        return true;
+    }
+
+    Bnd_Box bA, bB;
+    BRepBndLib::Add(shapeA_world, bA);
+    BRepBndLib::Add(shapeB_world, bB);
+    Standard_Real ax1, ay1, az1, ax2, ay2, az2;
+    Standard_Real bx1, by1, bz1, bx2, by2, bz2;
+    bA.Get(ax1, ay1, az1, ax2, ay2, az2);
+    bB.Get(bx1, by1, bz1, bx2, by2, bz2);
+
+    const double ix1 = std::max(ax1, bx1), ix2 = std::min(ax2, bx2);
+    const double iy1 = std::max(ay1, by1), iy2 = std::min(ay2, by2);
+    const double iz1 = std::max(az1, bz1), iz2 = std::min(az2, bz2);
+    const double odx = std::max(0.0, ix2 - ix1);
+    const double ody = std::max(0.0, iy2 - iy1);
+    const double odz = std::max(0.0, iz2 - iz1);
+
+    double boxContactArea = 0.0;
+    if (odx <= ody && odx <= odz) boxContactArea = ody * odz;
+    else if (ody <= odx && ody <= odz) boxContactArea = odx * odz;
+    else boxContactArea = odx * ody;
+
+    if (joint.type == "surface")
+    {
+        double calculatedArea = 0.0;
+        for (TopExp_Explorer exA(shapeA_world, TopAbs_FACE); exA.More(); exA.Next())
+        {
+            const TopoDS_Face& fA = TopoDS::Face(exA.Current());
+            BRepAdaptor_Surface adaptA(fA);
+            if (adaptA.GetType() != GeomAbs_Plane) continue;
+            const gp_Pln plnA = adaptA.Plane();
+            gp_Dir dirA = plnA.Axis().Direction();
+            if (fA.Orientation() == TopAbs_REVERSED) dirA.Reverse();
+
+            for (TopExp_Explorer exB(shapeB_world, TopAbs_FACE); exB.More(); exB.Next())
+            {
+                const TopoDS_Face& fB = TopoDS::Face(exB.Current());
+                BRepAdaptor_Surface adaptB(fB);
+                if (adaptB.GetType() != GeomAbs_Plane) continue;
+                const gp_Pln plnB = adaptB.Plane();
+                gp_Dir dirB = plnB.Axis().Direction();
+                if (fB.Orientation() == TopAbs_REVERSED) dirB.Reverse();
+
+                if (dirA.Dot(dirB) < -0.8)
+                {
+                    const double planeDist = plnB.Distance(plnA.Location());
+                    if (planeDist <= tolerance)
+                    {
+                        gp_Trsf nudge;
+                        nudge.SetTranslation(gp_Vec(dirA.X() * (planeDist * 0.99), dirA.Y() * (planeDist * 0.99), dirA.Z() * (planeDist * 0.99)));
+                        const TopoDS_Face nudgedFace = TopoDS::Face(fA.Moved(nudge));
+                        const gp_Vec extVec(dirA.X() * 0.5, dirA.Y() * 0.5, dirA.Z() * 0.5);
+                        BRepPrimAPI_MakePrism prism(nudgedFace, extVec);
+                        if (prism.IsDone())
+                        {
+                            BRepAlgoAPI_Common common(prism.Shape(), shapeB_world);
+                            common.Build();
+                            if (common.IsDone() && !common.Shape().IsNull())
+                            {
+                                GProp_GProps vp;
+                                BRepGProp::VolumeProperties(common.Shape(), vp);
+                                const double fa = vp.Mass() / 0.5;
+                                if (fa > 0.05) calculatedArea += fa;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (calculatedArea < 0.05) calculatedArea = boxContactArea;
+        if (calculatedArea < 0.05) calculatedArea = 100.0;
+
+        joint.status = "valid";
+        joint.failureReason = "";
+        joint.contactAreaMm2 = calculatedArea;
+        joint.contactLengthMm = 0.0;
+        joint.estimatedVolumeMm3 = joint.contactAreaMm2 * joint.bondThicknessMm;
+    }
+    else if (joint.type == "edge")
+    {
+        double edgeLen = 0.0;
+        for (TopExp_Explorer exE(shapeA_world, TopAbs_EDGE); exE.More(); exE.Next())
+        {
+            const TopoDS_Edge& e = TopoDS::Edge(exE.Current());
+            BRepExtrema_DistShapeShape eDist(e, shapeB_world);
+            eDist.Perform();
+            if (eDist.IsDone() && eDist.Value() <= tolerance)
+            {
+                GProp_GProps lp;
+                BRepGProp::LinearProperties(e, lp);
+                edgeLen += lp.Mass();
+            }
+        }
+        if (edgeLen < 0.1) edgeLen = std::max({odx, ody, odz});
+        if (edgeLen < 0.1) edgeLen = 10.0;
+
+        const double w = std::max(1.0, joint.bondThicknessMm * 2.0);
+        joint.status = "valid";
+        joint.failureReason = "";
+        joint.contactLengthMm = edgeLen;
+        joint.contactAreaMm2 = edgeLen * w;
+        joint.estimatedVolumeMm3 = joint.contactAreaMm2 * joint.bondThicknessMm;
+    }
+    else // "fillet"
+    {
+        double seamLen = 0.0;
+        for (TopExp_Explorer exE(shapeA_world, TopAbs_EDGE); exE.More(); exE.Next())
+        {
+            const TopoDS_Edge& e = TopoDS::Edge(exE.Current());
+            BRepExtrema_DistShapeShape eDist(e, shapeB_world);
+            eDist.Perform();
+            if (eDist.IsDone() && eDist.Value() <= tolerance)
+            {
+                GProp_GProps lp;
+                BRepGProp::LinearProperties(e, lp);
+                seamLen += lp.Mass();
+            }
+        }
+        if (seamLen < 0.1) seamLen = std::max({odx, ody, odz});
+        if (seamLen < 0.1) seamLen = 10.0;
+
+        const double s = std::max(0.5, joint.beadLegMm);
+        joint.status = "valid";
+        joint.failureReason = "";
+        joint.contactLengthMm = seamLen;
+        joint.contactAreaMm2 = 2.0 * s * seamLen;
+        joint.estimatedVolumeMm3 = 0.5 * s * s * seamLen;
+    }
+
+    return true;
+}
+
+std::vector<juce::String> getConnectedBondedGroup(const CadDocument& doc, const juce::String& instanceId)
+{
+    std::vector<juce::String> group;
+    if (doc.mechanicsData().findInstance(instanceId) == nullptr) return group;
+
+    std::map<juce::String, std::vector<juce::String>> adj;
+    for (const auto& joint : doc.mechanicsData().bondedJoints)
+    {
+        if (joint.status == "valid")
+        {
+            adj[joint.instanceA].push_back(joint.instanceB);
+            adj[joint.instanceB].push_back(joint.instanceA);
+        }
+    }
+
+    std::set<juce::String> visited;
+    std::vector<juce::String> queue;
+    queue.push_back(instanceId);
+    visited.insert(instanceId);
+
+    size_t head = 0;
+    while (head < queue.size())
+    {
+        const auto curr = queue[head++];
+        group.push_back(curr);
+        for (const auto& neighbor : adj[curr])
+        {
+            if (visited.find(neighbor) == visited.end())
+            {
+                visited.insert(neighbor);
+                queue.push_back(neighbor);
+            }
+        }
+    }
+    return group;
+}
+
+juce::var adhesiveBom(const CadDocument& doc)
+{
+    auto root = components::object();
+    int totalJoints = 0, validJoints = 0, separatedJoints = 0, incompatibleJoints = 0;
+    double totalVolumeMm3 = 0.0, totalAreaMm2 = 0.0;
+
+    std::map<juce::String, int> adhJointCounts;
+    std::map<juce::String, int> adhValidCounts;
+    std::map<juce::String, double> adhArea;
+    std::map<juce::String, double> adhVolume;
+    std::map<juce::String, juce::String> adhNames;
+
+    juce::Array<juce::var> jointList;
+
+    for (const auto& j : doc.mechanicsData().bondedJoints)
+    {
+        ++totalJoints;
+        if (j.status == "valid")
+        {
+            ++validJoints;
+            totalVolumeMm3 += j.estimatedVolumeMm3;
+            totalAreaMm2 += j.contactAreaMm2;
+            adhValidCounts[j.adhesiveId]++;
+            adhArea[j.adhesiveId] += j.contactAreaMm2;
+            adhVolume[j.adhesiveId] += j.estimatedVolumeMm3;
+        }
+        else if (j.status == "separated")
+        {
+            ++separatedJoints;
+        }
+        else if (j.status == "incompatible_substrate")
+        {
+            ++incompatibleJoints;
+        }
+
+        adhJointCounts[j.adhesiveId]++;
+        if (adhNames.find(j.adhesiveId) == adhNames.end())
+        {
+            const auto* a = doc.mechanicsData().findAdhesive(j.adhesiveId);
+            adhNames[j.adhesiveId] = a ? a->name : j.adhesiveId;
+        }
+
+        auto item = components::object();
+        components::put(item, "id", j.id);
+        components::put(item, "name", j.name);
+        components::put(item, "instanceA", j.instanceA);
+        components::put(item, "instanceB", j.instanceB);
+        components::put(item, "type", j.type);
+        components::put(item, "adhesiveId", j.adhesiveId);
+        components::put(item, "adhesiveName", adhNames[j.adhesiveId]);
+        components::put(item, "status", j.status);
+        components::put(item, "failureReason", j.failureReason);
+        components::put(item, "separationDistanceMm", j.separationDistanceMm);
+        components::put(item, "bondThicknessMm", j.bondThicknessMm);
+        components::put(item, "contactAreaMm2", j.contactAreaMm2);
+        components::put(item, "contactLengthMm", j.contactLengthMm);
+        components::put(item, "estimatedVolumeMm3", j.estimatedVolumeMm3);
+        jointList.add(item);
+    }
+
+    juce::Array<juce::var> adhSummary;
+    for (const auto& pair : adhJointCounts)
+    {
+        auto item = components::object();
+        components::put(item, "adhesiveId", pair.first);
+        components::put(item, "adhesiveName", adhNames[pair.first]);
+        components::put(item, "jointCount", pair.second);
+        components::put(item, "validJointCount", adhValidCounts[pair.first]);
+        components::put(item, "totalAreaMm2", adhArea[pair.first]);
+        components::put(item, "totalVolumeMm3", adhVolume[pair.first]);
+        components::put(item, "totalVolumeMl", adhVolume[pair.first] / 1000.0);
+        adhSummary.add(item);
+    }
+
+    components::put(root, "totalJoints", totalJoints);
+    components::put(root, "validJoints", validJoints);
+    components::put(root, "separatedJoints", separatedJoints);
+    components::put(root, "incompatibleJoints", incompatibleJoints);
+    components::put(root, "totalBondAreaMm2", totalAreaMm2);
+    components::put(root, "totalAdhesiveVolumeMm3", totalVolumeMm3);
+    components::put(root, "totalAdhesiveVolumeMl", totalVolumeMm3 / 1000.0);
+    components::put(root, "adhesives", adhSummary);
+    components::put(root, "joints", jointList);
+
+    return root;
+}
+
+TopoDS_Shape createFilletBeadSolid(const CadDocument& doc, const CadBondedJoint& joint, juce::String& error)
+{
+    const auto* instA = doc.mechanicsData().findInstance(joint.instanceA);
+    const auto* instB = doc.mechanicsData().findInstance(joint.instanceB);
+    if (!instA || !instB) { error = "Invalid instance reference"; return TopoDS_Shape(); }
+    const auto* featA = doc.find(instA->featureId);
+    const auto* featB = doc.find(instB->featureId);
+    if (!featA || !featB) { error = "Geometry not evaluated"; return TopoDS_Shape(); }
+
+    const double s = std::max(0.5, joint.beadLegMm);
+    const double L = std::max(1.0, joint.contactLengthMm);
+
+    BRepBuilderAPI_MakePolygon poly;
+    poly.Add(gp_Pnt(0, 0, 0));
+    poly.Add(gp_Pnt(0, s, 0));
+    poly.Add(gp_Pnt(0, 0, s));
+    poly.Close();
+    if (!poly.IsDone()) { error = "Failed to construct bead polygon"; return TopoDS_Shape(); }
+    BRepBuilderAPI_MakeFace faceMaker(poly.Wire());
+    if (!faceMaker.IsDone()) { error = "Failed to construct bead face"; return TopoDS_Shape(); }
+    BRepPrimAPI_MakePrism prism(faceMaker.Face(), gp_Vec(L, 0, 0));
+    if (!prism.IsDone()) { error = "Failed to extrude bead solid"; return TopoDS_Shape(); }
+    return prism.Shape();
+}
+
 juce::Array<juce::var> templates()
 {
     const auto root = juce::JSON::parse(juce::String::fromUTF8(EngineeringData::craftstockseed_json, EngineeringData::craftstockseed_jsonSize));
