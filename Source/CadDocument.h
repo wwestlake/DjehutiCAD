@@ -27,6 +27,7 @@
 #include "CadSheetStock.h"
 #include "CadEngineeringCatalog.h"
 #include "CadAnalysisCases.h"
+#include "CadComponents.h"
 #include "CadExport.h"
 
 #include <cstdint>
@@ -256,6 +257,9 @@ public:
     const CadMaterials& materialsData() const { return materials; }
     const CadSheetStocks& stocksData() const { return sheetStocks; }
     const CadAnalysisCases& analysisData() const { return analysisCases; }
+    juce::var componentData() const;
+    const juce::var* componentFor(const juce::String& feature) const;
+    bool insertComponent(const juce::var& record,const CadFrame& placement,juce::String& instance,juce::String& error);
     std::uint64_t revision() const { return documentRevision; }
     // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
     std::uint64_t documentInstance() const { return instanceId; }
@@ -290,6 +294,9 @@ private:
     bool restoreStocksFromOCAF(juce::String& error);
     bool restoreAuthoredFromOCAF(juce::String& error);
     bool restoreAnalysisFromOCAF(juce::String& error);
+    bool readComponentData(const juce::var&,juce::String& error);
+    bool restoreComponentsFromOCAF(juce::String& error);
+    void writeComponentsToOCAF();
     bool materialAssignmentsResolve(juce::String& error) const;
     bool loadFile(const juce::File& file, juce::String& error);
     bool jointFramesFromRequest(const CadJointRequest& request, CadJoint& joint, juce::String& error) const;
@@ -316,6 +323,8 @@ private:
     CadMaterials materials;
     CadSheetStocks sheetStocks;
     CadAnalysisCases analysisCases;
+    std::vector<CadComponentDefinition> componentDefinitions;
+    static constexpr int componentContainerTag=9;
     std::vector<CadPersistentReference> references;
     std::vector<CadTopologyEvolution> operationHistory;
     Handle(TDocStd_Application) ocafApplication;
@@ -403,6 +412,8 @@ public:
     juce::var materialCommand(const juce::String& tool, const juce::var& args);
     juce::var stockCommand(const juce::var& args);
     juce::var catalogCommand(const juce::var& args);
+    juce::var componentCommand(const juce::var& args);
+    void setComponentLibraryFile(const juce::File& file) { componentLibrary.setFile(file); }
     void setCatalogFile(const juce::File& file) { engineeringCatalog.setFile(file); }
     // Analysis-case tools (cad_analysis_list/create/update/delete); each listed case carries status and problems.
     juce::var analysisCommand(const juce::String& tool, const juce::var& args);
@@ -421,5 +432,6 @@ public:
 private:
     CadDocument model;
     CadEngineeringCatalog engineeringCatalog;
+    CadComponentLibrary componentLibrary;
 };
 }

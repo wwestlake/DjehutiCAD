@@ -5,6 +5,7 @@
 #include "CadDocument.h"
 #include "CadEngineeringUnits.h"
 #include "CadGeometricProperties.h"
+#include "CadComponentBrowser.h"
 #include "CadInterference.h"
 #include "CadMotionRuntime.h"
 #include "CadIkCommands.h"
@@ -1249,10 +1250,24 @@ class DjehutiCADApplication final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "DjehutiCAD"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return getCommandLineParameters().startsWith("--cad-fixture-"); }
+    bool moreThanOneInstanceAllowed() override { return getCommandLineParameters().startsWith("--cad-fixture-") || getCommandLineParameters().startsWith("--cad-component-"); }
 
     void initialise(const juce::String& commandLine) override
     {
+        if(commandLine.startsWith("--cad-component-native"))
+        {
+            juce::MessageManager::callAsync([]{auto* workspace=new DjehutiCAD(true);workspace->setSize(1400,1000);juce::DialogWindow::LaunchOptions options;options.content.setOwned(workspace);options.dialogTitle="Component Library native check";options.useNativeTitleBar=true;options.launchAsync();workspace->selectWorkspace(6);});return;
+        }
+        if(commandLine.startsWith("--cad-component-ui-check"))
+        {
+            const bool interactive=commandLine.contains("--interactive");juce::MessageManager::callAsync([this,interactive]
+            {const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/component-ui-check").getChildFile(juce::Uuid().toDashedString());juce::var report;const bool ok=runCadComponentUiCheck(report,folder,interactive);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-component-ui-check.result.json").replaceWithText(juce::JSON::toString(report));setApplicationReturnValue(ok?0:1);if(!interactive)juce::MessageManager::callAsync([this]{quit();});});return;
+        }
+        if(commandLine.startsWith("--cad-component-check"))
+        {
+            const auto args=juce::JUCEApplication::getCommandLineParameterArray();const int index=args.indexOf("--research-root");const auto root=index>=0&&index+1<args.size()?juce::File(args[index+1]):juce::File();
+            juce::var report;const bool ok=djehuti::cad::runCadComponentCheck(report,root);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-component-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(ok?0:1);
+        }
         if (commandLine.startsWith("--cad-fixture-cantilever-check"))
         {
             juce::var report;const bool passed=djehuti::cad::runCadCantileverCheck(report);

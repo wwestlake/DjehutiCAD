@@ -205,18 +205,26 @@ juce::var CadTestFixture::execute()
     }
     else
     {
-        double totalMass=0,cx=0,cy=0,cz=0;
+        double totalMass=0,cx=0,cy=0,cz=0;bool massCentroidKnown=true;
         for(const auto& b:bodies())
         {
             const auto properties=geomprops::ofShape(b.source->find(b.feature)->shape,b.transform);
             if(!properties.ok()){status="error";error=properties.message;break;}
             auto row=properties.toJson();put(row,"frame","fixtureWorld");put(row,"target",b.target);put(row,"component",b.component);
+            const auto* componentRecord=b.source->componentFor(b.feature);if(componentRecord)put(row,"geometryRepresentation",(*componentRecord)["geometry"]["label"]);
             const auto* model=entry(config,"models",b.target);juce::String label=(*model)["name"].toString();if(label.isEmpty())label=b.source->find(b.feature)->name;if(const auto* instance=b.source->mechanicsData().findInstance(b.component))label+=" / "+instance->name;put(row,"name",label);CadMaterial material;bool hasMaterial=false,substituted=false;
             if(model->hasProperty("material")){hasMaterial=matl::materialFromJson((*model)["material"],material,error);substituted=true;}
             else if(const auto* assignment=b.source->materialsData().assignmentFor(b.feature))if(const auto* m=b.source->materialsData().find(assignment->materialId)){material=*m;hasMaterial=true;}
             if(hasMaterial){auto used=matl::materialToJson(material);put(used,"target",b.target);put(used,"component",b.component);put(used,"substituted",substituted);materials.add(used);}
             if(method=="massProperties")
             {
+                if(componentRecord&&componentRecord->hasProperty("massKg"))
+                {
+                    const double mass=(double)(*componentRecord)["massKg"];put(row,"massKg",mass);put(row,"massBasis","Published component mass; material substitution does not alter this composite mass. Centre of gravity and mass inertia are unknown.");
+                    put(row,"geometryCentroidMm",row["centroidMm"]);row.getDynamicObject()->removeProperty("centroidMm");massCentroidKnown=false;
+                    const auto g=config["settings"]["gravity"];put(row,"selfWeightN",vec(mass*(double)g[0],mass*(double)g[1],mass*(double)g[2]));totalMass+=mass;rows.add(row);continue;
+                }
+                if(componentRecord&&juce::StringArray{"envelope","simplified"}.contains((*componentRecord)["geometry"]["level"].toString())){status="error";error="No published component mass. Envelope volume is not physical material volume: "+b.target;break;}
                 if(!hasMaterial||!material.densityKgPerM3){status="error";error="Assign source material or a fixture substitution with density: "+b.target;break;}
                 const double mass=units::massKg(*material.densityKgPerM3,properties.volumeMm3);if(!std::isfinite(mass)||mass<=0){status="error";error="Mass is outside the supported numerical range.";break;}put(row,"massKg",mass);put(row,"substituted",substituted);
                 juce::Array<juce::var> inertia;for(const auto& axis:properties.inertiaMm5){juce::Array<juce::var> values;for(const auto value:axis)values.add(units::mm5ToM5(value)*(*material.densityKgPerM3));inertia.add(values);}put(row,"inertiaKgM2",inertia);
@@ -225,7 +233,7 @@ juce::var CadTestFixture::execute()
             }
             rows.add(row);
         }
-        if(status=="completed"&&method=="massProperties"&&totalMass>0){if(!std::isfinite(totalMass)||!std::isfinite(cx)||!std::isfinite(cy)||!std::isfinite(cz)){status="error";error="Mass totals are outside the supported numerical range.";}else{put(run,"totalMassKg",totalMass);put(run,"centroidMm",vec(cx/totalMass,cy/totalMass,cz/totalMass));}}
+        if(status=="completed"&&method=="massProperties"&&totalMass>0){if(!std::isfinite(totalMass)||!std::isfinite(cx)||!std::isfinite(cy)||!std::isfinite(cz)){status="error";error="Mass totals are outside the supported numerical range.";}else{put(run,"totalMassKg",totalMass);if(massCentroidKnown)put(run,"centroidMm",vec(cx/totalMass,cy/totalMass,cz/totalMass));else put(run,"centreOfGravityStatus","Unknown: published component masses do not define their mass distributions.");}}
     }
     if(status=="completed")
     {

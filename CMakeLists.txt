@@ -61,7 +61,7 @@ juce_add_gui_app(DjehutiCAD
 set_target_properties(DjehutiCAD PROPERTIES OUTPUT_NAME "djehuti_cad")
 
 juce_add_binary_data(DjehutiEngineeringData HEADER_NAME EngineeringData.h NAMESPACE EngineeringData
-    SOURCES Resources/engineering-reference.json)
+    SOURCES Resources/engineering-reference.json Resources/component-library-seed.json)
 target_link_libraries(DjehutiCAD PRIVATE DjehutiEngineeringData)
 
 target_sources(DjehutiCAD PRIVATE
@@ -136,6 +136,14 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadFixtureGeometry.cpp
     Source/CadFixtureStructural.cpp
     Source/CadCantileverChecks.cpp
+    Source/CadComponents.h
+    Source/CadComponentGeometry.cpp
+    Source/CadComponentWorkbook.cpp
+    Source/CadComponentLibrary.cpp
+    Source/CadComponentDocument.cpp
+    Source/CadComponentBrowser.h
+    Source/CadComponentBrowser.cpp
+    Source/CadComponentChecks.cpp
     Source/CadMaterials.cpp
     Source/CadEngineeringUnits.h
     Source/CadEngineeringUnits.cpp
