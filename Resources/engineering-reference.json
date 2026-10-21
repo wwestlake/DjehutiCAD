@@ -128,6 +128,70 @@
           "unit": "1"
         }
       }
+    },
+    {
+      "id": "mat-craft-wood",
+      "name": "Wood (illustrative density)",
+      "revision": 1,
+      "model": "densityOnly",
+      "family": "Wood",
+      "condition": "Approximate educational example",
+      "source": "DjehutiCAD Craft Designer Phase 1 illustrative preset; not supplier or measured data.",
+      "note": "Density is an illustrative nominal value, not a product specification. Replace with measured mass/volume or documented supplier data for your stock. No elastic or strength properties are asserted. Foam board is treated as a homogeneous bulk-density approximation.",
+      "properties": {
+        "density": {
+          "value": 500,
+          "unit": "kg/m^3"
+        }
+      }
+    },
+    {
+      "id": "mat-craft-plastic",
+      "name": "Plastic (illustrative density)",
+      "revision": 1,
+      "model": "densityOnly",
+      "family": "Plastic",
+      "condition": "Approximate educational example",
+      "source": "DjehutiCAD Craft Designer Phase 1 illustrative preset; not supplier or measured data.",
+      "note": "Density is an illustrative nominal value, not a product specification. Replace with measured mass/volume or documented supplier data for your stock. No elastic or strength properties are asserted. Foam board is treated as a homogeneous bulk-density approximation.",
+      "properties": {
+        "density": {
+          "value": 1050,
+          "unit": "kg/m^3"
+        }
+      }
+    },
+    {
+      "id": "mat-craft-cardboard",
+      "name": "Cardboard (illustrative density)",
+      "revision": 1,
+      "model": "densityOnly",
+      "family": "Cardboard",
+      "condition": "Approximate educational example",
+      "source": "DjehutiCAD Craft Designer Phase 1 illustrative preset; not supplier or measured data.",
+      "note": "Density is an illustrative nominal value, not a product specification. Replace with measured mass/volume or documented supplier data for your stock. No elastic or strength properties are asserted. Foam board is treated as a homogeneous bulk-density approximation.",
+      "properties": {
+        "density": {
+          "value": 700,
+          "unit": "kg/m^3"
+        }
+      }
+    },
+    {
+      "id": "mat-craft-foam-board",
+      "name": "Foam board (illustrative density)",
+      "revision": 1,
+      "model": "densityOnly",
+      "family": "Foam board",
+      "condition": "Approximate educational example",
+      "source": "DjehutiCAD Craft Designer Phase 1 illustrative preset; not supplier or measured data.",
+      "note": "Density is an illustrative nominal value, not a product specification. Replace with measured mass/volume or documented supplier data for your stock. No elastic or strength properties are asserted. Foam board is treated as a homogeneous bulk-density approximation.",
+      "properties": {
+        "density": {
+          "value": 100,
+          "unit": "kg/m^3"
+        }
+      }
     }
   ],
   "stocks": [

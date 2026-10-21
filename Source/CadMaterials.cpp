@@ -39,7 +39,7 @@ const PropertySlot slots[] {
 bool isNumber(const juce::var& v) { return v.isInt() || v.isInt64() || v.isDouble(); }
 }
 
-juce::StringArray knownModels() { return { "isotropic" }; }
+juce::StringArray knownModels() { return { "isotropic", "densityOnly" }; }
 
 juce::String unitOf(const juce::String& propertyKey)
 {
@@ -54,6 +54,11 @@ bool validateMaterial(const CadMaterial& m, juce::String& error)
     if (!knownModels().contains(m.model)) { error = label + ": unknown material model \"" + m.model + "\" (supported: " + knownModels().joinIntoString(", ") + ")."; return false; }
     for (const auto& s : slots)
         if (const auto& value = m.*(s.member); value.has_value() && !std::isfinite(*value)) { error = label + ": " + juce::String(s.key) + " must be a finite number."; return false; }
+    if (m.model == "densityOnly")
+    {
+        if (!m.densityKgPerM3) { error = label + ": a density-only material needs a density (kg/m^3)."; return false; }
+        if (m.youngsModulusMPa || m.poissonsRatio || m.yieldStrengthMPa) { error = label + ": select isotropic to specify elastic or strength properties."; return false; }
+    }
     if (m.model == "isotropic")
     {
         if (!m.densityKgPerM3) { error = label + ": an isotropic material needs a density (kg/m^3)."; return false; }

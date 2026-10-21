@@ -1,4 +1,5 @@
 #include "CadComponents.h"
+#include "CadCraftStock.h"
 #include <BRepTools.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepCheck_Analyzer.hxx>
@@ -37,6 +38,7 @@ bool validate(const juce::var& record,juce::String& error)
     if(!record["properties"].isArray())return fail("Component properties must be a typed property list.");
     if(record.hasProperty("massKg")&&(!(record["massKg"].isDouble()||record["massKg"].isInt()||record["massKg"].isInt64())||!std::isfinite((double)record["massKg"])||(double)record["massKg"]<=0))return fail("Published component mass must be a finite positive kg value.");
     const auto g=record["geometry"];const auto kind=g["kind"].toString();
+    if(kind=="craftStock")return craft::validateGeometry(g,error);
     if(kind=="none")return true;
     if(kind=="brep")return g["data"].toString().isNotEmpty()&&g["data"].toString().getNumBytesAsUTF8()<=32*1024*1024?true:fail("Missing or oversized component BRep.");
     if(kind!="envelope"&&kind!="cylinder")return fail("Unknown component geometry representation.");
@@ -52,7 +54,8 @@ TopoDS_Shape shape(const juce::var& record,juce::String& error)
     try
     {
         TopoDS_Shape result;
-        if(kind=="envelope")result=BRepPrimAPI_MakeBox((double)g["widthMm"],(double)g["heightMm"],(double)g["lengthMm"]).Shape();
+        if(kind=="craftStock")result=craft::shape(g,error);
+        else if(kind=="envelope")result=BRepPrimAPI_MakeBox((double)g["widthMm"],(double)g["heightMm"],(double)g["lengthMm"]).Shape();
         else if(kind=="cylinder")result=BRepPrimAPI_MakeCylinder((double)g["diameterMm"]/2,(double)g["lengthMm"]).Shape();
         else if(kind=="brep"){std::istringstream input(g["data"].toString().toStdString());BRep_Builder builder;BRepTools::Read(result,input,builder);}
         else {error="This catalog record lacks usable dimensions or an attached CAD model.";return {};}

@@ -214,6 +214,7 @@ private:
         draft.clear();
         if(material())
         {
+            draft["model"] = value.getProperty("model", "isotropic").toString();
             for(auto key:{"name","family","specification","condition","source","note"})draft[key]=value[key].toString();
             for(auto pair:{std::pair<const char*,const char*>{"densityKgPerM3","density"},{"youngsModulusMPa","youngsModulus"},{"poissonsRatio","poissonsRatio"},{"yieldStrengthMPa","yieldStrength"}})
                 draft[pair.first]=value["properties"][pair.second]["value"].toString();
@@ -233,6 +234,7 @@ private:
         text("name","Name");
         if(material())
         {
+            fields.add(new ChoiceField("Material model", draft["model"], {"Isotropic elastic", "Density only (no structural properties)"}, {"isotropic", "densityOnly"}));
             text("family","Material family");text("specification","Alloy / specification");text("condition","Condition / temper");
             text("densityKgPerM3","Density (kg/m^3)");text("youngsModulusMPa","Young's modulus (MPa)");text("poissonsRatio","Poisson's ratio");text("yieldStrengthMPa","Yield strength (MPa)");
         }
@@ -275,7 +277,7 @@ private:
             const auto raw=value.trim().toStdString();
             if(raw.empty())
             {
-                if(key=="densityKgPerM3"||key=="youngsModulusMPa"||key=="poissonsRatio"||key=="thicknessMm"){error=key+" is required.";return false;}
+                if(key=="densityKgPerM3"||key=="thicknessMm"||((key=="youngsModulusMPa"||key=="poissonsRatio")&&draft["model"]=="isotropic")){error=key+" is required.";return false;}
                 if(material())clear.add(key);else o->setProperty(key,juce::var());continue;
             }
             char* end=nullptr;const auto number=std::strtod(raw.c_str(),&end);

@@ -1,4 +1,5 @@
 #include "CadDocument.h"
+#include "CadCraftStock.h"
 #include <TDataStd_AsciiString.hxx>
 #include <set>
 #include <cmath>
@@ -44,7 +45,9 @@ bool CadDocument::insertComponent(const juce::var& record,const CadFrame& placem
     const auto snapshot=clone(record);const auto stamp=digest(juce::JSON::toString(snapshot));
     return mutate([&](juce::String& e)
     {
-        juce::String featureId;for(const auto& d:componentDefinitions)if(digest(juce::JSON::toString(d.record))==stamp&&find(d.featureId)){featureId=d.featureId;break;}
+        juce::String featureId;
+        // Each craft insertion is an independent piece. createInstance() remains the explicit linked-copy path.
+        if(!craft::isStock(record))for(const auto& d:componentDefinitions)if(digest(juce::JSON::toString(d.record))==stamp&&find(d.featureId)){featureId=d.featureId;break;}
         if(featureId.isEmpty())
         {
             const auto geometry=components::shape(snapshot,e);if(geometry.IsNull())return false;
@@ -62,5 +65,24 @@ bool CadDocument::insertComponent(const juce::var& record,const CadFrame& placem
         }
         CadMechanicalInstance instance;instance.id=newId("inst",nextNumber++);instance.name=record["name"].toString();instance.featureId=featureId;instance.placement=placement;mechanics.instances.push_back(instance);++mechanics.interfaceRevision;++mechanics.profileRevision;instanceId=instance.id;return true;
     },error);
+}
+bool CadDocument::updateCraftStock(const juce::String& feature, const juce::var& geometry, juce::String& error)
+{
+    const auto* existing = componentFor(feature);
+    if (!existing || !craft::isStock(*existing)) { error = "Select a parametric craft stock piece."; return false; }
+    if (!craft::validateGeometry(geometry, error)) return false;
+    if (geometry["profile"] != (*existing)["geometry"]["profile"]) { error = "Stock editing preserves its profile; insert a different template to change profiles."; return false; }
+    const auto authored = clone(geometry);
+    return mutate([&](juce::String&)
+    {
+        for (auto& definition : componentDefinitions) if (definition.featureId == feature)
+        {
+            put(definition.record, "geometry", authored);
+            put(definition.record, "authoredRevision", (int)definition.record.getProperty("authoredRevision", 1) + 1);
+            break;
+        }
+        ++mechanics.interfaceRevision; ++mechanics.profileRevision;
+        return true;
+    }, error);
 }
 }

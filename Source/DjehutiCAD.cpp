@@ -11,6 +11,7 @@
 #include "LocalAgentApi.h"
 #include "CadFixturesPanel.h"
 #include "CadComponentBrowser.h"
+#include "CadCraftBrowser.h"
 
 namespace
 {
@@ -325,6 +326,11 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     cadWorkspace = cadWorkspaceContent.get();
     dockManager->registerPanel("cad", "CAD Workspace", std::move(cadWorkspaceContent), CreationDock::DockTargetZone::CenterTab);
     cadWorkspace->onOpenViews = [this] { selectWorkspace(3); };
+    auto craftContent = std::make_unique<CadWorkspacePanel>(cadService);
+    craftWorkspace = craftContent.get();
+    craftWorkspace->setMotion(motionRuntime, motionLink.get());
+    craftWorkspace->onOpenViews = [this] { selectWorkspace(3); };
+    dockManager->registerPanel("craft", "Craft Designer", std::move(craftContent), CreationDock::DockTargetZone::CenterTab);
     cadWorkspace->setMotion(motionRuntime, motionLink.get());
     auto frustPanelContent = std::make_unique<FrustPanel>(!diagnosticMode);
     frustPanel = frustPanelContent.get();
@@ -345,6 +351,7 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
         // One body/face/edge selection shared by the model view and every 3D view.
         auto selection = std::make_shared<djehuti::cad::CadSelection>();
         cadWorkspace->setSelection(selection);
+        craftWorkspace->setSelection(selection);
         viewsPanel->setSelection(selection);
     }
     dockManager->registerPanel("views", "3D Views", std::move(viewsPanelContent), CreationDock::DockTargetZone::CenterTab);
@@ -370,6 +377,11 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     componentBrowser->selectedPart=[this]{auto id=cadWorkspace->automationState()["selected"].toString();if(const auto* instance=cadService->document().mechanicsData().findInstance(id))id=instance->featureId;return id;};
     componentBrowser->onInserted=[this](const juce::String& id){auto args=djehuti::cad::components::object();djehuti::cad::components::put(args,"action","select");djehuti::cad::components::put(args,"id",id);cadWorkspace->automation(args);};
     dockManager->registerPanel("components","Component Library",std::move(browserContent),CreationDock::DockTargetZone::CenterTab);
+    auto craftStockContent=std::make_unique<CadCraftBrowser>(cadService);craftBrowser=craftStockContent.get();
+    craftBrowser->selectedOccurrence=[this]{return craftWorkspace->automationState()["selected"].toString();};
+    craftBrowser->onInserted=[this](const juce::String& id){auto a=djehuti::cad::components::object();djehuti::cad::components::put(a,"action","select");djehuti::cad::components::put(a,"id",id);craftWorkspace->automation(a);};
+    craftBrowser->onMaterials=[this]{craftWorkspace->showMaterialsManager();};
+    dockManager->registerPanel("craftStock","Craft Stock",std::move(craftStockContent),CreationDock::DockTargetZone::Right);
     const auto bindDocking = [this](WorkspaceMenu& menu, const juce::String& id)
     {
         menu.changeDocking = [this,id](bool floating)
@@ -383,6 +395,7 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     bindDocking(nodePanel->workspaceMenu,"nodes"); bindDocking(viewsPanel->workspaceMenu,"views");
     bindDocking(fixturesPanel->workspaceMenu,"fixtures");
     bindDocking(componentBrowser->workspaceMenu,"components");
+    bindDocking(craftWorkspace->workspaceMenu,"craft");bindDocking(craftBrowser->workspaceMenu,"craftStock");
     viewsPanel->setContextCommand([safe = juce::Component::SafePointer<CadWorkspacePanel>(cadWorkspace)](const juce::String& action, const djehuti::cad::CadPick& pick)
     { if (safe != nullptr) safe->viewContextCommand(action,pick); });
     dockManager->activatePanel("cad"); defaultDockLayout = dockManager->captureLayout();
@@ -431,8 +444,9 @@ void DjehutiCAD::resized()
 
 void DjehutiCAD::selectWorkspace(int tabIndex)
 {
-    const juce::StringArray ids { "cad","frust","nodes","views","agent","fixtures","components" };
+    const juce::StringArray ids { "cad","frust","nodes","views","agent","fixtures","components","craft","craftStock" };
     if (dockManager != nullptr && juce::isPositiveAndBelow(tabIndex,ids.size())) { dockManager->showPanel(ids[tabIndex]); dockManager->activatePanel(ids[tabIndex]); }
+    if (dockManager != nullptr && tabIndex == 7) dockManager->showPanel("craftStock");
 }
 
 void DjehutiCAD::confirmCloseThen(std::function<void()> closeCallback)
@@ -472,6 +486,8 @@ juce::PopupMenu DjehutiCAD::getMenuForIndex(int index, const juce::String&)
         menu.addItem(kThreeDViews, "3D Views");
         menu.addItem(113, "Test Fixtures");
         menu.addItem(114, "Component Library");
+        menu.addItem(115, "Craft Designer");
+        menu.addItem(116, "Craft Stock browser");
         menu.addSeparator();
         menu.addItem(500, "Toolbox", true, dockManager->isPanelOpen("toolbox"));
         menu.addItem(501, "Restore default workspace layout");
@@ -511,6 +527,8 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
     else if (commandId == 112) { selectWorkspace(5); fixturesPanel->openFixture(); }
     else if (commandId == 113) selectWorkspace(5);
     else if (commandId == 114) selectWorkspace(6);
+    else if (commandId == 115) selectWorkspace(7);
+    else if (commandId == 116) selectWorkspace(8);
     else if (commandId == kAgentSettings)
     {
         auto content = new DjehutiAgentSettings(properties, [] {});
@@ -598,7 +616,7 @@ void DjehutiCAD::applyWorkspaceLayout(const juce::var& saved)
             object->setProperty("w",bounds.getWidth()); object->setProperty("h",bounds.getHeight());
         }
     // CreationDock moves the listed panels; omitted panels must explicitly stay hidden on restore.
-    for (const auto& id : juce::StringArray { "cad", "frust", "nodes", "views", "agent", "toolbox", "fixtures", "components" })
+    for (const auto& id : juce::StringArray { "cad", "frust", "nodes", "views", "agent", "toolbox", "fixtures", "components", "craft", "craftStock" })
         if (!visible.contains(id)) dockManager->hidePanel(id);
     dockManager->applyLayout(layout);
 }
@@ -607,10 +625,12 @@ void DjehutiCAD::restoreSettings()
 {
     const auto savedDock = juce::JSON::parse(properties.getUserSettings()->getValue("workspaceDockLayout"));
     if (savedDock.isObject()) applyWorkspaceLayout(savedDock);
-    else selectWorkspace(juce::jlimit(0, 6, properties.getUserSettings()->getIntValue("selectedTab",0)));
+    else selectWorkspace(juce::jlimit(0, 8, properties.getUserSettings()->getIntValue("selectedTab",0)));
     cadWorkspace->restoreViewState(properties.getUserSettings()->getValue("cadReferenceGuides"));
     viewsPanel->restoreViewState(properties.getUserSettings()->getValue("multiReferenceGuides"));
     cadWorkspace->restoreLayoutState(properties.getUserSettings()->getValue("cadWorkspaceLayout"));
+    craftWorkspace->restoreViewState(properties.getUserSettings()->getValue("craftReferenceGuides"));
+    craftWorkspace->restoreLayoutState(properties.getUserSettings()->getValue("craftWorkspaceLayout"));
 }
 
 void DjehutiCAD::saveSettings()
@@ -622,6 +642,7 @@ void DjehutiCAD::saveSettings()
         if (cadWorkspace != nullptr) settings->setValue("cadReferenceGuides",cadWorkspace->viewState());
         if (viewsPanel != nullptr) settings->setValue("multiReferenceGuides",viewsPanel->viewState());
         if (cadWorkspace != nullptr) settings->setValue("cadWorkspaceLayout", cadWorkspace->layoutState());
+        if (craftWorkspace != nullptr) {settings->setValue("craftReferenceGuides",craftWorkspace->viewState());settings->setValue("craftWorkspaceLayout",craftWorkspace->layoutState());}
         settings->saveIfNeeded();
     }
 }
@@ -637,7 +658,7 @@ std::string DjehutiCAD::runWorkspaceCommand(const juce::Component::SafePointer<D
         const auto action=args.getProperty("action","state").toString(); const auto workspace=args.getProperty("workspace","cad").toString();
         if(error.isEmpty())
         {
-            const juce::StringArray ids{"cad","frust","nodes","views","agent","toolbox","fixtures","components"};
+            const juce::StringArray ids{"cad","frust","nodes","views","agent","toolbox","fixtures","components","craft","craftStock"};
             if(!ids.contains(workspace)) error="Unknown workspace.";
             else if(action=="tool")
             {

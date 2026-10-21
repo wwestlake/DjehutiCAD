@@ -260,6 +260,7 @@ public:
     juce::var componentData() const;
     const juce::var* componentFor(const juce::String& feature) const;
     bool insertComponent(const juce::var& record,const CadFrame& placement,juce::String& instance,juce::String& error);
+    bool updateCraftStock(const juce::String& feature, const juce::var& geometry, juce::String& error);
     std::uint64_t revision() const { return documentRevision; }
     // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
     std::uint64_t documentInstance() const { return instanceId; }

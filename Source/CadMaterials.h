@@ -14,7 +14,8 @@
 // Units are part of the contract and stored with every value: density kg/m^3, Young's modulus MPa, Poisson's ratio
 // dimensionless ("1"), yield strength MPa. An absent property is "unspecified", which is different from zero.
 //
-// Constitutive model: schema 1 knows "isotropic" (linear elastic, one E and one nu). The model name and the keyed
+// Constitutive models: "densityOnly" supports mass without elastic assumptions; "isotropic" requires E and nu.
+// The model name and the keyed
 // property map leave room for direction-dependent models (e.g. orthotropic properties of 3-D printed plastics)
 // as new model names in a later schema, without changing how isotropic materials are stored.
 namespace djehuti::cad
@@ -24,7 +25,7 @@ struct CadMaterial
     juce::String id;                          // stable: "mat-<n>", never reused within a document
     juce::String name;
     int revision = 1;                         // advances on every edit of this definition; the id never changes
-    juce::String model = "isotropic";
+    juce::String model = "isotropic"; // "densityOnly" supports mass, never elastic analysis.
     std::optional<double> densityKgPerM3;     // required for "isotropic"
     std::optional<double> youngsModulusMPa;   // required for "isotropic"
     std::optional<double> poissonsRatio;      // required for "isotropic"

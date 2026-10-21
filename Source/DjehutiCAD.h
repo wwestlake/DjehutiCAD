@@ -18,6 +18,7 @@ class ThreeDViewsPanel;
 class CadWorkspacePanel;
 class CadFixturesPanel;
 class CadComponentBrowser;
+class CadCraftBrowser;
 namespace djehuti::cad { class CadFixtureService; }
 
 class DjehutiCAD final : public juce::Component,
@@ -62,6 +63,8 @@ private:
     CadWorkspacePanel* cadWorkspace = nullptr; // owned by DockManager
     CadFixturesPanel* fixturesPanel = nullptr; // owned by DockManager
     CadComponentBrowser* componentBrowser = nullptr; // owned by DockManager
+    CadWorkspacePanel* craftWorkspace = nullptr; // Same authoritative CAD service, owned by DockManager.
+    CadCraftBrowser* craftBrowser = nullptr;
     std::shared_ptr<djehuti::cad::CadFixtureService> fixtureService;
     std::shared_ptr<djehuti::cad::CadCommandService> cadService;
     std::shared_ptr<djehuti::cad::CadMotionRuntime> motionRuntime;

@@ -61,7 +61,7 @@ juce_add_gui_app(DjehutiCAD
 set_target_properties(DjehutiCAD PROPERTIES OUTPUT_NAME "djehuti_cad")
 
 juce_add_binary_data(DjehutiEngineeringData HEADER_NAME EngineeringData.h NAMESPACE EngineeringData
-    SOURCES Resources/engineering-reference.json Resources/component-library-seed.json)
+    SOURCES Resources/engineering-reference.json Resources/component-library-seed.json Resources/craft-stock-seed.json)
 target_link_libraries(DjehutiCAD PRIVATE DjehutiEngineeringData)
 
 target_sources(DjehutiCAD PRIVATE
@@ -144,6 +144,11 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadComponentBrowser.h
     Source/CadComponentBrowser.cpp
     Source/CadComponentChecks.cpp
+    Source/CadCraftStock.cpp
+    Source/CadCraftStock.h
+    Source/CadCraftBrowser.cpp
+    Source/CadCraftBrowser.h
+    Source/CadCraftChecks.cpp
     Source/CadMaterials.cpp
     Source/CadEngineeringUnits.h
     Source/CadEngineeringUnits.cpp

@@ -1,5 +1,6 @@
 #include "CadComponents.h"
 #include "CadDocument.h"
+#include "CadCraftStock.h"
 #include <EngineeringData.h>
 #include <set>
 #include <cmath>
@@ -30,7 +31,13 @@ bool CadComponentLibrary::ensureLoaded(juce::String& error)
     diskText=file.existsAsFile()?file.loadFileAsString():juce::String();
     const auto json=file.existsAsFile()?diskText:juce::String::fromUTF8(EngineeringData::componentlibraryseed_json,EngineeringData::componentlibraryseed_jsonSize);
     if(!decode(juce::JSON::parse(json),next,error))return false;
-    if(!file.existsAsFile()&&!save(next,error))return false;entries=std::move(next);loaded=true;return true;
+    bool extended=false;
+    for(const auto& stock:craft::templates())
+    {
+        bool present=false;for(const auto& entry:next)if(entry["id"]==stock["id"]){present=true;break;}
+        if(!present){if(!validate(stock,error))return false;next.add(stock);extended=true;}
+    }
+    if((!file.existsAsFile()||extended)&&!save(next,error))return false;entries=std::move(next);loaded=true;return true;
 }
 bool CadComponentLibrary::save(const juce::Array<juce::var>& next,juce::String& error)
 {
@@ -69,6 +76,7 @@ juce::var CadComponentLibrary::command(const juce::var& args,CadDocument& docume
     if(action=="reload")loaded=false;bool ok=ensureLoaded(error);
     if(ok&&(action=="list"||action=="reload")){put(response,"records",clone(entries));put(response,"path",file.getFullPathName());}
     else if(ok&&action=="document")put(response,"definitions",document.componentData());
+    else if(ok&&action=="editStock")ok=document.updateCraftStock(args["feature"].toString(),args["geometry"],error);
     else if(ok&&action=="importFile")
     {
         const auto path=args["path"].toString();juce::Array<juce::var> records;auto parsing=object(),importing=object();
@@ -107,19 +115,54 @@ juce::var CadComponentLibrary::command(const juce::var& args,CadDocument& docume
                 for(const auto* key:{"x","y","z","rx","ry","rz"})if(p.hasProperty(key)&&(!(p[key].isDouble()||p[key].isInt()||p[key].isInt64())||!std::isfinite((double)p[key])||std::abs((double)p[key])>1e9)){ok=false;error="Placement coordinates must be finite and within +/- 1e9 (mm/degrees).";}
                 if(ok)placement=mech::frameFromEulerDegrees((double)p["x"],(double)p["y"],(double)p["z"],(double)p["rx"],(double)p["ry"],(double)p["rz"]);
             }
-            if(ok)ok=document.insertComponent(*found,placement,identity,error);if(ok)put(response,"definitions",document.componentData());
+            auto record=clone(*found);
+            if(craft::isStock(record))
+            {
+                put(record,"templateId",record["id"]);put(record,"templateRevision",record["revision"]);put(record,"templateGeometry",clone(record["geometry"]));put(record,"authoredRevision",1);
+                if(args.hasProperty("geometry"))put(record,"geometry",clone(args["geometry"]));
+                if(args.hasProperty("material"))put(record,"material",clone(args["material"]));
+                if(!craft::isStock(record)||record["geometry"]["profile"]!=(*found)["geometry"]["profile"]){ok=false;error="Stock insertion must preserve its template profile.";}
+            }
+            if(ok)ok=document.insertComponent(record,placement,identity,error);if(ok)put(response,"definitions",document.componentData());
         }
-        else if(action=="update"||action=="attachModel")
+        else if(action=="update"||action=="attachModel"||action=="updateStock"||action=="duplicateStock")
         {
             auto item=clone(*found);if(action=="attachModel")
             {const auto path=args["path"].toString();ok=juce::File::isAbsolutePath(path)&&attachModel(item,juce::File(path),error);if(!ok&&error.isEmpty())error="Choose an absolute local CAD path.";}
+            else if(action=="updateStock"||action=="duplicateStock")
+            {
+                if(!craft::isStock(item)){ok=false;error="Select a craft stock template.";}
+                else
+                {
+                    if(args.hasProperty("geometry"))put(item,"geometry",clone(args["geometry"]));
+                    if(!craft::isStock(item)||item["geometry"]["profile"]!=(*found)["geometry"]["profile"]){ok=false;error="A template edit must preserve its stock profile.";}
+                    if(args.hasProperty("material"))
+                    {CadMaterial m;ok=ok&&matl::materialFromJson(args["material"],m,error)&&matl::validateMaterial(m,error);if(ok)put(item,"material",clone(args["material"]));}
+                    if(action=="duplicateStock"){put(item,"id","craft-user-"+juce::Uuid().toDashedString());put(item,"name",item["name"].toString()+" copy");}
+                }
+            }
             else for(const auto* key:{"name","category","description"})if(args["definition"].hasProperty(key))put(item,key,args["definition"][key]);
             if(ok){put(item,"revision",(int)(*found)["revision"]+1);put(item,"edited",true);ok=validate(item,error);}
-            if(ok){auto next=entries;for(auto& record:next)if(record["id"]==item["id"])record=item;ok=save(next,error);if(ok){entries=std::move(next);identity=item["id"].toString();}}
+            if(ok){auto next=entries;if(action=="duplicateStock")next.add(item);else for(auto& record:next)if(record["id"]==item["id"])record=item;ok=save(next,error);if(ok){entries=std::move(next);identity=item["id"].toString();}}
         }
         else {ok=false;error="Unknown component action: "+action;}
     }
     put(response,"ok",ok);if(!ok)put(response,"error",error);if(identity.isNotEmpty())put(response,"id",identity);return response;
 }
-juce::var CadCommandService::componentCommand(const juce::var& args){return componentLibrary.command(args,model);}
+juce::var CadCommandService::componentCommand(const juce::var& args)
+{
+    auto request=clone(args);juce::String error;
+    if(args["action"].toString()=="insert"&&componentLibrary.ensureLoaded(error))
+        if(const auto* entry=componentLibrary.find(args["component"].toString());entry&&craft::isStock(*entry)&&!args.hasProperty("material"))
+        {
+            if(entry->hasProperty("material"))put(request,"material",clone((*entry)["material"]));
+            else if(engineeringCatalog.ensureLoaded(error))
+            {
+                if(const auto* material=engineeringCatalog.materialsData().find((*entry)["materialCatalogId"].toString()))put(request,"material",matl::materialToJson(*material));
+                else error="Craft template references an unavailable engineering material.";
+            }
+            if(error.isNotEmpty()){auto r=object();put(r,"ok",false);put(r,"error",error);return r;}
+        }
+    return componentLibrary.command(request,model);
+}
 }

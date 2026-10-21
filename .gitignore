@@ -12,3 +12,6 @@ third_party/libavoid/libavoid.pc.in
 third_party/libavoid/*.sln
 third_party/libavoid/*.vcxproj
 third_party/libavoid/mtst.*
+__pycache__/
+*.pyc
+

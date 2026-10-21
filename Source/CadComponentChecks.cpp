@@ -19,7 +19,7 @@ bool runCadComponentCheck(juce::var& report,const juce::File& researchRoot)
     juce::Array<juce::var> importReports;
     if(researchRoot!=juce::File())for(const auto* name:{"DjehutiCAD_Robotics_Materials_Research_Catalog_2026-10-20.xlsx","DjehutiCAD_Commercial_Battery_Pack_Library_2026-10-20.xlsx"})
     {auto a=object();put(a,"path",researchRoot.getChildFile(name).getFullPathName());auto r=command("importFile",a);check((bool)r["ok"]&&r["parsing"]["invalid"].size()==0,"Import actual research workbook",r);importReports.add(r);r=command("importFile",a);check((bool)r["ok"]&&(int)r["import"]["imported"]==0&&r["import"]["conflicts"].size()==0,"Repeated workbook imports are idempotent",r);}
-    state=command("list");const auto records=state["records"];check(records.size()==75,"Catalog covers 32 robot components and 43 battery packs",records.size());
+    state=command("list");const auto records=state["records"];int researched=0;for(const auto& item:*records.getArray())if(item["recordId"].toString().startsWith("RC-")||item["recordId"].toString().startsWith("BAT-"))++researched;check(researched==75,"Catalog retains 32 robot components and 43 battery packs alongside stock templates",researched);
     if(records.size()<75){report=object();put(report,"passed",false);put(report,"checks",checks);return false;}
     // Seed export is produced by the production importer, never by a second workbook mapping implementation.
     auto seed=object();put(seed,"format","djehuti-component-library");put(seed,"schemaVersion",1);put(seed,"records",records);juce::File::getCurrentWorkingDirectory().getChildFile("build/component-library-seed.generated.json").replaceWithText(juce::JSON::toString(seed));

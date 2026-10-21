@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "craft-wood-strip",
+      "name": "Wood strip",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Wood",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-wood",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "rectangular",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 120,
+        "widthMm": 10,
+        "thicknessMm": 3
+      }
+    },
+    {
+      "id": "craft-wood-block",
+      "name": "Wood block",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Wood",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-wood",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "rectangular",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 30,
+        "widthMm": 20,
+        "thicknessMm": 15
+      }
+    },
+    {
+      "id": "craft-wood-dowel",
+      "name": "Wood dowel",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Wood",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-wood",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "rod",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 120,
+        "outerDiameterMm": 6
+      }
+    },
+    {
+      "id": "craft-rounded-stick",
+      "name": "Rounded craft stick",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Wood",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-wood",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "roundedStick",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 120,
+        "widthMm": 12,
+        "thicknessMm": 2
+      }
+    },
+    {
+      "id": "craft-plastic-rod",
+      "name": "Plastic rod",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Plastic",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-plastic",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "rod",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 100,
+        "outerDiameterMm": 5
+      }
+    },
+    {
+      "id": "craft-plastic-tube",
+      "name": "Plastic tube",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Plastic",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-plastic",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "tube",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 100,
+        "outerDiameterMm": 8,
+        "innerDiameterMm": 6
+      }
+    },
+    {
+      "id": "craft-cardboard-sheet",
+      "name": "Cardboard sheet",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Cardboard",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-cardboard",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "rectangular",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 200,
+        "widthMm": 150,
+        "thicknessMm": 2
+      }
+    },
+    {
+      "id": "craft-foam-board-panel",
+      "name": "Foam board panel",
+      "revision": 1,
+      "origin": "custom",
+      "category": "Craft/Foam board",
+      "description": "Editable illustrative dimensions in mm; not a commercial product specification. Length follows local +X; thickness follows +Z.",
+      "reviewStatus": "Illustrative editable preset",
+      "materialCatalogId": "mat-craft-foam-board",
+      "provenance": {
+        "source": "DjehutiCAD Craft Designer Phase 1 educational sample",
+        "dimensions": "Illustrative defaults; user must enter actual stock dimensions.",
+        "density": "Engineering catalog density-only reference; approximate."
+      },
+      "properties": [],
+      "geometry": {
+        "kind": "craftStock",
+        "schemaVersion": 1,
+        "profile": "rectangular",
+        "level": "parametricStock",
+        "label": "Actual solid from authored dimensions",
+        "lengthMm": 200,
+        "widthMm": 150,
+        "thicknessMm": 5
+      }
+    }
+  ]
+}

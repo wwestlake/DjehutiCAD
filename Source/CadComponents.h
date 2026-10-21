@@ -8,7 +8,7 @@ class CadDocument;
 struct CadComponentDefinition
 {
     juce::String featureId;
-    juce::var record; // Frozen record, including geometry. One definition per document, many assembly instances.
+    juce::var record; // Catalog snapshot; craft stock dimensions are explicitly editable through CadDocument.
 };
 namespace components
 {
