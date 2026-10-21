@@ -156,6 +156,10 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadAnalysisCases.cpp
     Source/CadStructuralModel.h
     Source/CadStructuralModel.cpp
+    Source/CadCoilWinder.h
+    Source/CadCoilWinder.cpp
+    Source/CadCoilWinderChecks.h
+    Source/CadCoilWinderChecks.cpp
     Source/CadExportDialog.h
     Source/CadExportDialog.cpp
 )

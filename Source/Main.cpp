@@ -14,6 +14,7 @@
 #include "Viewport3D.h"
 #include "CadMaterialsManager.h"
 #include "CadFixturesPanel.h"
+#include "CadCoilWinderChecks.h"
 namespace djehuti::cad { bool runCadStockCheck(juce::var&); }
 
 #include <BRepBndLib.hxx>
@@ -1252,10 +1253,15 @@ class DjehutiCADApplication final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "DjehutiCAD"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return getCommandLineParameters().startsWith("--cad-fixture-") || getCommandLineParameters().startsWith("--cad-component-") || getCommandLineParameters().startsWith("--cad-craft-"); }
+    bool moreThanOneInstanceAllowed() override { return getCommandLineParameters().startsWith("--cad-fixture-") || getCommandLineParameters().startsWith("--cad-component-") || getCommandLineParameters().startsWith("--cad-craft-") || getCommandLineParameters().startsWith("--cad-coil-winder-"); }
 
     void initialise(const juce::String& commandLine) override
     {
+        if(commandLine.startsWith("--cad-coil-winder-check"))
+        {
+            juce::var report;const bool ok=djehuti::cad::runCadCoilWinderCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-coil-winder-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(ok?0:1);
+        }
         if(commandLine.startsWith("--cad-craft-phase4-check"))
         {
             juce::var report;const bool ok=djehuti::cad::runCadCraftPhase4Check(report);
