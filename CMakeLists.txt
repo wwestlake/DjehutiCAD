@@ -130,6 +130,12 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadFixturesPanel.cpp
     Source/CadFixturesPanel.h
     Source/CadFixtureChecks.cpp
+    Source/CadCantilever.h
+    Source/CadCantilever.cpp
+    Source/CadFixtureGeometry.h
+    Source/CadFixtureGeometry.cpp
+    Source/CadFixtureStructural.cpp
+    Source/CadCantileverChecks.cpp
     Source/CadMaterials.cpp
     Source/CadEngineeringUnits.h
     Source/CadEngineeringUnits.cpp

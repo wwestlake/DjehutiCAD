@@ -2,6 +2,7 @@
 #include "CadGeometricProperties.h"
 #include "CadEngineeringUnits.h"
 #include "CadKinematics.h"
+#include "CadFixtureGeometry.h"
 #include <TDataStd_AsciiString.hxx>
 #include <TDocStd_Application.hxx>
 #include <BinDrivers.hxx>
@@ -41,6 +42,15 @@ const juce::var* entry(const juce::var& v,const juce::String& key,const juce::St
 { if(auto* a=v[juce::Identifier(key)].getArray())for(const auto& item:*a)if(item["id"].toString()==id)return &item;return nullptr; }
 juce::String drawId(const juce::String& target,const juce::String& component) { return target+"|"+component; }
 juce::StringArray kinds() { return {"fixed","support","force","moment","pressure","distributedForce","displacement","reaction","stress","strain","safetyFactor","point","jointLock"}; }
+gp_Pnt equipmentPoint(const juce::var& e){return {(double)e["pointMm"][0],(double)e["pointMm"][1],(double)e["pointMm"][2]};}
+bool attachment(const CadDocument& doc,const juce::String& feature,const juce::var& item,juce::String& error)
+{
+    if(item["attachmentIssue"].toString().isNotEmpty()){error=item["attachmentIssue"].toString();return false;}
+    TopoDS_Face face;gp_Pnt centre;bool planar=false;
+    if(!fixturegeom::face(doc,feature,item["face"].toString(),face,centre,planar,error))return false;
+    if(!fixturegeom::onFace(face,equipmentPoint(item))){error="Attachment point is off its referenced trimmed face; correct its position.";return false;}
+    return true;
+}
 }
 CadTestFixture::CadTestFixture(const juce::String& name)
 {
@@ -81,6 +91,7 @@ bool CadTestFixture::checkStructure(const juce::var& c,juce::String& error) cons
         const auto* m=entry(c,"models",e["target"].toString());if(!m)return fail("Equipment target is not a fixture occurrence.");
         if((*m)["kind"].toString()=="assembly"&&e["component"].toString().isEmpty())return fail("Select an assembly component instance.");
         if(!vector(e["pointMm"])||!vector(e["direction"]))return fail("Equipment point and direction need three finite numbers.");
+        if(e.hasProperty("anchor")&&e["anchor"].toString()!="point"&&e["anchor"].toString()!="faceCentre")return fail("Attachment anchor must be point or faceCentre.");
         const auto kind=e["kind"].toString();
         if(juce::StringArray{"force","moment","pressure","distributedForce"}.contains(kind))
         {
@@ -112,7 +123,7 @@ bool CadTestFixture::resolve(const juce::var& source,Resolved& out,juce::String&
     auto document=std::make_shared<CadDocument>();
     if(!file.copyFileTo(staged.getFile())||!document->load(staged.getFile(),error))return false;
     if(hashFile(file)!=digest){error="Source changed while being read. Retry validation.";return false;}
-    out.document=document;out.digest=digest;out.error.clear();return true;
+    out.document=document;out.digest=digest;out.error.clear();++serial;return true;
 }
 std::vector<CadTestFixture::Body> CadTestFixture::bodies()
 {
@@ -152,7 +163,7 @@ juce::var CadTestFixture::validation()
         const Body* body=nullptr;for(const auto& b:parts)if(b.target==item["target"].toString()&&b.component==item["component"].toString()){body=&b;break;}
         if(!body){problems.add("Invalid equipment target: "+item["id"].toString());continue;}
         if(item["face"].toString().isNotEmpty())
-        {std::vector<CadFaceInfo> faces;juce::String error;body->source->listFaces(body->feature,faces,error);int matches=0;for(const auto& f:faces)if(f.token==item["face"].toString()&&f.area>0)++matches;if(matches!=1)problems.add("Missing or ambiguous persistent face: "+item["id"].toString());}
+        {juce::String error;if(!attachment(*body->source,body->feature,item,error))problems.add(item["id"].toString()+": "+error);}
         if(item["kind"].toString()=="jointLock")
         {
             const auto* joint=body->source->mechanicsData().findJoint(item["joint"].toString());
@@ -168,7 +179,7 @@ juce::var CadTestFixture::methods()
 {
     juce::Array<juce::var> list;
     for(const auto* id:{"geometricProperties","massProperties","kinematics","linearStatic","modal","thermal","dynamics"})
-    {auto v=object();put(v,"id",id);const bool available=juce::StringArray{"geometricProperties","massProperties","kinematics"}.contains(id);put(v,"available",available);put(v,"description",juce::String(id)=="geometricProperties"?"OCCT volume, centroid and geometric inertia; no response to loads":juce::String(id)=="massProperties"?"Density-scaled mass, centroid and self-weight; no support reactions":juce::String(id)=="kinematics"?"Existing joint/loop solver at reference coordinates and fixture joint locks; no forces or dynamics":"No validated backend installed; setup and measurement requests are retained");list.add(v);}
+    {auto v=object();put(v,"id",id);const bool available=juce::StringArray{"geometricProperties","massProperties","kinematics","linearStatic"}.contains(id);put(v,"available",available);put(v,"description",juce::String(id)=="geometricProperties"?"OCCT volume, centroid and geometric inertia; no response to loads":juce::String(id)=="massProperties"?"Density-scaled mass, centroid and self-weight; no support reactions":juce::String(id)=="kinematics"?"Existing joint/loop solver at reference coordinates and fixture joint locks; no forces or dynamics":juce::String(id)=="linearStatic"?"Rectangular Box cantilever only: one fixed end, one transverse end force, explicit local beam/bending axes; no gravity or general FEA":"No validated backend installed; setup and measurement requests are retained");list.add(v);}
     return list;
 }
 juce::var CadTestFixture::execute()
@@ -178,7 +189,9 @@ juce::var CadTestFixture::execute()
     const auto method=config["settings"]["method"].toString();put(run,"method",method);
     juce::String status="completed",error;
     if(!(bool)checked["valid"]){status="invalid";error="Resolve model validation problems before executing.";}
-    else if(!juce::StringArray{"geometricProperties","massProperties","kinematics"}.contains(method)){status="unsupported";error="No validated "+method+" backend is installed.";}
+    else if(!juce::StringArray{"geometricProperties","massProperties","kinematics","linearStatic"}.contains(method)){status="unsupported";error="No validated "+method+" backend is installed.";}
+    else if(method=="linearStatic")
+    {if(!executeCantilever(run,rows,materials,error))status="unsupported";}
     else if(method=="kinematics")
     {
         for(const auto& model:*config["models"].getArray())
@@ -222,6 +235,7 @@ juce::var CadTestFixture::execute()
     for(const auto& e:*config["equipment"].getArray())if(juce::StringArray{"displacement","reaction","stress","strain","safetyFactor","point"}.contains(e["kind"].toString()))
     {
         auto request=copy(e);put(request,"status","unsupported");put(request,"reason","This method does not calculate the requested physical response.");
+        if(status=="completed"&&method=="linearStatic")request=cantileverMeasurement(e,rows[0]);
         if(status=="completed"&&e["kind"].toString()=="point"&&method!="kinematics")for(const auto& b:bodies())if(b.target==e["target"].toString()&&b.component==e["component"].toString())
         {gp_Pnt point((double)e["pointMm"][0],(double)e["pointMm"][1],(double)e["pointMm"][2]);point.Transform(b.transform);put(request,"status","completed");put(request,"value",vec(point.X(),point.Y(),point.Z()));put(request,"unit","mm");put(request,"reason","Reference point in fixture-world coordinates, not a displacement response.");}
         measurements.add(request);
@@ -229,7 +243,7 @@ juce::var CadTestFixture::execute()
     put(run,"status",status);if(error.isNotEmpty())put(run,"message",error);
     // Failed runs never publish partial numerical tables as usable results.
     if(status=="completed"){put(run,"rows",rows);put(run,"materials",materials);}put(run,"measurements",measurements);
-    put(run,"scope","Reference configuration. Loads, supports and measurement requests are retained; geometric/mass/kinematic methods do not compute structural response.");
+    put(run,"scope",method=="linearStatic"?"Euler-Bernoulli rectangular prismatic beam; static transverse end force, ideal fixed clamp, homogeneous linear elasticity, small displacement, length/section >= 10. No shear deformation, torsion, self-weight, contact or local clamp stress concentrations. Extreme stresses/strains are section envelopes; point probes report their configured fibre. Magenta curve: calculated neutral axis at the labeled visualization scale; solid geometry is undeformed.":"Reference configuration. Geometric/mass/kinematic methods do not compute structural response.");
     result=run;dirty=true;return run;
 }
 juce::var CadTestFixture::inspect()
@@ -275,6 +289,25 @@ juce::var CadTestFixture::command(const juce::var& args)
             if(action=="relocateSource"){if(!juce::File::isAbsolutePath(args["path"].toString())){e="Choose an absolute source path.";return false;}put(*source,"path",args["path"]);}
             Resolved resolved;if(!resolve(*source,resolved,e))return false;
             if(resolved.document->mechanicsData().modelId!=(*source)["modelId"].toString()){e="Replacement source has a different model identity.";return false;}
+            // Remap only an explicitly authored face-centre anchor on one surviving planar face. Arbitrary
+            // points are preserved if still on the trimmed face; no nearest-face or nearest-body retargeting.
+            for(auto& item:*c["equipment"].getArray())
+            {
+                const auto* model=entry(c,"models",item["target"].toString());
+                if(!model||(*model)["source"]!=(*source)["id"]||item["face"].toString().isEmpty())continue;
+                juce::String feature=(*model)["feature"].toString(),reason;
+                if((*model)["kind"].toString()=="assembly")
+                {const auto* instance=resolved.document->mechanicsData().findInstance(item["component"].toString());feature=instance?instance->featureId:juce::String();}
+                TopoDS_Face face;gp_Pnt centre;bool planar=false;
+                item.getDynamicObject()->removeProperty("attachmentIssue");
+                if(fixturegeom::face(*resolved.document,feature,item["face"].toString(),face,centre,planar,reason))
+                {
+                    if(item["anchor"].toString()=="faceCentre")
+                    {if(planar&&fixturegeom::onFace(face,centre))put(item,"pointMm",vec(centre.X(),centre.Y(),centre.Z()));else reason="Face-centre anchor is not unambiguous on the revised planar trimmed face; reattach manually.";}
+                    else if(!fixturegeom::onFace(face,equipmentPoint(item)))reason="Stored point is off the revised face; reattach manually.";
+                }
+                if(reason.isNotEmpty())put(item,"attachmentIssue",reason);
+            }
             put(*source,"digest",resolved.digest);put(*source,"cadRevision",(juce::int64)resolved.document->revision());sources[(*source)["id"].toString()]=resolved;return true;
         }
         if(action=="addModel")
@@ -289,6 +322,15 @@ juce::var CadTestFixture::command(const juce::var& args)
         {
             auto item=copy(args["definition"]);if(!item.isObject()){e="Equipment definition required.";return false;}id=item["id"].toString();if(id.isEmpty())id=uid("equipment-");put(item,"id",id);
             if(!item.hasProperty("pointMm"))put(item,"pointMm",vec(0,0,0));if(!item.hasProperty("direction"))put(item,"direction",vec(0,0,-1));
+            item.getDynamicObject()->removeProperty("attachmentIssue");
+            // Numeric edits away from the picked centre turn the anchor into an exact point. This prevents
+            // later source acceptance from undoing an intentional user position.
+            if(item["anchor"].toString()=="faceCentre"&&vector(item["pointMm"]))
+            {
+                bool centreMatches=false;for(const auto& b:bodies())if(b.target==item["target"].toString()&&b.component==item["component"].toString())
+                {TopoDS_Face face;gp_Pnt centre;bool planar=false;juce::String reason;centreMatches=fixturegeom::face(*b.source,b.feature,item["face"].toString(),face,centre,planar,reason)&&planar&&fixturegeom::onFace(face,centre)&&centre.Distance(equipmentPoint(item))<=fixturegeom::attachmentToleranceMm;}
+                if(!centreMatches)put(item,"anchor","point");
+            }
             const auto kind=item["kind"].toString();if(juce::StringArray{"force","moment","pressure","distributedForce"}.contains(kind))
             {double si=0;const auto quantity=kind=="moment"?"moment":kind=="pressure"?"stress":"force";if(!numeric(item["magnitude"])||!units::toSI(quantity,(double)item["magnitude"],item["unit"].toString(),si,e))return false;put(item,"magnitude",si);put(item,"unit",units::siUnit(quantity));}
             if(auto* old=entry(c,"equipment",id))*old=item;else c["equipment"].getArray()->add(item);return true;
@@ -337,16 +379,41 @@ juce::var CadTestFixture::facePoint(const juce::String& id,int index)
 std::vector<CadOverlayLine> CadTestFixture::overlays()
 {
     std::vector<CadOverlayLine> lines;
-    for(const auto& e:*config["equipment"].getArray())for(const auto& b:bodies())if(b.target==e["target"].toString()&&b.component==e["component"].toString())
+    const auto parts=bodies();
+    for(const auto& e:*config["equipment"].getArray())for(const auto& b:parts)if(b.target==e["target"].toString()&&b.component==e["component"].toString())
     {
         // Points and directions are in source-document coordinates, carried with the fixture occurrence.
         gp_Pnt p((double)e["pointMm"][0],(double)e["pointMm"][1],(double)e["pointMm"][2]);p.Transform(b.transform);
-        const auto kind=e["kind"].toString();const juce::uint32 colour=(kind=="fixed"||kind=="support")?0xff44ddaa:juce::StringArray{"force","moment","pressure","distributedForce"}.contains(kind)?0xffffaa44:0xff55bbff;
+        juce::String reason;const bool valid=e["face"].toString().isEmpty()||attachment(*b.source,b.feature,e,reason);
+        const auto kind=e["kind"].toString();const juce::uint32 colour=!valid?0xffff4444:(kind=="fixed"||kind=="support")?0xff44ddaa:juce::StringArray{"force","moment","pressure","distributedForce"}.contains(kind)?0xffffaa44:0xff55bbff;
         const auto add=[&](const gp_Pnt& a,const gp_Pnt& z){lines.push_back({{(float)a.X(),(float)a.Y(),(float)a.Z()},{(float)z.X(),(float)z.Y(),(float)z.Z()},colour});};
         for(int axis=0;axis<3;++axis){gp_Vec d(axis==0?3:0,axis==1?3:0,axis==2?3:0);add(p.Translated(-d),p.Translated(d));}
         if(juce::StringArray{"force","moment","pressure","distributedForce"}.contains(kind)){gp_Vec d((double)e["direction"][0],(double)e["direction"][1],(double)e["direction"][2]);d.Transform(b.transform);add(p,p.Translated(d*20));}
     }
+    if(result["status"].toString()=="completed"&&result["method"].toString()=="linearStatic"&&result["inputStamp"].toString()==inputStamp()&&(bool)validation()["valid"])
+        for(const auto& row:*result["rows"].getArray())
+        {
+            const double scale=(double)row["visualizationScale"];const auto stations=row["stations"];
+            const auto deformed=[&](int i){std::array<float,3> p{};for(int k=0;k<3;++k)p[k]=(float)((double)stations[i]["referenceMm"][k]+1000*scale*(double)stations[i]["displacementWorldM"][k]);return p;};
+            for(int i=1;i<stations.size();++i)lines.push_back({deformed(i-1),deformed(i),0xffff66dd});
+        }
     return lines;
+}
+std::shared_ptr<const CadPoseSnapshot> CadTestFixture::dragPose(const juce::String& target,const juce::String& plane)
+{
+    auto pose=std::make_shared<CadPoseSnapshot>();pose->documentInstance=(std::uint64_t)id().hashCode64();pose->documentRevision=serial;pose->serial=serial;
+    const auto* model=entry(config,"models",target);if(!model)return pose;
+    const auto p=(*model)["placement"];pose->dragHandle={true,target,{(float)p["x"],(float)p["y"],(float)p["z"]},{plane=="YZ"?1.0f:0.0f,plane=="XZ"?1.0f:0.0f,plane=="XY"?1.0f:0.0f}};
+    // Visible handle cross, using existing overlay rendering; rotations remain the numeric placement controls.
+    for(int axis=0;axis<3;++axis){auto a=pose->dragHandle.point,b=a;a[axis]-=5;b[axis]+=5;pose->overlay.push_back({a,b,0xffffffff});}
+    return pose;
+}
+std::vector<std::pair<juce::String,std::array<float,3>>> CadTestFixture::equipmentMarkers()
+{
+    std::vector<std::pair<juce::String,std::array<float,3>>> markers;const auto parts=bodies();
+    for(const auto& e:*config["equipment"].getArray())for(const auto& b:parts)if(b.target==e["target"].toString()&&b.component==e["component"].toString())
+    {const auto p=equipmentPoint(e).Transformed(b.transform);markers.push_back({e["id"].toString(),{(float)p.X(),(float)p.Y(),(float)p.Z()}});}
+    return markers;
 }
 std::shared_ptr<CadTestFixture> CadFixtureService::find(const juce::String& id) const {for(const auto& fixture:fixtures)if(fixture->id()==id)return fixture;return {};}
 juce::var CadFixtureService::command(const juce::var& args)

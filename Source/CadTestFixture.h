@@ -24,10 +24,13 @@ public:
     std::shared_ptr<CadTestFixture> duplicate(const juce::String& name) const;
     std::shared_ptr<const CadRenderSnapshot> snapshot();
     std::vector<CadOverlayLine> overlays();
+    std::vector<std::pair<juce::String,std::array<float,3>>> equipmentMarkers();
     juce::String faceToken(const juce::String& drawId, int faceIndex);
     juce::var facePoint(const juce::String& drawId, int faceIndex);
     juce::var targetChoices();
     juce::var materialFor(const juce::String& target,const juce::String& component={});
+    // Reuses Viewport3D's world-mm drag handle; translation remains fixture configuration.
+    std::shared_ptr<const CadPoseSnapshot> dragPose(const juce::String& target, const juce::String& plane);
     static juce::var methods();
 private:
     struct Resolved { std::shared_ptr<const CadDocument> document; juce::String digest, error; };
@@ -37,6 +40,8 @@ private:
     bool resolve(const juce::var& source, Resolved&, juce::String& error);
     std::vector<Body> bodies();
     juce::var execute();
+    bool executeCantilever(juce::var& run, juce::Array<juce::var>& rows, juce::Array<juce::var>& materials, juce::String& error);
+    juce::var cantileverMeasurement(const juce::var& equipment, const juce::var& row);
     juce::String inputStamp() const;
     void writeOCAF();
     bool restoreOCAF(juce::String&);
@@ -60,4 +65,5 @@ private:
     std::vector<std::shared_ptr<CadTestFixture>> fixtures;
 };
 bool runCadFixtureCheck(juce::var& report);
+bool runCadCantileverCheck(juce::var& report);
 }

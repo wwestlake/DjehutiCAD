@@ -64,6 +64,9 @@ public:
     // drag move the target within its drag plane; every other press keeps orbit, pan and picking unchanged.
     void setTargetDragEnabled(bool enabled) { targetDragEnabled = enabled; if (!enabled) draggingTarget = false; }
     std::function<void(const juce::String& targetId, const std::array<float, 3>& point, bool finished)> onTargetDragged;
+    // Optional fixture equipment picking; empty in ordinary CAD views. Uses the same camera projection.
+    void setPickMarkers(std::vector<std::pair<juce::String,std::array<float,3>>> markers) { pickMarkers=std::move(markers); }
+    std::function<void(const juce::String&)> onMarkerPicked;
 
 private:
     friend bool runViewportInteractionCheck(juce::String&);
@@ -83,6 +86,7 @@ private:
     bool targetDragEnabled = false, draggingTarget = false;
     juce::String dragTargetId;
     std::array<float, 3> dragPlanePoint {}, dragPlaneNormal {};
+    std::vector<std::pair<juce::String,std::array<float,3>>> pickMarkers;
 
     void timerCallback() override;
     void newOpenGLContextCreated() override;

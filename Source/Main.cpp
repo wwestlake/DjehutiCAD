@@ -1253,6 +1253,11 @@ public:
 
     void initialise(const juce::String& commandLine) override
     {
+        if (commandLine.startsWith("--cad-fixture-cantilever-check"))
+        {
+            juce::var report;const bool passed=djehuti::cad::runCadCantileverCheck(report);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-cantilever-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(passed?0:1);
+        }
         if (commandLine.startsWith("--cad-fixture-ui-check"))
         {
             const bool keepOpen=commandLine.contains("--interactive");

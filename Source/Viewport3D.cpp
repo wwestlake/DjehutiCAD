@@ -123,6 +123,12 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
         return;
     }
     if (e.mods.isRightButtonDown() || e.mods.isShiftDown() || e.position.roundToInt().getDistanceFrom(pressPosition) > 3) return;
+    if(onMarkerPicked)
+    {
+        float nearest=10;juce::String marker;
+        for(const auto& [id,point]:pickMarkers){juce::Point<float> screen;if(toScreen(point,screen)&&screen.getDistanceFrom(e.position)<nearest){nearest=screen.getDistanceFrom(e.position);marker=id;}}
+        if(marker.isNotEmpty()){onMarkerPicked(marker);return;}
+    }
     const auto picked=pick(e.position,selection!=nullptr && !(wantsBodyPick&&wantsBodyPick())?selection->mode():djehuti::cad::CadSelection::Mode::body);
     if(selection!=nullptr) selection->setSelected(picked);
     if(picked.face<0 && picked.edge<0)
