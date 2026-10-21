@@ -1,5 +1,6 @@
 #include "CadAnalysisCases.h"
 #include "CadDocument.h"
+#include "CadStructuralModel.h"
 #include "CadEngineeringUnits.h"
 
 #include <cmath>
@@ -285,7 +286,7 @@ juce::StringArray referenceProblems(const CadDocument& document, const CadAnalys
             if (body == nullptr) { problems.add(owner + ": part " + t.feature + " does not exist."); return; }
         }
         if (body->type == "sketch" || body->shape.IsNull()) { problems.add(owner + ": " + body->name + " is not a solid part."); return; }
-        if (t.face.isEmpty()) return;
+        if (t.face.isEmpty() || t.face == "start" || t.face == "end" || t.face == "center" || t.face == "midspan") return;
         for (const auto& origin : body->faceOrigins) if (origin.second.contains(t.face)) return;
         problems.add(owner + ": face " + t.face + " does not exist on " + body->name + "; the reference was not moved to another face.");
     };
@@ -364,6 +365,22 @@ juce::var CadCommandService::analysisCommand(const juce::String& tool, const juc
         }
     }
     else if (tool == "cad_analysis_delete") ok = model.removeAnalysisCase(args.getProperty("case", "").toString(), error);
+    else if (tool == "cad_analysis_solve")
+    {
+        const auto caseId = args.getProperty("case", "").toString();
+        const auto* c = caseId.isNotEmpty() ? cases.find(caseId) : (!cases.empty() ? &cases.cases.front() : nullptr);
+        if (c == nullptr) { ok = false; error = "Unknown analysis case: " + caseId; }
+        else
+        {
+            structural::StructuralOptions opt;
+            if (args.hasProperty("visualDeformationScale"))
+                opt.visualDeformationScale = (double) args.getProperty("visualDeformationScale", 20.0);
+            const auto res = structural::evaluateCase(model, *c, opt);
+            reply->setProperty("result", res.toVar());
+            ok = (res.status == "completed");
+            if (!ok && error.isEmpty()) error = res.diagnostic.isNotEmpty() ? res.diagnostic : "Solver failed.";
+        }
+    }
     else { ok = false; error = "Unknown analysis tool: " + tool; }
     reply->setProperty("ok", ok);
     if (!ok) reply->setProperty("error", error);

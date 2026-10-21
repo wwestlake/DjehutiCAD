@@ -51,6 +51,7 @@ public:
     // placements instead of the pose shown and is not displayed. Returns the structured report.
     juce::var checkInterference(bool referencePose);
     void clearInterference();
+    void setInspectionLines(std::vector<djehuti::cad::CadOverlayLine> lines) { modelView.setInspectionLines(std::move(lines)); }
 
 private:
     bool automationInProgress = false;

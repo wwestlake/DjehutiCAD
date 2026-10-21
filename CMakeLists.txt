@@ -154,6 +154,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadEngineeringUnits.cpp
     Source/CadAnalysisCases.h
     Source/CadAnalysisCases.cpp
+    Source/CadStructuralModel.h
+    Source/CadStructuralModel.cpp
     Source/CadExportDialog.h
     Source/CadExportDialog.cpp
 )

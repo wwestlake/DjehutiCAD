@@ -720,4 +720,79 @@ juce::Array<juce::var> templates()
     if (const auto* list = root["records"].getArray()) return *list;
     return {};
 }
+
+std::vector<CadMaterial> illustrativeCraftMaterials()
+{
+    std::vector<CadMaterial> list;
+
+    CadMaterial wood;
+    wood.id = "mat-craft-wood-birch";
+    wood.name = "Craft Wood Stick (Birch/Basswood)";
+    wood.model = "isotropic";
+    wood.densityKgPerM3 = 550.0;
+    wood.youngsModulusMPa = 9500.0;
+    wood.poissonsRatio = 0.35;
+    wood.shearModulusMPa = 3500.0;
+    wood.tensileStrengthMPa = 80.0;
+    wood.compressiveStrengthMPa = 40.0;
+    wood.shearStrengthMPa = 8.0;
+    wood.family = "Wood";
+    wood.condition = "Illustrative longitudinal properties along grain";
+    wood.source = "Wood Handbook / DjehutiCAD Phase 4";
+    wood.note = "Assumes grain aligned with member length. Transverse properties are lower. Approximate linear elastic model.";
+    list.push_back(wood);
+
+    CadMaterial plastic;
+    plastic.id = "mat-craft-plastic-pla";
+    plastic.name = "Craft Plastic (PLA)";
+    plastic.model = "isotropic";
+    plastic.densityKgPerM3 = 1240.0;
+    plastic.youngsModulusMPa = 3500.0;
+    plastic.poissonsRatio = 0.36;
+    plastic.shearModulusMPa = 1280.0;
+    plastic.tensileStrengthMPa = 50.0;
+    plastic.compressiveStrengthMPa = 60.0;
+    plastic.shearStrengthMPa = 25.0;
+    plastic.family = "Plastic";
+    plastic.condition = "Room temperature 23C";
+    plastic.source = "Polymer Handbook / DjehutiCAD Phase 4";
+    plastic.note = "Approximate linear elastic model for PLA/acrylic craft stock.";
+    list.push_back(plastic);
+
+    CadMaterial cardboard;
+    cardboard.id = "mat-craft-cardboard-corrugated";
+    cardboard.name = "Craft Cardboard (Corrugated)";
+    cardboard.model = "isotropic";
+    cardboard.densityKgPerM3 = 650.0;
+    cardboard.youngsModulusMPa = 1800.0;
+    cardboard.poissonsRatio = 0.30;
+    cardboard.shearModulusMPa = 690.0;
+    cardboard.tensileStrengthMPa = 15.0;
+    cardboard.compressiveStrengthMPa = 10.0;
+    cardboard.shearStrengthMPa = 4.0;
+    cardboard.family = "Cardboard";
+    cardboard.condition = "Effective beam stiffness";
+    cardboard.source = "Packaging Engineering Handbook / DjehutiCAD Phase 4";
+    cardboard.note = "Homogenized beam section approximation.";
+    list.push_back(cardboard);
+
+    CadMaterial foam;
+    foam.id = "mat-craft-foam-board-panel";
+    foam.name = "Craft Foam Board (Paper-Faced EPS)";
+    foam.model = "isotropic";
+    foam.densityKgPerM3 = 100.0;
+    foam.youngsModulusMPa = 120.0;
+    foam.poissonsRatio = 0.30;
+    foam.shearModulusMPa = 45.0;
+    foam.tensileStrengthMPa = 2.0;
+    foam.compressiveStrengthMPa = 1.2;
+    foam.shearStrengthMPa = 0.6;
+    foam.family = "Foam board";
+    foam.condition = "Sandwich panel effective beam stiffness";
+    foam.source = "Composite Packaging Reference / DjehutiCAD Phase 4";
+    foam.note = "Equivalent homogenized elastic properties for sandwich panel.";
+    list.push_back(foam);
+
+    return list;
+}
 }

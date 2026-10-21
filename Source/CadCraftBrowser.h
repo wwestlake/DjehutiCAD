@@ -1,6 +1,9 @@
 #pragma once
 #include "CadDocument.h"
 #include "WorkspaceMenu.h"
+#include "CadMotionRuntime.h"
+#include <functional>
+#include <vector>
 
 // Craft controls author the same component definitions/materials used by the CAD workspace.
 class CadCraftBrowser final : public juce::Component, private juce::ListBoxModel, private juce::Timer
@@ -17,6 +20,8 @@ public:
     bool craftCheck(juce::var& report, const juce::File& folder);
     bool craftPhase2Check(juce::var& report, const juce::File& folder);
     bool craftPhase3Check(juce::var& report, const juce::File& folder);
+    bool craftPhase4Check(juce::var& report, const juce::File& folder);
+    std::function<void(std::vector<djehuti::cad::CadOverlayLine>)> setOverlaysCallback;
 private:
     int getNumRows() override;
     void paintListBoxItem(int, juce::Graphics&, int, int, bool) override;
@@ -46,6 +51,13 @@ private:
     void moveBonded();
     void showAdhesiveBom();
     void refreshBondTargets();
+    void refreshAnalysisCases();
+    void createNewCase();
+    void addSupportToCase();
+    void addLoadToCase();
+    void clearCaseBoundary();
+    void runStructuralSolver();
+    void showStructuralResults();
     void loadMaterials(const juce::String&);
     juce::var selectedMaterial() const;
     void message(const juce::String&, bool error = false);
@@ -75,6 +87,16 @@ private:
     juce::TextEditor bondThickness, bondBeadLeg;
     juce::TextButton createBondButton {"Create bond"}, moveBondedButton {"Move bonded group"},
         reevaluateBondsButton {"Reevaluate bonds"}, adhesiveBomButton {"Adhesive BOM"};
+    // Phase 4: Structural analysis and mechanics controls
+    juce::Label analysisHeading;
+    juce::ComboBox analysisCaseSelect, supportType, supportLocation, loadType, loadDirection;
+    juce::TextEditor loadMagnitude, defScale;
+    juce::ToggleButton gravityToggle {"Include self-weight (gravity)"},
+                       showDeformedToggle {"Show deformed overlay"};
+    juce::TextButton createCaseButton {"New case"}, addSupportButton {"Add support"},
+                     addLoadButton {"Add load"}, clearBoundaryButton {"Clear boundary"},
+                     runSolverButton {"Run solver"}, showResultsButton {"Analysis results"};
+    juce::var lastSolveResult;
     juce::Array<juce::var> records, materialRecords;
     std::vector<int> shown;
     juce::var draft;
@@ -86,4 +108,5 @@ namespace djehuti::cad
 bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 bool runCadCraftPhase2UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 bool runCadCraftPhase3UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
+bool runCadCraftPhase4UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 }

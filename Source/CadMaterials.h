@@ -30,6 +30,10 @@ struct CadMaterial
     std::optional<double> youngsModulusMPa;   // required for "isotropic"
     std::optional<double> poissonsRatio;      // required for "isotropic"
     std::optional<double> yieldStrengthMPa;   // optional
+    std::optional<double> shearModulusMPa;        // optional (derived from E and nu if absent for isotropic)
+    std::optional<double> tensileStrengthMPa;     // optional
+    std::optional<double> compressiveStrengthMPa; // optional
+    std::optional<double> shearStrengthMPa;       // optional
     juce::String note;                        // free text, e.g. source of the values
     juce::String family, specification, condition, source;
     // Origin of a document snapshot (or a customized catalog entry); never a live external link.

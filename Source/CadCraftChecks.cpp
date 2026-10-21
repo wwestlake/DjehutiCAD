@@ -2,6 +2,7 @@
 #include "CadDocument.h"
 #include "CadGeometricProperties.h"
 #include "CadEngineeringUnits.h"
+#include "CadStructuralModel.h"
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepGProp.hxx>
@@ -389,6 +390,371 @@ bool runCadCraftPhase3Check(juce::var& report)
                 "; expected area " + juce::String(expectedContactArea) + ", got " + juce::String(reopenedBond1->contactAreaMm2);
     }
     check(matches, "Reopen restores exact contact evaluation and validity state", error);
+
+    return passed;
+}
+
+bool runCadCraftPhase4Check(juce::var& report)
+{
+    const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/craft-check-p4").getChildFile(juce::Uuid().toDashedString());
+    folder.createDirectory();
+    juce::Array<juce::var> checks;
+    bool passed = true;
+
+    const auto check = [&](bool ok, const juce::String& label, const juce::String& detail = juce::String())
+    {
+        auto item = object();
+        put(item, "check", label);
+        put(item, "passed", ok);
+        if (detail.isNotEmpty()) put(item, "detail", detail);
+        checks.add(item);
+        passed &= ok;
+        report = object();
+        put(report, "passed", passed);
+        put(report, "checks", checks);
+        put(report, "folder", folder.getFullPathName());
+        juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-craft-phase4-check.result.json").replaceWithText(juce::JSON::toString(report));
+        return ok;
+    };
+
+    const auto close = [](double a, double b, double tol = 1e-4) {
+        return std::abs(a - b) <= tol * juce::jmax(1.0, std::abs(b));
+    };
+
+    // 1. Cross-sectional property extraction
+    const auto rectSec = structural::computeSection("rectangular", 10.0, 3.0, 0.0, 0.0);
+    const double expectedArea = 0.01 * 0.003;
+    const double expectedIy = (0.01 * std::pow(0.003, 3)) / 12.0;
+    const double expectedIz = (0.003 * std::pow(0.01, 3)) / 12.0;
+    check(close(rectSec.areaM2, expectedArea) && close(rectSec.iyM4, expectedIy) && close(rectSec.izM4, expectedIz) && rectSec.jM4 > 0.0,
+          "Analytical section properties for rectangular craft stock (Area, Iy, Iz, J, section moduli)");
+
+    const auto rodSec = structural::computeSection("rod", 0.0, 0.0, 8.0, 0.0);
+    const double pi = juce::MathConstants<double>::pi;
+    check(close(rodSec.areaM2, pi * 0.004 * 0.004) && close(rodSec.jM4, 2.0 * rodSec.iyM4),
+          "Analytical section properties for solid circular rod");
+
+    const auto tubeSec = structural::computeSection("tube", 0.0, 0.0, 8.0, 6.0);
+    check(close(tubeSec.areaM2, pi * (0.004*0.004 - 0.003*0.003)) && tubeSec.iyM4 > 0.0,
+          "Analytical section properties for hollow circular tube");
+
+    // 2. Numerical Benchmark: Cantilever beam under end transverse load
+    // L = 120 mm, w = 10 mm, t = 3 mm, E = 10,000 MPa, Fz = -1.0 N
+    // Theory: delta = F * L^3 / (3 * E * I) = 1.0 * 0.12^3 / (3 * 1e10 * 2.25e-11) = 2.56 mm
+    // Reaction: Rz = +1.0 N, Moment: My = -0.12 N*m, Extreme stress = 8.0 MPa
+    {
+        std::vector<structural::Node> nodes(2);
+        nodes[0].id = 0; nodes[0].positionM = {0, 0, 0};
+        nodes[0].fixedDOFs = {true, true, true, true, true, true}; // Clamped root
+        nodes[1].id = 1; nodes[1].positionM = {0.12, 0, 0};
+        nodes[1].appliedLoad = {0, 0, -1.0, 0, 0, 0}; // 1.0 N downward at tip
+
+        std::vector<structural::Member> members(1);
+        members[0].id = 0; members[0].node1 = 0; members[0].node2 = 1;
+        members[0].lengthM = 0.12;
+        members[0].dirX = {1, 0, 0}; members[0].dirY = {0, 1, 0}; members[0].dirZ = {0, 0, 1};
+        members[0].section = rectSec;
+        members[0].youngsModulusPa = 10000e6;
+        members[0].shearModulusPa = 3700e6;
+        members[0].tensileStrengthPa = 80e6;
+
+        const auto res = structural::solve(nodes, members);
+        const double tipDeflectionMm = std::abs(res.nodeResults[1].displacementM[2]) * 1000.0;
+        const double rootReactionN = res.nodeResults[0].reactionForceN[2];
+        const double rootMomentNm = res.nodeResults[0].reactionMomentNm[1];
+        const double maxStressMPa = res.maxNormalStressPa / 1e6;
+
+        check(res.solved && res.status == "completed", "Solve linear-elastic 3D frame static equilibrium");
+        check(close(tipDeflectionMm, 2.560, 1e-3),
+              "Cantilever end deflection matches Euler-Bernoulli analytical solution within 0.1% (2.560 mm)",
+              "Calculated: " + juce::String(tipDeflectionMm, 4) + " mm");
+        check(close(rootReactionN, 1.0, 1e-4) && close(std::abs(rootMomentNm), 0.120, 1e-3),
+              "Cantilever root reaction force (1.0 N) and moment (0.120 N*m) verify static equilibrium");
+        check(close(maxStressMPa, 8.000, 1e-3),
+              "Cantilever peak bending stress matches analytical formula (8.000 MPa)",
+              "Calculated: " + juce::String(maxStressMPa, 3) + " MPa");
+    }
+
+    // 3. Numerical Benchmark: Simply supported beam with center point load
+    // L = 120 mm, P = 2.0 N at center (x = 60 mm)
+    // Theory: delta = P * L^3 / (48 * E * I) = 2.0 * 0.12^3 / (48 * 1e10 * 2.25e-11) = 0.320 mm
+    // Reactions: R1 = R2 = 1.0 N
+    {
+        std::vector<structural::Node> nodes(3);
+        nodes[0].id = 0; nodes[0].positionM = {0, 0, 0};
+        nodes[0].fixedDOFs = {true, true, true, true, false, false}; // Pinned + roll restrained
+        nodes[1].id = 1; nodes[1].positionM = {0.06, 0, 0};
+        nodes[1].appliedLoad = {0, 0, -2.0, 0, 0, 0}; // 2.0 N center load
+        nodes[2].id = 2; nodes[2].positionM = {0.12, 0, 0};
+        nodes[2].fixedDOFs = {false, true, true, false, false, false}; // Roller in x
+
+        std::vector<structural::Member> members(2);
+        for (int i = 0; i < 2; ++i)
+        {
+            members[i].id = i; members[i].node1 = i; members[i].node2 = i + 1;
+            members[i].lengthM = 0.06;
+            members[i].dirX = {1, 0, 0}; members[i].dirY = {0, 1, 0}; members[i].dirZ = {0, 0, 1};
+            members[i].section = rectSec;
+            members[i].youngsModulusPa = 10000e6;
+            members[i].shearModulusPa = 3700e6;
+        }
+
+        const auto res = structural::solve(nodes, members);
+        check(res.solved && res.status == "completed", "Solve simply supported beam");
+        if (res.solved)
+        {
+            const double centerDeflectionMm = std::abs(res.nodeResults[1].displacementM[2]) * 1000.0;
+            const double r1 = res.nodeResults[0].reactionForceN[2];
+            const double r2 = res.nodeResults[2].reactionForceN[2];
+
+            check(close(centerDeflectionMm, 0.320, 1e-3),
+                  "Simply supported beam center deflection matches analytical solution (0.320 mm)",
+                  "Calculated: " + juce::String(centerDeflectionMm, 4) + " mm");
+            check(close(r1, 1.0, 1e-4) && close(r2, 1.0, 1e-4),
+                  "Simply supported beam symmetric reactions (R1 = R2 = 1.0 N)");
+        }
+    }
+
+    // 4. Numerical Benchmark: Axial extension in tension
+    // F = 100 N, L = 120 mm, A = 3.0e-5 m^2, E = 10,000 MPa
+    // Theory: deltaL = F * L / (E * A) = 100 * 0.12 / (1e10 * 3e-5) = 0.040 mm
+    // Stress: sigma = F / A = 3.333 MPa
+    {
+        std::vector<structural::Node> nodes(2);
+        nodes[0].id = 0; nodes[0].positionM = {0, 0, 0};
+        nodes[0].fixedDOFs = {true, true, true, true, true, true};
+        nodes[1].id = 1; nodes[1].positionM = {0.12, 0, 0};
+        nodes[1].appliedLoad = {100.0, 0, 0, 0, 0, 0}; // 100 N axial tension
+
+        std::vector<structural::Member> members(1);
+        members[0].id = 0; members[0].node1 = 0; members[0].node2 = 1;
+        members[0].lengthM = 0.12;
+        members[0].dirX = {1, 0, 0}; members[0].dirY = {0, 1, 0}; members[0].dirZ = {0, 0, 1};
+        members[0].section = rectSec;
+        members[0].youngsModulusPa = 10000e6;
+        members[0].shearModulusPa = 3700e6;
+
+        const auto res = structural::solve(nodes, members);
+        const double extMm = res.nodeResults[1].displacementM[0] * 1000.0;
+        const double stressMPa = res.maxNormalStressPa / 1e6;
+
+        check(close(extMm, 0.040, 1e-3),
+              "Axial extension matches analytical solution (0.040 mm)");
+        check(close(stressMPa, 3.3333, 1e-3),
+              "Axial tensile stress matches analytical value (3.333 MPa)");
+    }
+
+    // 5. Numerical Benchmark: Torsion of circular rod
+    // D = 8 mm, L = 100 mm, G = 1000 MPa, T = 0.10 N*m
+    // Theory: theta = T * L / (G * J) = 0.1 * 0.1 / (1e9 * 4.0212e-10) = 0.024868 rad
+    {
+        std::vector<structural::Node> nodes(2);
+        nodes[0].id = 0; nodes[0].positionM = {0, 0, 0};
+        nodes[0].fixedDOFs = {true, true, true, true, true, true};
+        nodes[1].id = 1; nodes[1].positionM = {0.10, 0, 0};
+        nodes[1].appliedLoad = {0, 0, 0, 0.10, 0, 0}; // 0.10 N*m torque about x
+
+        std::vector<structural::Member> members(1);
+        members[0].id = 0; members[0].node1 = 0; members[0].node2 = 1;
+        members[0].lengthM = 0.10;
+        members[0].dirX = {1, 0, 0}; members[0].dirY = {0, 1, 0}; members[0].dirZ = {0, 0, 1};
+        members[0].section = rodSec;
+        members[0].youngsModulusPa = 2700e6;
+        members[0].shearModulusPa = 1000e6;
+
+        const auto res = structural::solve(nodes, members);
+        const double thetaRad = res.nodeResults[1].rotationRad[0];
+
+        check(close(thetaRad, 0.024868, 1e-3),
+              "Rod torsional twist matches Saint-Venant analytical solution (0.02487 rad)");
+    }
+
+    // 6. Singularity & mechanism detection
+    {
+        std::vector<structural::Node> nodes(2);
+        nodes[0].id = 0; nodes[0].positionM = {0, 0, 0};
+        nodes[0].fixedDOFs = {true, false, false, false, false, false}; // Only 1 DOF restrained!
+        nodes[1].id = 1; nodes[1].positionM = {0.10, 0, 0};
+        nodes[1].appliedLoad = {0, 0, -1.0, 0, 0, 0};
+
+        std::vector<structural::Member> members(1);
+        members[0].id = 0; members[0].node1 = 0; members[0].node2 = 1;
+        members[0].lengthM = 0.10;
+        members[0].dirX = {1, 0, 0}; members[0].dirY = {0, 1, 0}; members[0].dirZ = {0, 0, 1};
+        members[0].section = rectSec;
+        members[0].youngsModulusPa = 10000e6;
+        members[0].shearModulusPa = 3700e6;
+
+        const auto res = structural::solve(nodes, members);
+        check(!res.solved && (res.status == "unsupported" || res.status == "singular") && res.diagnostic.isNotEmpty(),
+              "Solver detects singular or insufficiently constrained system with helpful diagnostic");
+    }
+
+    // 7. Acceptance Demonstration: Craft-stick bridge construction, load analysis, scaling, and persistence
+    CadCommandService service;
+    service.setComponentLibraryFile(folder.getChildFile("library.json"));
+    service.setCatalogFile(folder.getChildFile("materials.json"));
+    auto& doc = service.document();
+    const auto command = [&](const char* action, juce::var args = object()) {
+        put(args, "action", action);
+        return service.componentCommand(args);
+    };
+
+    // 7a. Insert bridge members: 2 main chords + 1 transverse deck stick
+    auto r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto chord1 = r["id"].toString();
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto chord2 = r["id"].toString();
+
+    // Place chord 2 parallel to chord 1 spaced by 30 mm in Y
+    CadFrame pChord2; pChord2.y = 30.0;
+    juce::String err;
+    check(doc.setInstancePlacement(chord2, pChord2, err), "Position second bridge chord parallel at Y = 30 mm");
+
+    // Insert transverse deck cross-member
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto deck = r["id"].toString();
+    const auto featDeck = doc.mechanicsData().findInstance(deck)->featureId;
+
+    // Cut deck stick to 30 mm width
+    auto cutArgs = object();
+    put(cutArgs, "feature", featDeck);
+    auto cutDef = object();
+    put(cutDef, "type", "length");
+    put(cutDef, "positionMm", 30.0);
+    put(cutDef, "side", "end");
+    put(cutArgs, "cut", cutDef);
+    r = command("addCut", cutArgs);
+    check((bool)r["ok"], "Trim transverse deck member to 30 mm bridge width");
+
+    // Position deck at midspan (X = 60 mm, Y = 0 to 30 mm)
+    // Rotate 90 deg about Z so it spans between chord 1 and chord 2
+    CadFrame pDeck;
+    pDeck.x = 60.0; pDeck.y = 0.0; pDeck.z = 3.0; // on top of chords
+    const double qz = std::sin(juce::MathConstants<double>::pi / 4.0);
+    const double qw = std::cos(juce::MathConstants<double>::pi / 4.0);
+    pDeck.qz = qz; pDeck.qw = qw;
+    check(doc.setInstancePlacement(deck, pDeck, err), "Position transverse deck beam spanning between chords at midspan");
+
+    // 7b. Apply valid adhesive bonds between deck and both chords
+    auto bondArgs1 = object();
+    put(bondArgs1, "instanceA", chord1); put(bondArgs1, "instanceB", deck);
+    put(bondArgs1, "type", "surface"); put(bondArgs1, "adhesive", "adh-pva");
+    r = command("createBond", bondArgs1);
+    const auto bond1Id = r["joint"]["id"].toString();
+
+    auto bondArgs2 = object();
+    put(bondArgs2, "instanceA", chord2); put(bondArgs2, "instanceB", deck);
+    put(bondArgs2, "type", "surface"); put(bondArgs2, "adhesive", "adh-pva");
+    r = command("createBond", bondArgs2);
+    const auto bond2Id = r["joint"]["id"].toString();
+
+    const auto* bj1 = doc.mechanicsData().findBondedJoint(bond1Id);
+    const auto* bj2 = doc.mechanicsData().findBondedJoint(bond2Id);
+    check(bj1 && bj1->status == "valid" && bj2 && bj2->status == "valid",
+          "Apply valid PVA adhesive bonds connecting bridge deck to both chords");
+
+    // 7c. Create structural analysis case
+    CadAnalysisCase bridgeCase;
+    bridgeCase.name = "Craft-Stick Bridge Midspan Test";
+    bridgeCase.analysisType = "linearStatic";
+
+    CadAnalysisTarget tChord1; tChord1.instance = chord1;
+    CadAnalysisTarget tChord2; tChord2.instance = chord2;
+    CadAnalysisTarget tDeck;   tDeck.instance = deck;
+    bridgeCase.parts = { tChord1, tChord2, tDeck };
+
+    // Supports at bridge ends
+    // Left end: chord 1 pinned, chord 2 pinned
+    CadAnalysisSupport sLeft1; sLeft1.id = "sup-1"; sLeft1.target.instance = chord1; sLeft1.target.face = "start";
+    sLeft1.fixed = {"ux", "uy", "uz", "rx"};
+    CadAnalysisSupport sLeft2; sLeft2.id = "sup-2"; sLeft2.target.instance = chord2; sLeft2.target.face = "start";
+    sLeft2.fixed = {"ux", "uy", "uz", "rx"};
+
+    // Right end: chord 1 roller (uz), chord 2 roller (uz)
+    CadAnalysisSupport sRight1; sRight1.id = "sup-3"; sRight1.target.instance = chord1; sRight1.target.face = "end";
+    sRight1.fixed = {"uz"};
+    CadAnalysisSupport sRight2; sRight2.id = "sup-4"; sRight2.target.instance = chord2; sRight2.target.face = "end";
+    sRight2.fixed = {"uz"};
+
+    bridgeCase.supports = { sLeft1, sLeft2, sRight1, sRight2 };
+
+    // Applied load at center of deck: 10 N downward
+    CadAnalysisLoad midspanLoad;
+    midspanLoad.id = "load-1"; midspanLoad.target.instance = deck; midspanLoad.target.face = "end";
+    midspanLoad.direction = {0, 0, -1};
+    midspanLoad.magnitude = 10.0; // 10 N
+    bridgeCase.loads = { midspanLoad };
+
+    juce::String caseId;
+    check(doc.createAnalysisCase(bridgeCase, caseId, err), "Create bridge structural analysis case with supports and midspan load", err);
+
+    // 7d. Solve static equilibrium of bridge
+    auto bridgeResult = structural::evaluateCase(doc, *doc.analysisData().find(caseId));
+    check(bridgeResult.solved && bridgeResult.status == "completed",
+          "Solve bridge static equilibrium under applied midspan load",
+          "status: " + bridgeResult.status + ", diagnostic: " + bridgeResult.diagnostic);
+    const double initialDeflectionMm = bridgeResult.maxDeflectionM * 1000.0;
+    check(initialDeflectionMm > 0.05 && initialDeflectionMm < 20.0,
+          "Bridge calculated midspan deflection is physically realistic",
+          "Deflection: " + juce::String(initialDeflectionMm, 3) + " mm");
+
+    // Support reactions equilibrium: total vertical reaction should equal total applied load (+10 N)
+    const double totalRz = bridgeResult.totalReactionForceN[2];
+    check(close(totalRz, 10.0, 1e-2),
+          "Bridge total support reaction force exactly balances applied load (10.0 N)",
+          "Calculated Rz: " + juce::String(totalRz, 2) + " N");
+
+    // 7e. Proportionality test: double the applied load to 20 N
+    auto scaledCase = *doc.analysisData().find(caseId);
+    scaledCase.loads[0].magnitude = 20.0;
+    check(doc.updateAnalysisCase(caseId, scaledCase, err), "Increase applied load to 20 N (2x)");
+    auto scaledResult = structural::evaluateCase(doc, *doc.analysisData().find(caseId));
+    const double scaledDeflectionMm = scaledResult.maxDeflectionM * 1000.0;
+    check(close(scaledDeflectionMm, 2.0 * initialDeflectionMm, 1e-3),
+          "Double load produces exact linear proportional response (2.0x deflection)",
+          "Initial: " + juce::String(initialDeflectionMm, 3) + " mm, Scaled: " + juce::String(scaledDeflectionMm, 3) + " mm");
+
+    // 7f. Restore load to 10 N and test dimension stiffness change
+    scaledCase.loads[0].magnitude = 10.0;
+    doc.updateAnalysisCase(caseId, scaledCase, err);
+
+    // Change chord thickness from 3 mm to 6 mm (2x thickness -> 8x bending stiffness)
+    const auto feat1 = doc.mechanicsData().findInstance(chord1)->featureId;
+    auto g1 = (*doc.componentFor(feat1))["geometry"];
+    put(g1, "thicknessMm", 6.0);
+    auto updateArgs = object(); put(updateArgs, "instance", chord1); put(updateArgs, "geometry", g1);
+    command("updateInstanceGeometry", updateArgs);
+
+    const auto feat2 = doc.mechanicsData().findInstance(chord2)->featureId;
+    auto g2 = (*doc.componentFor(feat2))["geometry"];
+    put(g2, "thicknessMm", 6.0);
+    auto updateArgs2 = object(); put(updateArgs2, "instance", chord2); put(updateArgs2, "geometry", g2);
+    command("updateInstanceGeometry", updateArgs2);
+
+    auto stiffResult = structural::evaluateCase(doc, *doc.analysisData().find(caseId));
+    const double stiffDeflectionMm = stiffResult.maxDeflectionM * 1000.0;
+    check(stiffDeflectionMm < initialDeflectionMm * 0.25,
+          "Increasing chord thickness significantly stiffens bridge (expected ~8x reduction in chord bending deflection)",
+          "Thick chord deflection: " + juce::String(stiffDeflectionMm, 4) + " mm");
+
+    // 7g. Bond invalidation and connectivity test
+    // Remove bond 1 between deck and chord 1
+    command("removeBond", [&]{ auto a = object(); put(a, "id", bond1Id); return a; }());
+    const auto* severedBond = doc.mechanicsData().findBondedJoint(bond1Id);
+    check(severedBond == nullptr, "Remove critical deck bond to simulate joint failure");
+
+    // 7h. Native .djo persistence
+    const auto nativeFile = folder.getChildFile("bridge-phase4.djo");
+    check(doc.save(nativeFile, err), "Save Phase 4 bridge construction and analysis case to native .djo", err);
+
+    CadDocument reopened;
+    check(reopened.load(nativeFile, err), "Reopen Phase 4 bridge construction from native .djo", err);
+    check(reopened.analysisData().cases.size() == doc.analysisData().cases.size(),
+          "Reopen preserves structural analysis cases");
+    const auto* reopenedCase = reopened.analysisData().find(caseId);
+    check(reopenedCase != nullptr && reopenedCase->supports.size() == 4 && reopenedCase->loads.size() == 1,
+          "Reopen preserves all boundary conditions, supports, and applied loads");
 
     return passed;
 }

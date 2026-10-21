@@ -379,6 +379,7 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     dockManager->registerPanel("components","Component Library",std::move(browserContent),CreationDock::DockTargetZone::CenterTab);
     auto craftStockContent=std::make_unique<CadCraftBrowser>(cadService);craftBrowser=craftStockContent.get();
     craftBrowser->selectedOccurrence=[this]{return craftWorkspace->automationState()["selected"].toString();};
+    craftBrowser->setOverlaysCallback=[this](std::vector<djehuti::cad::CadOverlayLine> lines){ if(craftWorkspace) craftWorkspace->setInspectionLines(std::move(lines)); };
     craftBrowser->onInserted=[this](const juce::String& id){auto a=djehuti::cad::components::object();djehuti::cad::components::put(a,"action","select");djehuti::cad::components::put(a,"id",id);craftWorkspace->automation(a);};
     craftBrowser->onMaterials=[this]{craftWorkspace->showMaterialsManager();};
     dockManager->registerPanel("craftStock","Craft Stock",std::move(craftStockContent),CreationDock::DockTargetZone::Right);

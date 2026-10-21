@@ -1,5 +1,6 @@
 #include "CadCraftBrowser.h"
 #include "CadCraftStock.h"
+#include "CadStructuralModel.h"
 #include <cmath>
 #include <cstdlib>
 
@@ -82,11 +83,40 @@ CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : se
     content.addAndMakeVisible(moveBondedButton);
     content.addAndMakeVisible(reevaluateBondsButton);
     content.addAndMakeVisible(adhesiveBomButton);
-    /*
-    for (auto* c : (std::initializer_list<juce::Component*>) {
-        &bondHeading, &bondType, &bondAdhesive, &bondTarget, &bondThickness, &bondBeadLeg,
-        &createBondButton, &moveBondedButton, &reevaluateBondsButton, &adhesiveBomButton
-    }) content.addAndMakeVisible(c); */
+
+    // Phase 4: Structural Analysis
+    analysisHeading.setText("Structural Analysis", juce::dontSendNotification); analysisHeading.setFont(juce::Font(16.0f, juce::Font::bold));
+    supportType.addItem("Fixed (all 6 DOFs)", 1); supportType.addItem("Pinned (translations)", 2); supportType.addItem("Roller (normal)", 3); supportType.setSelectedId(1);
+    supportLocation.addItem("Start of member", 1); supportLocation.addItem("End of member", 2); supportLocation.setSelectedId(1);
+    loadType.addItem("Force (N)", 1); loadType.addItem("Moment (N*m)", 2); loadType.setSelectedId(1);
+    loadDirection.addItem("-Z (Downward)", 1); loadDirection.addItem("+Z (Upward)", 2); loadDirection.addItem("-Y", 3); loadDirection.addItem("+Y", 4); loadDirection.addItem("-X", 5); loadDirection.addItem("+X", 6); loadDirection.setSelectedId(1);
+    loadMagnitude.setText("10.0");
+    defScale.setText("20.0");
+    showDeformedToggle.setToggleState(true, juce::dontSendNotification);
+
+    createCaseButton.onClick = [this]{ createNewCase(); };
+    addSupportButton.onClick = [this]{ addSupportToCase(); };
+    addLoadButton.onClick = [this]{ addLoadToCase(); };
+    clearBoundaryButton.onClick = [this]{ clearCaseBoundary(); };
+    runSolverButton.onClick = [this]{ runStructuralSolver(); };
+    showResultsButton.onClick = [this]{ showStructuralResults(); };
+
+    content.addAndMakeVisible(analysisHeading);
+    content.addAndMakeVisible(analysisCaseSelect);
+    content.addAndMakeVisible(createCaseButton);
+    content.addAndMakeVisible(supportType);
+    content.addAndMakeVisible(supportLocation);
+    content.addAndMakeVisible(addSupportButton);
+    content.addAndMakeVisible(loadType);
+    content.addAndMakeVisible(loadDirection);
+    content.addAndMakeVisible(loadMagnitude);
+    content.addAndMakeVisible(addLoadButton);
+    content.addAndMakeVisible(gravityToggle);
+    content.addAndMakeVisible(showDeformedToggle);
+    content.addAndMakeVisible(defScale);
+    content.addAndMakeVisible(clearBoundaryButton);
+    content.addAndMakeVisible(runSolverButton);
+    content.addAndMakeVisible(showResultsButton);
 
     reload();startTimerHz(3);
 }
@@ -95,7 +125,7 @@ void CadCraftBrowser::paint(juce::Graphics& g){g.fillAll(juce::Colour(0xff1d222b
 void CadCraftBrowser::resized()
 {
     auto a=getLocalBounds();workspaceMenu.setBounds(a.removeFromTop(28));scroll.setBounds(a);
-    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 1580);
+    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 2080);
     auto r=content.getLocalBounds().reduced(8);heading.setBounds(r.removeFromTop(32));category.setBounds(r.removeFromTop(30).reduced(0,2));search.setBounds(r.removeFromTop(30).reduced(0,2));
     list.setBounds(r.removeFromTop(145));auto row=r.removeFromTop(32);editPiece.setBounds(row.removeFromLeft(row.getWidth()*2/3).reduced(1));templatesButton.setBounds(row.reduced(1));
     mode.setBounds(r.removeFromTop(30));details.setBounds(r.removeFromTop(105));
@@ -156,6 +186,29 @@ void CadCraftBrowser::resized()
     reevaluateBondsButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
     adhesiveBomButton.setBounds(row.reduced(1));
 
+    // Phase 4 structural analysis rows
+    analysisHeading.setBounds(r.removeFromTop(26));
+    row = r.removeFromTop(30);
+    analysisCaseSelect.setBounds(row.removeFromLeft(row.getWidth()*2/3).reduced(1));
+    createCaseButton.setBounds(row.reduced(1));
+    row = r.removeFromTop(30);
+    supportType.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    supportLocation.setBounds(row.reduced(1));
+    addSupportButton.setBounds(r.removeFromTop(32).reduced(1));
+    row = r.removeFromTop(30);
+    loadType.setBounds(row.removeFromLeft(row.getWidth()/3).reduced(1));
+    loadDirection.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    loadMagnitude.setBounds(row.reduced(1));
+    addLoadButton.setBounds(r.removeFromTop(32).reduced(1));
+    row = r.removeFromTop(28);
+    gravityToggle.setBounds(row.removeFromLeft(row.getWidth()*2/3).reduced(1));
+    defScale.setBounds(row.reduced(1));
+    showDeformedToggle.setBounds(r.removeFromTop(28).reduced(1));
+    row = r.removeFromTop(32);
+    runSolverButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    showResultsButton.setBounds(row.reduced(1));
+    clearBoundaryButton.setBounds(r.removeFromTop(32).reduced(1));
+
     row=r.removeFromTop(32);saveDefaults.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));duplicate.setBounds(row.reduced(1));
     row=r.removeFromTop(32);materialsButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));reloadButton.setBounds(row.reduced(1));status.setBounds(r);
 }
@@ -214,7 +267,7 @@ void CadCraftBrowser::loadMaterials(const juce::String& materialId)
     int chosen=0;for(int i=0;i<materialRecords.size();++i)
     {
         const auto& entry=materialRecords[i];const auto density=entry["properties"]["density"]["value"].toString();
-        material.addItem(entry["name"].toString()+" — "+density+" kg/m^3",i+1);
+        material.addItem(entry["name"].toString()+" â€” "+density+" kg/m^3",i+1);
         if(entry["id"].toString()==desired|| (desired.isEmpty()&&entry["id"]==draft["materialCatalogId"]))chosen=i+1;
     }
     // A customized template may hold a material snapshot not yet in this document/catalog.
@@ -565,9 +618,207 @@ void CadCraftBrowser::saveTemplate(bool copy)
     auto a=object();put(a,"action",copy?"duplicateStock":"updateStock");put(a,"component",draft["id"]);put(a,"geometry",geometry);put(a,"material",selectedMaterial());
     const auto result=service->componentCommand(a);if(!(bool)result["ok"])message(result["error"].toString(),true);else{reload(result["id"].toString());message("Template saved locally. Existing document pieces retain their own snapshots.");}
 }
+void CadCraftBrowser::refreshAnalysisCases()
+{
+    const int currentId = analysisCaseSelect.getSelectedId();
+    analysisCaseSelect.clear();
+    const auto& cases = service->document().analysisData().cases;
+    int id = 1;
+    for (const auto& c : cases)
+    {
+        analysisCaseSelect.addItem(c.name.isNotEmpty() ? c.name : c.id, id++);
+    }
+    if (analysisCaseSelect.getNumItems() > 0)
+    {
+        if (currentId > 0 && currentId <= analysisCaseSelect.getNumItems())
+            analysisCaseSelect.setSelectedId(currentId, juce::dontSendNotification);
+        else
+            analysisCaseSelect.setSelectedId(1, juce::dontSendNotification);
+    }
+}
+void CadCraftBrowser::createNewCase()
+{
+    CadAnalysisCase c;
+    c.name = "Craft Load Case " + juce::String(service->document().analysisData().cases.size() + 1);
+    c.analysisType = "linearStatic";
+    for (const auto& inst : service->document().mechanicsData().instances)
+    {
+        CadAnalysisTarget pt; pt.instance = inst.id;
+        c.parts.push_back(pt);
+    }
+    juce::String id, error;
+    if (service->document().createAnalysisCase(c, id, error))
+    {
+        refreshAnalysisCases();
+        message("Created analysis case: " + id);
+    }
+    else message(error, true);
+}
+void CadCraftBrowser::addSupportToCase()
+{
+    const auto& cases = service->document().analysisData().cases;
+    if (cases.empty()) { createNewCase(); }
+    const int idx = analysisCaseSelect.getSelectedItemIndex();
+    if (idx < 0 || idx >= (int)service->document().analysisData().cases.size()) { message("No analysis case selected.", true); return; }
+    const auto caseId = service->document().analysisData().cases[(size_t)idx].id;
+    auto c = service->document().analysisData().cases[(size_t)idx];
+
+    const juce::String target = editingInstance.isNotEmpty() ? editingInstance : (selectedOccurrence ? selectedOccurrence() : "");
+    if (target.isEmpty()) { message("Select an instance to support.", true); return; }
+
+    bool hasPart = false;
+    for (const auto& p : c.parts) if (p.instance == target) { hasPart = true; break; }
+    if (!hasPart) { CadAnalysisTarget pt; pt.instance = target; c.parts.push_back(pt); }
+
+    CadAnalysisSupport sup;
+    sup.id = "sup-" + juce::String(c.nextItem++);
+    sup.target.instance = target;
+    const int locId = supportLocation.getSelectedId();
+    sup.target.face = locId == 1 ? "start" : "end";
+    const int typeId = supportType.getSelectedId();
+    if (typeId == 1) // Fixed
+        sup.fixed = { "ux", "uy", "uz", "rx", "ry", "rz" };
+    else if (typeId == 2) // Pinned
+        sup.fixed = { "ux", "uy", "uz" };
+    else // Roller
+        sup.fixed = { "uz" };
+
+    sup.name = (typeId == 1 ? "Fixed" : (typeId == 2 ? "Pinned" : "Roller")) + juce::String(" on ") + target;
+    c.supports.push_back(sup);
+
+    juce::String error;
+    if (service->document().updateAnalysisCase(caseId, c, error))
+        message("Added " + sup.name + " (" + sup.target.face + ")");
+    else message(error, true);
+}
+void CadCraftBrowser::addLoadToCase()
+{
+    const auto& cases = service->document().analysisData().cases;
+    if (cases.empty()) { createNewCase(); }
+    const int idx = analysisCaseSelect.getSelectedItemIndex();
+    if (idx < 0 || idx >= (int)service->document().analysisData().cases.size()) { message("No analysis case selected.", true); return; }
+    const auto caseId = service->document().analysisData().cases[(size_t)idx].id;
+    auto c = service->document().analysisData().cases[(size_t)idx];
+
+    const juce::String target = editingInstance.isNotEmpty() ? editingInstance : (selectedOccurrence ? selectedOccurrence() : "");
+    if (target.isEmpty()) { message("Select an instance to apply load.", true); return; }
+
+    bool hasPart = false;
+    for (const auto& p : c.parts) if (p.instance == target) { hasPart = true; break; }
+    if (!hasPart) { CadAnalysisTarget pt; pt.instance = target; c.parts.push_back(pt); }
+
+    double mag = 10.0;
+    numeric(loadMagnitude.getText(), mag);
+    if (mag <= 0.0) { message("Load magnitude must be positive.", true); return; }
+
+    CadAnalysisLoad load;
+    load.id = "load-" + juce::String(c.nextItem++);
+    load.target.instance = target;
+    load.type = loadType.getSelectedId() == 1 ? "force" : "moment";
+    load.magnitude = mag;
+
+    const int dirId = loadDirection.getSelectedId();
+    if (dirId == 1) load.direction = { 0, 0, -1 };
+    else if (dirId == 2) load.direction = { 0, 0, 1 };
+    else if (dirId == 3) load.direction = { 0, -1, 0 };
+    else if (dirId == 4) load.direction = { 0, 1, 0 };
+    else if (dirId == 5) load.direction = { -1, 0, 0 };
+    else load.direction = { 1, 0, 0 };
+
+    const int locId = supportLocation.getSelectedId();
+    load.target.face = locId == 1 ? "start" : "end";
+    load.name = juce::String(load.type == "force" ? "Force " : "Moment ") + juce::String(mag) + " on " + target;
+    c.loads.push_back(load);
+
+    if (gravityToggle.getToggleState())
+        c.gravity = std::array<double, 3>{ 0, 0, -9.81 };
+    else
+        c.gravity.reset();
+
+    juce::String error;
+    if (service->document().updateAnalysisCase(caseId, c, error))
+        message("Added " + load.name);
+    else message(error, true);
+}
+void CadCraftBrowser::clearCaseBoundary()
+{
+    const int idx = analysisCaseSelect.getSelectedItemIndex();
+    if (idx < 0 || idx >= (int)service->document().analysisData().cases.size()) return;
+    const auto caseId = service->document().analysisData().cases[(size_t)idx].id;
+    auto c = service->document().analysisData().cases[(size_t)idx];
+    c.supports.clear();
+    c.loads.clear();
+    juce::String error;
+    if (service->document().updateAnalysisCase(caseId, c, error))
+        message("Cleared loads and supports from case.");
+    else message(error, true);
+}
+void CadCraftBrowser::runStructuralSolver()
+{
+    const auto& cases = service->document().analysisData().cases;
+    if (cases.empty()) { message("No analysis case to solve. Create one first.", true); return; }
+    const int idx = analysisCaseSelect.getSelectedItemIndex();
+    const auto& c = (idx >= 0 && idx < (int)cases.size()) ? cases[(size_t)idx] : cases.front();
+
+    structural::StructuralOptions opt;
+    double scale = 20.0;
+    numeric(defScale.getText(), scale);
+    opt.visualDeformationScale = scale > 0.0 ? scale : 20.0;
+    opt.showDeformed = showDeformedToggle.getToggleState();
+
+    const auto res = structural::evaluateCase(service->document(), c, opt);
+    lastSolveResult = res.toVar();
+
+    if (setOverlaysCallback)
+        setOverlaysCallback(res.overlays);
+
+    if (res.solved)
+    {
+        message("Solved: max deflection " + juce::String(res.maxDeflectionM * 1000.0, 3) + 
+                " mm, max stress " + juce::String(res.maxNormalStressPa / 1e6, 2) + " MPa");
+    }
+    else
+    {
+        message("Solver " + res.status + ": " + res.diagnostic, true);
+    }
+}
+void CadCraftBrowser::showStructuralResults()
+{
+    if (lastSolveResult.isVoid())
+    {
+        runStructuralSolver();
+    }
+    if (lastSolveResult.isVoid()) return;
+
+    juce::String text = "=== Structural Analysis Report ===\n";
+    text += "Status: " + lastSolveResult["status"].toString() + "\n";
+    if (lastSolveResult["diagnostic"].toString().isNotEmpty())
+        text += "Diagnostic: " + lastSolveResult["diagnostic"].toString() + "\n";
+    text += "Max Deflection: " + juce::String((double)lastSolveResult["maxDeflectionMm"], 4) + " mm\n";
+    text += "Max Normal Stress: " + juce::String((double)lastSolveResult["maxNormalStressMPa"], 3) + " MPa\n";
+    text += "Max Shear Stress: " + juce::String((double)lastSolveResult["maxShearStressMPa"], 3) + " MPa\n";
+    text += "Max Utilization: " + juce::String((double)lastSolveResult["maxUtilizationRatio"] * 100.0, 1) + " %\n\n";
+
+    const auto rf = lastSolveResult["totalReactionForceN"];
+    text += "Total Reactions (N): Rx=" + juce::String((double)rf["x"], 2) +
+            ", Ry=" + juce::String((double)rf["y"], 2) +
+            ", Rz=" + juce::String((double)rf["z"], 2) + "\n\n";
+
+    if (const auto* mems = lastSolveResult["members"].getArray())
+    {
+        text += "Members (" + juce::String(mems->size()) + "):\n";
+        for (const auto& m : *mems)
+        {
+            text += "  " + m["instanceId"].toString() + ": Axial=" + juce::String((double)m["axialForceN"], 2) +
+                    " N, Bend=" + juce::String((double)m["bendingMomentNm"], 3) + " N*m, Stress=" +
+                    juce::String((double)m["normalStressMPa"], 2) + " MPa\n";
+        }
+    }
+    details.setText(text);
+}
 void CadCraftBrowser::timerCallback()
 {
-    if(documentInstance!=service->document().documentInstance()){reload();return;}
+    if(documentInstance!=service->document().documentInstance()){reload();refreshAnalysisCases();return;}
     if(materialRevision!=service->document().revision())
     {
         materialRevision=service->document().revision();const auto previous=selectedMaterial()["id"].toString();loadMaterials(previous);
@@ -577,6 +828,7 @@ void CadCraftBrowser::timerCallback()
             if(!current){loadTemplate();return;}
             if(juce::JSON::toString((*current)["geometry"])!=juce::JSON::toString(draft["geometry"]))editSelected();
         }
+        refreshAnalysisCases();
     }
 }
 bool CadCraftBrowser::craftCheck(juce::var& report, const juce::File& folder)
@@ -845,6 +1097,113 @@ bool CadCraftBrowser::craftPhase3Check(juce::var& report, const juce::File& fold
     put(report, "verification", "Craft Designer Phase 3 UI: adhesives, bonded joints, substrate compatibility, fillet bonds, connected movement, and adhesive BOM");
     put(report, "folder", folder.getFullPathName());
     return passed;
+}
+bool CadCraftBrowser::craftPhase4Check(juce::var& report, const juce::File& folder)
+{
+    juce::Array<juce::var> checks; bool passed = true;
+    const auto check = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto v = object(); put(v, "check", name); put(v, "passed", ok);
+        if (detail.isNotEmpty()) put(v, "detail", detail);
+        checks.add(v); passed &= ok;
+    };
+
+    // 1. Select wood strip template
+    category.setSelectedId(2); // Wood
+    search.setText("strip");
+    filter();
+    check(shown.size() == 1, "Select wood strip template");
+    if (material.getSelectedId() <= 0 && material.getNumItems() > 0)
+        material.setSelectedId(1, juce::sendNotificationSync);
+
+    // 2. Insert two wooden craft sticks and align them
+    juce::String currentSelected;
+    selectedOccurrence = [&]{ return currentSelected; };
+    onInserted = [&](const juce::String& id){ currentSelected = id; };
+
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto firstId = currentSelected;
+    check(firstId.isNotEmpty(), "Insert first wooden craft stick: " + firstId);
+
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto secondId = currentSelected;
+    check(secondId.isNotEmpty() && secondId != firstId, "Insert second wooden craft stick: " + secondId);
+
+    // Align second stick to end of first stick
+    currentSelected = secondId;
+    editSelected();
+    refreshAlignTargets();
+    alignTarget.setSelectedId(1);
+    alignType.setSelectedId(1); // butt joint
+    applyAlign();
+    check(service->document().mechanicsData().findInstance(secondId)->placement.x > 50.0,
+          "Align second stick to end of first stick (butt joint)");
+
+    // 3. Create valid PVA bond between them
+    refreshBondTargets();
+    bondTarget.setSelectedId(1);
+    bondType.setSelectedId(1); // surface bond
+    bondAdhesive.setSelectedId(1); // PVA wood glue
+    applyBond();
+    check(!service->document().mechanicsData().bondedJoints.empty() &&
+          service->document().mechanicsData().bondedJoints.back().status == "valid",
+          "Create valid PVA adhesive bond between sticks via UI");
+
+    // 4. Create analysis case via UI
+    createNewCase();
+    check(!service->document().analysisData().cases.empty(),
+          "Create structural analysis case via UI");
+
+    // 5. Assign Fixed support to first stick at start via UI
+    currentSelected = firstId;
+    editSelected();
+    supportType.setSelectedId(1); // Fixed
+    supportLocation.setSelectedId(1); // Start
+    addSupportToCase();
+    const auto& c = service->document().analysisData().cases.back();
+    check(!c.supports.empty(), "Assign fixed support to first stick start via UI");
+
+    // 6. Apply 10 N downward load at end of second stick via UI
+    currentSelected = secondId;
+    editSelected();
+    loadType.setSelectedId(1); // Force
+    loadDirection.setSelectedId(1); // -Z
+    loadMagnitude.setText("10.0");
+    supportLocation.setSelectedId(2); // End
+    addLoadToCase();
+    const auto& cWithLoad = service->document().analysisData().cases.back();
+    check(!cWithLoad.loads.empty(), "Apply 10 N downward force at end of second stick via UI");
+
+    // 7. Run structural solver via UI
+    defScale.setText("25.0");
+    showDeformedToggle.setToggleState(true, juce::dontSendNotification);
+    std::vector<djehuti::cad::CadOverlayLine> capturedOverlays;
+    setOverlaysCallback = [&](std::vector<djehuti::cad::CadOverlayLine> lines){ capturedOverlays = lines; };
+    runStructuralSolver();
+
+    check(!lastSolveResult.isVoid() && lastSolveResult["status"].toString() == "completed",
+          "Execute 3D frame FEA solver via UI with status 'completed'");
+    check((double)lastSolveResult["maxDeflectionMm"] > 0.05,
+          "Solver computes nonzero deflection (" + juce::String((double)lastSolveResult["maxDeflectionMm"], 3) + " mm)");
+    check(!capturedOverlays.empty(),
+          "Solver generates deformed overlay lines for 3D viewport inspection");
+
+    // 8. Inspect detailed numerical report in UI
+    showStructuralResults();
+    check(details.getText().contains("Structural Analysis Report") && details.getText().contains("Max Deflection"),
+          "Display comprehensive structural results and member forces in UI details panel");
+
+    // 9. Save UI snapshot
+    juce::FileOutputStream stream(folder.getChildFile("craft-browser-phase4.png"));
+    check(stream.openedOk() && juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()), stream),
+          "Craft Designer Phase 4 browser snapshot saved");
+
+    report = object();
+    put(report, "passed", passed);
+    put(report, "checks", checks);
+    put(report, "verification", "Craft Designer Phase 4 UI: structural analysis, supports, loads, 3D frame solver, deformation overlays, and results inspection");
     put(report, "folder", folder.getFullPathName());
     return passed;
 }
@@ -919,6 +1278,30 @@ bool runCadCraftPhase3UiCheck(juce::var& report, const juce::File& folder, bool 
         return true;
     }
     const auto ok = browser->craftPhase3Check(report, folder);
+    dialog->exitModalState(0);
+    return ok;
+}
+bool runCadCraftPhase4UiCheck(juce::var& report, const juce::File& folder, bool interactive)
+{
+    folder.createDirectory();
+    auto service = std::make_shared<CadCommandService>();
+    service->setComponentLibraryFile(folder.getChildFile("library.json"));
+    service->setCatalogFile(folder.getChildFile("materials.json"));
+    auto* browser = new CadCraftBrowser(service);
+    browser->setSize(400, 1300);
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(browser);
+    options.dialogTitle = "Craft Designer Phase 4 UI check";
+    options.useNativeTitleBar = true;
+    auto* dialog = options.launchAsync();
+    if (interactive)
+    {
+        report = object();
+        put(report, "folder", folder.getFullPathName());
+        put(report, "verification", "Native test window prepared; no programmatic controls invoked.");
+        return true;
+    }
+    const auto ok = browser->craftPhase4Check(report, folder);
     dialog->exitModalState(0);
     return ok;
 }

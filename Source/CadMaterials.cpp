@@ -35,6 +35,10 @@ const PropertySlot slots[] {
     { "youngsModulus", "MPa", &CadMaterial::youngsModulusMPa },
     { "poissonsRatio", "1", &CadMaterial::poissonsRatio },
     { "yieldStrength", "MPa", &CadMaterial::yieldStrengthMPa },
+    { "shearModulus", "MPa", &CadMaterial::shearModulusMPa },
+    { "tensileStrength", "MPa", &CadMaterial::tensileStrengthMPa },
+    { "compressiveStrength", "MPa", &CadMaterial::compressiveStrengthMPa },
+    { "shearStrength", "MPa", &CadMaterial::shearStrengthMPa },
 };
 bool isNumber(const juce::var& v) { return v.isInt() || v.isInt64() || v.isDouble(); }
 }
@@ -57,7 +61,7 @@ bool validateMaterial(const CadMaterial& m, juce::String& error)
     if (m.model == "densityOnly")
     {
         if (!m.densityKgPerM3) { error = label + ": a density-only material needs a density (kg/m^3)."; return false; }
-        if (m.youngsModulusMPa || m.poissonsRatio || m.yieldStrengthMPa) { error = label + ": select isotropic to specify elastic or strength properties."; return false; }
+        if (m.youngsModulusMPa || m.poissonsRatio || m.yieldStrengthMPa || m.shearModulusMPa || m.tensileStrengthMPa || m.compressiveStrengthMPa || m.shearStrengthMPa) { error = label + ": select isotropic to specify elastic or strength properties."; return false; }
     }
     if (m.model == "isotropic")
     {
@@ -69,6 +73,10 @@ bool validateMaterial(const CadMaterial& m, juce::String& error)
     if (m.youngsModulusMPa && *m.youngsModulusMPa <= 0.0) { error = label + ": Young's modulus must be greater than 0 MPa."; return false; }
     if (m.poissonsRatio && !(*m.poissonsRatio > -1.0 && *m.poissonsRatio < 0.5)) { error = label + ": Poisson's ratio must lie between -1 and 0.5 (exclusive)."; return false; }
     if (m.yieldStrengthMPa && *m.yieldStrengthMPa <= 0.0) { error = label + ": yield strength must be greater than 0 MPa when specified."; return false; }
+    if (m.shearModulusMPa && *m.shearModulusMPa <= 0.0) { error = label + ": shear modulus must be greater than 0 MPa when specified."; return false; }
+    if (m.tensileStrengthMPa && *m.tensileStrengthMPa <= 0.0) { error = label + ": tensile strength must be greater than 0 MPa when specified."; return false; }
+    if (m.compressiveStrengthMPa && *m.compressiveStrengthMPa <= 0.0) { error = label + ": compressive strength must be greater than 0 MPa when specified."; return false; }
+    if (m.shearStrengthMPa && *m.shearStrengthMPa <= 0.0) { error = label + ": shear strength must be greater than 0 MPa when specified."; return false; }
     if (m.revision < 1) { error = label + ": revision must be 1 or greater."; return false; }
     if (m.catalogRevision < 0 || (m.catalogId.isEmpty() != (m.catalogRevision == 0))) { error = label + ": invalid catalog provenance."; return false; }
     return true;
@@ -189,7 +197,9 @@ bool matl::readArgs(const juce::var& args, CadMaterial& m, juce::String& error)
     if (!args.isObject()) { error = "Material definition must be an object."; return false; }
     struct Field { const char* key; std::optional<double> CadMaterial::* member; const char* property; };
     const Field fields[] { { "densityKgPerM3", &CadMaterial::densityKgPerM3, "density" }, { "youngsModulusMPa", &CadMaterial::youngsModulusMPa, "youngsModulus" },
-                           { "poissonsRatio", &CadMaterial::poissonsRatio, "poissonsRatio" }, { "yieldStrengthMPa", &CadMaterial::yieldStrengthMPa, "yieldStrength" } };
+                           { "poissonsRatio", &CadMaterial::poissonsRatio, "poissonsRatio" }, { "yieldStrengthMPa", &CadMaterial::yieldStrengthMPa, "yieldStrength" },
+                           { "shearModulusMPa", &CadMaterial::shearModulusMPa, "shearModulus" }, { "tensileStrengthMPa", &CadMaterial::tensileStrengthMPa, "tensileStrength" },
+                           { "compressiveStrengthMPa", &CadMaterial::compressiveStrengthMPa, "compressiveStrength" }, { "shearStrengthMPa", &CadMaterial::shearStrengthMPa, "shearStrength" } };
     if (args.hasProperty("name")) m.name = args.getProperty("name", "").toString().trim();
     if (args.hasProperty("model")) m.model = args.getProperty("model", "").toString();
     if (args.hasProperty("note")) m.note = args.getProperty("note", "").toString();
