@@ -61,6 +61,23 @@ bool runCadManufacturerCheck(juce::var& report,const juce::File& root)
     const bool imported=written==IFSelect_RetDone&&attachModel(synthetic,inch,error);check(imported,"Import synthetic inch-unit placed compound",error);
     if(imported){const auto s=shape(synthetic,error);GProp_GProps p;BRepGProp::VolumeProperties(s,p);Bnd_Box b;BRepBndLib::AddOptimal(s,b,false,false);double x0,y0,z0,x1,y1,z1;b.Get(x0,y0,z0,x1,y1,z1);check(std::abs(p.Mass()-2*25.4*.5*25.4*.25*25.4)<1e-6&&std::abs(x1-x0-76.2)<1e-5&&std::abs(y1-y0-12.7)<1e-5&&std::abs(z1-z0-6.35)<1e-5&&juce::JSON::toString(synthetic["geometry"]["import"]["sourceLengthUnits"]).containsIgnoreCase("inch"),"Inches normalize to mm; separate solid placements and axes remain intact",synthetic["geometry"]["import"]);}
     const auto before=juce::JSON::toString(synthetic);const auto bad=folder.getChildFile("invalid.step");bad.replaceWithText("not a STEP file");check(!attachModel(synthetic,bad,error)&&before==juce::JSON::toString(synthetic),"Failed transfer leaves original record unchanged");check(!attachModel(synthetic,folder.getChildFile("unsupported.igs"),error)&&error.contains("TKDEIGES"),"IGES limitation reports the missing toolkit explicitly");
+    // Robotics component library: structured validation, original-asset hashes and fast real STEP imports.
+    {
+        juce::var robotics;juce::String roboticsError;const auto file=root.getChildFile("robotics-component-library.json");
+        const bool loadedRobotics=engineering::loadLibrary(file,robotics,roboticsError);check(loadedRobotics,"Load robotics component library",roboticsError);
+        if(loadedRobotics)
+        {
+            int verified=0,total=robotics["records"].size();juce::String firstFailure;
+            for(const auto& r:*robotics["records"].getArray()){juce::String why;if(engineering::verifyAssets(r,root,why))++verified;else if(firstFailure.isEmpty())firstFailure=r["id"].toString()+": "+why;}
+            check(total>=24&&verified==total,"Robotics records validate and every original asset hash matches",firstFailure.isEmpty()?juce::var(total):juce::var(firstFailure));
+            for(const auto& r:*robotics["records"].getArray())
+            {
+                const auto id=r["id"].toString();if(id!="wheel-pololu-1088"&&id!="hub-pololu-1078")continue;
+                auto record=clone(r);juce::File step;for(const auto& s:*engineering::specification(record)["sources"].getArray())if(s["path"].toString().endsWith(".step"))step=root.getChildFile(s["path"].toString());
+                juce::String importError;const bool ok=attachModel(record,step,importError);check(ok,("Import original STEP: "+id).toRawUTF8(),ok?record["geometry"]["import"]:juce::var(importError));
+            }
+        }
+    }
     report=object();put(report,"passed",passed);put(report,"engineering",semantic);put(report,"geometry",rows);put(report,"folder",folder.getFullPathName());return passed;
 }
 }

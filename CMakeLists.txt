@@ -223,4 +223,5 @@ juce_generate_juce_header(DjehutiCAD)
 # Portable references remain separate source assets, rather than compiled-in component geometry.
 add_custom_command(TARGET DjehutiCAD POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/Resources/manufacturer-reference-library.json" "$<TARGET_FILE_DIR:DjehutiCAD>/manufacturer-reference-library.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/Resources/robotics-component-library.json" "$<TARGET_FILE_DIR:DjehutiCAD>/robotics-component-library.json"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Resources/manufacturer-foundation" "$<TARGET_FILE_DIR:DjehutiCAD>/manufacturer-foundation")
