@@ -56,7 +56,7 @@ public:
 private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -167,6 +167,18 @@ private:
     juce::String profileId, targetId, toolId;
     std::vector<int> filletEdges;
     double filletRadius = 2.0;
+    juce::String modelingKind,editingModelingId,modelingPick;
+    juce::var modelingSettings;
+    bool modelingPreviewActive=false,modelingSourcesActive=false;
+    std::uint64_t modelingRevision=0;
+    void addModelingFields();
+    juce::var readModelingForm(juce::String& error) const;
+    void pickModeling(const djehuti::cad::CadPick&);
+    void editLoftSection(int index,int action);
+    void previewModeling();
+    void clearModelingView();
+    void showModelingSources();
+    void defaultMillFace(const juce::String& target);
     juce::String replicationKind, editingReplicationId, replicationPick="sources";
     juce::var replicationSettings;
     bool replicationPreviewActive=false, replicationSourcesActive=false;

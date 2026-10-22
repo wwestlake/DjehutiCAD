@@ -15,6 +15,12 @@ isolated draft. Select a result and **Edit sources and parameters** to reopen it
 See [Mirror](MIRROR.md), [Linear Pattern](LINEAR_PATTERN.md), and
 [Circular Pattern](CIRCULAR_PATTERN.md).
 
+**Modify** also provides [Sweep](SWEEP.md), [Loft](LOFT.md) and
+[Virtual Router / Mill](VIRTUAL_ROUTER_MILL.md), with source slots, isolated
+Preview, Apply/Cancel and inspector editing. Sweep paths use sketches or connected
+model edges. Loft sections can be reordered. Router uses an accessible planar
+entry reference and region/path selection.
+
 ## Toolbox and selection
 
 The CAD **Modify** menu includes [Virtual Lathe](VIRTUAL_LATHE.md),

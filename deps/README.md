@@ -13,6 +13,18 @@ are preserved beside the local source checkout as `LICENSE_LGPL_21.txt` and
 
 https://github.com/Open-Cascade-SAS/OCCT
 
+## OCCT toolkit for Sweep, Loft and Router/Mill
+
+These features also need the static `TKOffset` toolkit from the existing pinned
+OCCT configuration. Its modeling prerequisites are already used by the app:
+
+```powershell
+cmake --build occt-build --config Debug --target TKOffset --parallel 2
+```
+
+Build the same target with `--config Release` before a Release application build.
+No OCCT source changes or new geometry runtime are required.
+
 ## OCCT toolkits for manufacturing export
 
 Export needs the STEP and STL data-exchange toolkits, which are not part of the

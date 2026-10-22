@@ -7,8 +7,8 @@ The application includes sketch/solid modeling, Boolean operations, an authorita
 Modeling tools include Box, Cylinder, Extrude, Cut, Union/Subtract/Intersect,
 constant-radius Fillet, and [Parametric Revolve](docs/PARAMETRIC_REVOLVE.md).
 Revolve supports full/partial angles, selectable/custom axes, editable parameters,
-sketch-driven rebuilding, and shared GUI/agent/API commands. Sweep, Loft and
-editable NURBS surfaces remain future work.
+sketch-driven rebuilding, and shared GUI/agent/API commands. Editable NURBS
+surfaces remain future work.
 
 [Virtual Lathe](docs/VIRTUAL_LATHE.md) adds outside/bore station editing for turned
 parts, shoulders and grooves using the same parametric Revolve implementation.
@@ -26,6 +26,11 @@ structured APIs, FRust hosts and CAD nodes. See the
 [version 12 interchange conventions](docs/PATTERN_API_AND_INTERCHANGE.md). The
 [Order 3 completion report](docs/PROFESSIONAL_MODELING_ORDER3.md) records validation
 and current limitations.
+
+[Sweep](docs/SWEEP.md) moves a closed profile along sketch/model-edge paths;
+[Loft](docs/LOFT.md) joins ordered sections; [Virtual Router / Mill](docs/VIRTUAL_ROUTER_MILL.md)
+provides editable pockets, slots and profile cuts. All share GUI previews,
+structured APIs, FRust hosts, CAD nodes and [version 13 interchange](docs/ADVANCED_MODELING_API.md).
 
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.

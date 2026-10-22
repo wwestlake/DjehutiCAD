@@ -72,6 +72,10 @@ inline bool isReplicationType(const juce::String& type) { return type=="mirror"|
 juce::var replicationDefaults(const juce::String& type);
 bool validateReplication(const juce::String& type, const juce::var&, juce::String& error);
 juce::StringArray replicationDependencies(const juce::var&);
+inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"; }
+juce::var modelingDefaults(const juce::String& type);
+bool validateModeling(const juce::String& type,const juce::var&,juce::String& error);
+juce::StringArray modelingDependencies(const juce::var&);
 
 struct CadFeature
 {
@@ -87,6 +91,7 @@ struct CadFeature
     bool lathe = false; // Lathe workflow; the editable source sketch remains the profile authority.
     CadHoleParameters hole;
     juce::var replication; // Structured, versioned Mirror/Pattern definition; OCAF is authoritative.
+    juce::var modeling; // Sweep/Loft/Router definitions, persisted through the same OCAF command boundary.
     TopoDS_Shape shape;
     CadFaceOrigins faceOrigins;   // derived with shape
 };
@@ -230,6 +235,8 @@ public:
     juce::var chamferCommand(const juce::var& args);
     juce::var holeCommand(const juce::var& args);
     juce::var replicationCommand(const juce::String& type, const juce::var& args);
+    juce::var modelingCommand(const juce::String& type,const juce::var& args);
+    std::shared_ptr<const CadRenderSnapshot> modelingPreview(const juce::String& type,const juce::var&,juce::var& result,juce::String& error) const;
     std::shared_ptr<const CadRenderSnapshot> replicationPreview(const juce::String& type, const juce::var&, juce::var& result, juce::String& error) const;
     std::shared_ptr<const CadRenderSnapshot> chamferPreview(const juce::var& args, juce::var& result, juce::String& error) const;
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
@@ -368,6 +375,10 @@ private:
     TopoDS_Shape drillShape(const CadFeature&, const TopoDS_Shape& target, const CadFaceOrigins&, CadFaceOrigins&, juce::String& error, juce::StringArray& active);
     TopoDS_Shape replicateShape(const CadFeature&, CadFaceOrigins&, juce::String& error, juce::StringArray& active);
     bool replicationEdge(const CadFeature&, const juce::String& reference, gp_Pnt& origin, gp_Dir& direction, bool axis, juce::String& error) const;
+    bool modelingEdge(const CadFeature&,const juce::String&,TopoDS_Edge&,juce::String& error) const;
+    TopoDS_Wire modelingPath(const juce::var&,const CadSketchFrame* overrideFrame,juce::String&,juce::StringArray& active);
+    bool modelingSection(const juce::String&,TopoDS_Face&,CadSketchFrame&,juce::String&,juce::StringArray& active);
+    TopoDS_Shape evaluateModeling(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active);
     static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);
@@ -448,6 +459,7 @@ public:
     juce::var chamferCommand(const juce::var& args) { return model.chamferCommand(args); }
     juce::var holeCommand(const juce::var& args) { return model.holeCommand(args); }
     juce::var replicationCommand(const juce::String& type, const juce::var& args) { return model.replicationCommand(type,args); }
+    juce::var modelingCommand(const juce::String& type,const juce::var& args) { return model.modelingCommand(type,args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);

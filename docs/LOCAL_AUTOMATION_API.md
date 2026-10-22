@@ -58,6 +58,10 @@ once finished.
 ## Tools
 
 All agent tools are available:
+- Sweep/Loft/Router: `cad_sweep`, `cad_loft`, `cad_mill` expose structured CRUD,
+  isolated previews and persistent path-edge discovery; see [Sweep](SWEEP.md),
+  [Loft](LOFT.md), [Router/Mill](VIRTUAL_ROUTER_MILL.md) and
+  [shared command/interchange conventions](ADVANCED_MODELING_API.md).
 - Mirror and patterns: `cad_mirror`, `cad_linear_pattern`, `cad_circular_pattern`
   support structured CRUD, isolated preview and edge-reference inspection; see
   [Mirror](MIRROR.md), [Linear Pattern](LINEAR_PATTERN.md),
