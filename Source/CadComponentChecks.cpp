@@ -4,6 +4,11 @@
 #include "CadTestFixture.h"
 #include "DjehutiAgent.h"
 #include <STEPControl_Writer.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
+#include <TopoDS.hxx>
 #include <cmath>
 
 namespace djehuti::cad
@@ -59,6 +64,44 @@ bool runCadComponentCheck(juce::var& report,const juce::File& researchRoot)
     CadDocument rollback;rollback.createBox(2,3,4,box,error);auto broken=clone(seed);auto defs=object();put(defs,"schemaVersion",999);put(broken,"components",defs);const auto badFile=folder.getChildFile("invalid-document.json");badFile.replaceWithText(R"({"units":"mm","formatVersion":8,"features":[],"components":{"schemaVersion":999}})");check(!rollback.load(badFile,error)&&rollback.find(box)&&rollback.componentData()["definitions"].size()==0,"Failed document loads restore preexisting CAD state");
     check(!customReopened.load(badFile,error)&&customReopened.componentFor(customFeature)&&customReopened.componentData()["definitions"].size()==1,"Failed loads preserve existing component snapshots and geometry");
     bool registered=false;const auto catalogue=DjehutiAgentPanel::toolCatalogue();for(const auto& tool:*catalogue.getArray())registered|=tool["name"].toString()=="cad_component";check(registered,"Component operations are registered through the shared CAD tool interface");
+    // Commercial motor assets use the existing BRep, instance and OCAF paths.
+    CadCommandService motors;motors.setComponentLibraryFile(libraryFile);
+    const auto motorCommand=[&](const char* action,juce::var args=object()){put(args,"action",action);return motors.componentCommand(args);};
+    const auto motorRecords=motorCommand("list")["records"];
+    const char* ids[]{"motor-stepper-28byj48-12v-reference","motor-stepper-stepperonline-17hs19-2004s1","motor-stepper-stepperonline-23hs30-2804s"};
+    const double shaftR[]{2.5,2.5,3.175},holeR[]{2,1.5,2.6};juce::String mediumFeature;
+    for(int index=0;index<3;++index)
+    {
+        juce::var record;for(const auto& entry:*motorRecords.getArray())if(entry["id"].toString()==ids[index])record=clone(entry);
+        check(record.isObject()&&record["engineering"]["recommendedDriverId"].toString().isNotEmpty(),"Commercial motor reference has a shared engineering identity",ids[index]);if(!record.isObject())continue;
+        auto request=object();put(request,"component",ids[index]);const auto inserted=motorCommand("insert",request);
+        check((bool)inserted["ok"],"Motor inserts through the ordinary component command",inserted["error"]);if(!(bool)inserted["ok"])continue;
+        const auto feature=motors.document().mechanicsData().findInstance(inserted["id"].toString())->featureId;if(index==1)mediumFeature=feature;
+        bool shaftAxis=false;int holes=0;
+        for(TopExp_Explorer ex(motors.document().find(feature)->shape,TopAbs_FACE);ex.More();ex.Next())
+        {BRepAdaptor_Surface surface(TopoDS::Face(ex.Current()),true);if(surface.GetType()!=GeomAbs_Cylinder)continue;const auto cy=surface.Cylinder();const auto p=cy.Axis().Location();if(std::abs(cy.Axis().Direction().Z())>.999&&std::hypot(p.X(),p.Y())<1e-7&&std::abs(cy.Radius()-shaftR[index])<1e-7)shaftAxis=true;if(std::abs(cy.Radius()-holeR[index])<1e-7&&std::hypot(p.X(),p.Y())>10)++holes;}
+        check(shaftAxis&&holes==(index==0?2:4),"Actual shaft and mounting bore geometry matches the reference",record["partNumber"]);
+        std::vector<CadFaceInfo> faces;bool mount=false;if(motors.document().listFaces(feature,faces,error))for(const auto& face:faces)if(face.planar&&std::abs(face.centre.Z())<1e-7&&face.normal.Z()>.99&&!face.token.isEmpty())mount=true;
+        check(mount,"Mount plane remains pickable with a persistent face token",error);
+    }
+    if(mediumFeature.isNotEmpty())
+    {
+        auto request=object();put(request,"component",ids[1]);put(request,"placement",juce::JSON::parse(R"({"x":80,"y":20,"z":5,"rx":90,"ry":0,"rz":0})"));const auto duplicated=motorCommand("insert",request);const auto* second=motors.document().mechanicsData().findInstance(duplicated["id"].toString());
+        check((bool)duplicated["ok"]&&second&&second->featureId==mediumFeature&&motors.document().componentData()["definitions"].size()==3,"Repeated motors share a definition with independent occurrence placement");
+        if(second){gp_Dir direction(0,0,1);direction.Transform(second->placement.toTrsf());check(std::abs(direction.Y()+1)<1e-7&&std::abs(direction.Z())<1e-7,"Assembly orientation rotates the physical shaft axis");}
+        check(motors.undo(error)&&motors.document().mechanicsData().instances.size()==3&&motors.redo(error)&&motors.document().mechanicsData().instances.size()==4,"Motor insertion preserves OCAF undo/redo",error);
+        auto& doc=motors.document();juce::String bracket,tool,next;bool built=doc.createBox(50,50,3,bracket,error)&&doc.setPlacement(bracket,-25,-25,0,0,0,0,error);
+        const auto bore=[&](double x,double y,double radius){if(!built)return;built=doc.createCylinder(radius,3,tool,error)&&doc.setPlacement(tool,x,y,0,0,0,0,error)&&doc.booleanOp("subtract",bracket,tool,next,error);if(built)bracket=next;};
+        bore(0,0,11.2);for(double x:{-15.5,15.5})for(double y:{-15.5,15.5})bore(x,y,1.7);double overlap=-1;
+        if(built){BRepAlgoAPI_Common common(doc.find(bracket)->shape,doc.find(mediumFeature)->shape);common.Build();if(common.IsDone()){GProp_GProps props;BRepGProp::VolumeProperties(common.Shape(),props);overlap=props.Mass();}}
+        check(built&&std::abs(overlap)<1e-6,"Ordinary NEMA17 bracket with pilot and screw clearances fits the motor",error);
+        const auto native=folder.getChildFile("motor-assembly.djo");const auto definitions=juce::JSON::toString(doc.componentData());bool saved=doc.save(native,error);CadDocument reopened;
+        check(saved&&reopened.load(native,error)&&juce::JSON::toString(reopened.componentData())==definitions&&reopened.mechanicsData().instances.size()==4,"Native reopen retains motor geometry, datums, engineering metadata and links",error);
+        CadCommandService another;another.setComponentLibraryFile(libraryFile);put(request,"action","insert");const auto reused=another.componentCommand(request);check((bool)reused["ok"]&&another.document().features().size()==1,"Motor definitions can be reused in another independent CAD document");
+    }
+    auto legacy=object();put(legacy,"format","djehuti-component-library");put(legacy,"schemaVersion",1);juce::Array<juce::var> oldRows;for(const auto& entry:*motorRecords.getArray())if(!entry["id"].toString().startsWith("motor-stepper-"))oldRows.add(clone(entry));
+    const auto customizedId=oldRows[0]["id"].toString();put(oldRows.getReference(0),"name","Existing user customization");put(legacy,"records",oldRows);const auto legacyFile=folder.getChildFile("pre-motor-library.json");legacyFile.replaceWithText(juce::JSON::toString(legacy));CadComponentLibrary upgrade;upgrade.setFile(legacyFile);
+    check(upgrade.ensureLoaded(error)&&upgrade.find(ids[0])&&upgrade.find(ids[1])&&upgrade.find(ids[2])&&(*upgrade.find(customizedId))["name"].toString()=="Existing user customization","Existing catalogs gain new bundled motors without overwriting user edits",error);
     report=object();put(report,"passed",passed);put(report,"checks",checks);put(report,"imports",importReports);put(report,"coverage",juce::JSON::parse(R"({"robotComponents":32,"batteryPacks":43,"catalogOnly":7,"simplifiedCylinders":2,"envelopes":66,"materialReferencesNotDuplicated":29})"));put(report,"folder",folder.getFullPathName());return passed;
 }
 }

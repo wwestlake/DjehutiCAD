@@ -1,0 +1,235 @@
+[
+  {
+    "name": "cad_create_box",
+    "arguments": {
+      "width": 57.3,
+      "depth": 57.3,
+      "height": 76.5
+    },
+    "createdId": "box-1"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "box-1",
+      "x": -28.65,
+      "y": -28.65,
+      "z": -76.5,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_create_cylinder",
+    "arguments": {
+      "radius": 2.6,
+      "height": 76.51
+    },
+    "createdId": "cylinder-2"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "cylinder-2",
+      "x": -23.57,
+      "y": -23.57,
+      "z": -76.5,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_boolean",
+    "arguments": {
+      "operation": "subtract",
+      "first": "box-1",
+      "second": "cylinder-2"
+    },
+    "createdId": "subtract-3"
+  },
+  {
+    "name": "cad_create_cylinder",
+    "arguments": {
+      "radius": 2.6,
+      "height": 76.51
+    },
+    "createdId": "cylinder-4"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "cylinder-4",
+      "x": -23.57,
+      "y": 23.57,
+      "z": -76.5,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_boolean",
+    "arguments": {
+      "operation": "subtract",
+      "first": "subtract-3",
+      "second": "cylinder-4"
+    },
+    "createdId": "subtract-5"
+  },
+  {
+    "name": "cad_create_cylinder",
+    "arguments": {
+      "radius": 2.6,
+      "height": 76.51
+    },
+    "createdId": "cylinder-6"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "cylinder-6",
+      "x": 23.57,
+      "y": -23.57,
+      "z": -76.5,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_boolean",
+    "arguments": {
+      "operation": "subtract",
+      "first": "subtract-5",
+      "second": "cylinder-6"
+    },
+    "createdId": "subtract-7"
+  },
+  {
+    "name": "cad_create_cylinder",
+    "arguments": {
+      "radius": 2.6,
+      "height": 76.51
+    },
+    "createdId": "cylinder-8"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "cylinder-8",
+      "x": 23.57,
+      "y": 23.57,
+      "z": -76.5,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_boolean",
+    "arguments": {
+      "operation": "subtract",
+      "first": "subtract-7",
+      "second": "cylinder-8"
+    },
+    "createdId": "subtract-9"
+  },
+  {
+    "name": "cad_create_cylinder",
+    "arguments": {
+      "radius": 19.05,
+      "height": 1.6
+    },
+    "createdId": "cylinder-10"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "cylinder-10",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_boolean",
+    "arguments": {
+      "operation": "union",
+      "first": "subtract-9",
+      "second": "cylinder-10"
+    },
+    "createdId": "union-11"
+  },
+  {
+    "name": "cad_create_cylinder",
+    "arguments": {
+      "radius": 3.175,
+      "height": 21
+    },
+    "createdId": "cylinder-12"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "cylinder-12",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_create_box",
+    "arguments": {
+      "width": 8.35,
+      "depth": 4,
+      "height": 15.01
+    },
+    "createdId": "box-13"
+  },
+  {
+    "name": "cad_set_placement",
+    "arguments": {
+      "id": "box-13",
+      "x": -4.175,
+      "y": 2.675,
+      "z": 6,
+      "rx": 0,
+      "ry": 0,
+      "rz": 0
+    },
+    "createdId": null
+  },
+  {
+    "name": "cad_boolean",
+    "arguments": {
+      "operation": "subtract",
+      "first": "cylinder-12",
+      "second": "box-13"
+    },
+    "createdId": "subtract-14"
+  },
+  {
+    "name": "cad_boolean",
+    "arguments": {
+      "operation": "union",
+      "first": "union-11",
+      "second": "subtract-14"
+    },
+    "createdId": "union-15"
+  }
+]

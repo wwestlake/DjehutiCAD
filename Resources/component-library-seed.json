@@ -14205,6 +14205,2003 @@
       },
       "sourceHash": "8e6b56edd4a2c7c79aef82c4c1307d48f3e82bc59cb618834dccea0b17369555",
       "edited": false
+    },
+    {
+      "id": "motor-stepper-28byj48-12v-reference",
+      "revision": 1,
+      "origin": "commercial",
+      "name": "Light stepper \u2014 28BYJ-48 12V (supplier unconfirmed)",
+      "category": "Mechanical/Motors/Stepper/Light",
+      "description": "Reusable light stepper motor reference. Mounting face at local Z=0; body behind face; output shaft along +Z. Supplier variant unconfirmed; use for layout studies only.",
+      "properties": [
+        {
+          "label": "Motor class",
+          "value": "Light"
+        },
+        {
+          "label": "Recommended driver identifier",
+          "value": "driver-uln2003a-reference"
+        },
+        {
+          "label": "Coordinate convention",
+          "value": "Mount face Z=0; output shaft +Z; body negative Z"
+        },
+        {
+          "label": "Mount-hole centers (mm)",
+          "value": "[[-17.5, -8, 0], [17.5, -8, 0]]"
+        },
+        {
+          "label": "Mating datum origins (mm)",
+          "value": "[{\"id\": \"mount-face\", \"originMm\": [0, 0, 0], \"axis\": [0, 0, 1], \"xDirection\": [1, 0, 0]}, {\"id\": \"shaft-axis\", \"originMm\": [0, 0, 0], \"axis\": [0, 0, 1]}, {\"id\": \"shaft-tip\", \"originMm\": [0, 0, 15.2], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-1\", \"originMm\": [-17.5, -8, 0], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-2\", \"originMm\": [17.5, -8, 0], \"axis\": [0, 0, 1]}]"
+        },
+        {
+          "label": "Mechanical / bodyDiameterMm",
+          "value": 28,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / bodyLengthMm",
+          "value": 19,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / shaftDiameterMm",
+          "value": 5,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / shaftProjectionMm",
+          "value": 15.2,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / flatAcrossMm",
+          "value": 3,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / flatLengthMm",
+          "value": 11,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / pilotDiameterMm",
+          "value": 9.2,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / pilotHeightMm",
+          "value": 1.5,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountPitchMm",
+          "value": 35,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountHoleDiameterMm",
+          "value": 4,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / shaftOffsetMm",
+          "value": 8,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountThread",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "Clearance bore; thread not asserted.",
+          "unit": "1"
+        },
+        {
+          "label": "Mechanical / mountHoleDepthMm",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "Not dimensioned; full-depth cutters in the simplified envelope are not a depth specification.",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / massKg",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "Published nominal mass; no homogeneous density or center of gravity is inferred.",
+          "unit": "kg"
+        },
+        {
+          "label": "Mechanical / rotorInertiaKgM2",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia.",
+          "unit": "kg*m^2"
+        },
+        {
+          "label": "Mechanical / centerOfGravity",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / permittedRadialLoadN",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "N"
+        },
+        {
+          "label": "Mechanical / permittedAxialLoadN",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "N"
+        },
+        {
+          "label": "Mechanical / connectorClearance",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Electrical / windingArrangement",
+          "value": "four phase/common supply unipolar",
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / phaseResistanceOhm",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "Exact 12V supplier unresolved. Maintex 28BYJ48-054 table gives 130 ohm; not transferred to an unidentified unit.",
+          "unit": "ohm"
+        },
+        {
+          "label": "Electrical / phaseInductanceH",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "H"
+        },
+        {
+          "label": "Electrical / phaseRatedCurrentA",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "A"
+        },
+        {
+          "label": "Electrical / fullStepAngleDeg",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "The 5.625-degree 1-2 phase excitation interval is not asserted as a full-step angle.",
+          "unit": "deg"
+        },
+        {
+          "label": "Electrical / publishedExcitationIntervalDeg",
+          "value": 5.625,
+          "confidence": "manufacturer-family-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-stepper-motor-datasheet-.jpg",
+          "note": "",
+          "unit": "deg"
+        },
+        {
+          "label": "Electrical / holdingTorqueNm",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "Holding torque is not continuous operating torque.",
+          "unit": "N*m"
+        },
+        {
+          "label": "Electrical / nominalSupplyV",
+          "value": 12,
+          "confidence": "reference-only",
+          "sourceUrl": "https://docs.google.com/document/d/1C56vMJvwZLRPRPaYo8RQID4N3Q_D6s1qUkklbrhlFa8/edit",
+          "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage.",
+          "unit": "V"
+        },
+        {
+          "label": "Electrical / gearRatio",
+          "value": 64,
+          "confidence": "nominal-reference",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-stepper-motor-datasheet-.jpg",
+          "note": "Actual supplier gear ratio, backlash and efficiency are unknown.",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / torqueConstantNmPerA",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "N*m/A"
+        },
+        {
+          "label": "Electrical / backEmfConstantVsPerRad",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "V*s/rad"
+        },
+        {
+          "label": "Electrical / viscousFrictionNms",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "N*m*s/rad"
+        },
+        {
+          "label": "Electrical / gearboxEfficiency",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / dynamicTorqueSpeedCurve",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Geometry limitation 1",
+          "value": "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled."
+        },
+        {
+          "label": "Geometry limitation 2",
+          "value": "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied."
+        },
+        {
+          "label": "Geometry limitation 3",
+          "value": "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned."
+        },
+        {
+          "label": "Geometry limitation 4",
+          "value": "Supplier/SKU unresolved. Maintex family drawing is only a reference, not verification of any purchased 12V variant."
+        },
+        {
+          "label": "Geometry limitation 5",
+          "value": "Ear thickness 1 mm and plastic exit shape are illustrative. Published family double-flat profile is used; verify the actual shaft."
+        }
+      ],
+      "provenance": {
+        "sourceDocument": "https://docs.google.com/document/d/1C56vMJvwZLRPRPaYo8RQID4N3Q_D6s1qUkklbrhlFa8/edit",
+        "electricalReference": "https://docs.google.com/document/d/1huFVYliLVgQ3jbtYar8RFib-znZL_OWw1xIB1Myiw70/edit",
+        "checkedDate": "2026-10-21",
+        "drawingUrl": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+        "geometryConstruction": "Existing DjehutiCAD box/cylinder/Boolean commands, published as ordinary BRep component snapshot.",
+        "constructionRecipe": "components/source/28byj48-12v-reference.commands.json",
+        "stepModelAvailability": "Manufacturer STEP requires login; not downloaded or represented as official STEP.",
+        "limitations": [
+          "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+          "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+          "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned.",
+          "Supplier/SKU unresolved. Maintex family drawing is only a reference, not verification of any purchased 12V variant.",
+          "Ear thickness 1 mm and plastic exit shape are illustrative. Published family double-flat profile is used; verify the actual shaft."
+        ]
+      },
+      "geometry": {
+        "kind": "brep",
+        "level": "simplified",
+        "label": "Drawing-derived mounting/shaft reference; simplified housing; not certified manufacturing geometry",
+        "data": "\nCASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 53\n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 0 1 0 \n1 0 1.5 1 0 \n1 0 19 1 0 \n1 0 1.5 1 0 \n1 2.8889123984477147 0 0 1 \n1 0 18 1 0 \n1 3.3942729087318715 0 0 1 \n1 4.1638647019435879 0 0 1 \n1 0 0 1 0 \n1 0 -0 0 1 \n1 6.2831853071795862 -0 0 1 \n1 0 18 1 0 \n1 0.25268025514207865 0 0 1 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 15.199999999999999 1 0 \n1 0.64350110879328437 0 0 1 \n1 0 4.2000000000000002 1 0 \n1 2.4980915447965089 0 0 1 \n1 3.7850937623830774 0 0 1 \n1 0 4.2000000000000002 1 0 \n1 5.639684198386302 0 0 1 \n1 1.5707963267948966 0 0 1 \n1 4.7123889803846897 0 0 1 \n1 5.2609132588257914 0 0 1 \n1 6.0305050520375074 0 0 1 \n1 0 18 1 0 \n1 1.5707963267948966 0 0 1 \n1 0 1.5 1 0 \n1 0 1.5 1 0 \n1 0 1.5 1 0 \n1 4.7123889803846897 0 0 1 \n1 0 1 1 0 \n1 0 0 1 0 \n1 0 0.5 1 0 \n1 0 0.5 1 0 \n1 0 0.5 1 0 \n1 0 1 1 0 \n1 0 0 1 0 \n1 0 -0 0 1 \n1 6.2831853071795862 -0 0 1 \n1 0 1.5 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 0.5 1 0 \n1 0 1.5 1 0 \n1 0 1.5 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 0.5 1 0 \n1 0 0.5 1 0 \nCurves 108\n1 4.5999999999999996 -1.1266750552155648e-15 0 0 0 1 \n2 0 0 0 0 0 1 1 0 0 0 1 0 4.5999999999999996\n2 0 0 0 0 0 1 1 0 0 0 1 0 4.5999999999999996\n2 0 0 0 0 0 1 1 0 0 0 1 0 4.5999999999999996\n2 0 0 1.5 0 0 1 1 0 0 0 1 0 4.5999999999999996\n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n1 -17.5 -4.5 0 1 0 0 \n1 -17.5 -4.5 0 1 0 0 \n1 -17.5 -11.5 0 1 0 0 \n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n2 0 0 1.5 0 0 1 1 0 0 0 1 0 2.5\n1 -13.555441711725958 -4.5 -19 0 0 1 \n2 0 -8 -1 0 0 1 1 0 0 0 1 0 14\n2 0 -8 -1 0 0 1 1 0 0 0 1 0 14\n1 -13.555441711725958 -11.5 -19 0 0 1 \n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n1 -7.2999999999999998 -19.946129080166514 -19 0 0 1 \n2 0 -8 -19 0 0 1 1 0 0 0 1 0 14\n1 14 -8.0000000000000036 -19 0 0 1 \n2 0 -8 -1 0 0 1 1 0 0 0 1 0 14\n1 13.555441711725958 -4.5 -19 0 0 1 \n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n1 7.2999999999999998 -26 0 0 1 0 \n1 -7.2999999999999998 -18 0 1 0 0 \n1 -7.2999999999999998 -26 0 0 1 0 \n2 -17.5 -8 0 0 0 1 1 0 0 0 1 0 3.5\n1 -17.5 -11.5 0 1 0 0 \n1 -17.5 -4.5 0 1 0 0 \n2 -17.5 -8 0 0 0 1 1 0 0 0 1 0 3.5\n1 -17.5 -4.5 0 1 0 0 \n2 17.5 -8 0 0 0 1 1 0 0 0 1 0 3.5\n2 17.5 -8 0 0 0 1 1 0 0 0 1 0 3.5\n1 -17.5 -11.5 0 1 0 0 \n1 2.5 -6.1232339957367663e-16 0 0 0 1 \n2 0 0 15.199999999999999 0 0 1 1 0 0 0 1 0 2.5\n1 2 1.5 0 0 0 1 \n2 0 0 4.2000000000000002 0 0 1 1 0 0 0 1 0 2.5\n1 -2 1.5 0 0 0 1 \n2 0 0 15.199999999999999 0 0 1 1 0 0 0 1 0 2.5\n1 -2 -1.5 0 0 0 1 \n2 0 0 4.2000000000000002 0 0 1 1 0 0 0 1 0 2.5\n1 2 -1.5 0 0 0 1 \n2 0 0 15.199999999999999 0 0 1 1 0 0 0 1 0 2.5\n1 -17.5 -4.5 -1 1 0 0 \n1 -17.5 -4.5 -1 0 0 1 \n2 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n2 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 -17.5 -11.5 -1 1 0 0 \n1 -17.5 -11.5 -1 0 0 1 \n1 -7.2999999999999998 -26 0 0 1 0 \n1 -7.2999999999999998 -26 -19 0 1 0 \n1 -7.2999999999999998 -26 -19 0 0 1 \n2 0 -8 -19 0 0 1 1 0 0 0 1 0 14\n1 7.2999999999999998 -26 -19 0 1 0 \n1 -7.2999999999999998 -18 -19 1 0 0 \n1 -7.2999999999999998 -26 -19 0 1 0 \n1 7.2999999999999998 -19.946129080166514 -19 0 0 1 \n1 13.555441711725958 -11.5 -19 0 0 1 \n2 0 -8 -1 0 0 1 1 0 0 0 1 0 14\n1 -17.5 -4.5 -1 1 0 0 \n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 17.5 -4.5 -1 0 0 1 \n2 0 -8 0 0 0 1 1 0 0 0 1 0 14\n1 -17.5 -11.5 0 0 1 0 \n2 -17.5 -8 0 0 0 1 1 0 0 0 1 0 2\n2 -17.5 -8 0 0 0 1 1 0 0 0 1 0 2\n1 -17.5 -11.5 0 0 1 0 \n1 17.5 -11.5 0 0 1 0 \n2 17.5 -8 0 0 0 1 1 0 0 0 1 0 2\n1 17.5 -11.5 0 0 1 0 \n1 -17.5 -11.5 -1 1 0 0 \n1 17.5 -11.5 -1 0 0 1 \n1 -2 1.5 15.199999999999999 -1 0 0 \n1 -2 -1.5 15.199999999999999 -1 0 0 \n1 -4 1.5 4.2000000000000002 1 0 0 \n1 -4 -1.5 4.2000000000000002 1 0 0 \n2 -17.5 -8 0 0 0 1 1 0 0 0 1 0 3.5\n2 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 -17.5 -11.5 -1 0 1 0 \n2 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 2\n2 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 2\n1 -17.5 -11.5 -1 0 1 0 \n1 7.2999999999999998 -26 0 0 1 0 \n1 -7.2999999999999998 -26 0 1 0 0 \n2 0 -8 -19 0 0 1 1 0 0 0 1 0 14\n1 7.2999999999999998 -26 -19 0 1 0 \n1 -7.2999999999999998 -26 -19 1 0 0 \n1 7.2999999999999998 -26 -19 0 0 1 \n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 17.5 -11.5 -1 0 1 0 \n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 2\n1 17.5 -11.5 -1 0 1 0 \n2 17.5 -8 0 0 0 1 1 0 0 0 1 0 3.5\n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 21 -8 -1 0 0 1 \n2 -17.5 -8 0 0 0 1 1 0 0 0 1 0 2\n1 -15.5 -8 -1.5 0 0 1 \n2 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 2\n2 17.5 -8 0 0 0 1 1 0 0 0 1 0 2\n2 17.5 -8 0 0 0 1 1 0 0 0 1 0 2\n2 17.5 -8 0 0 0 1 1 0 0 0 1 0 3.5\n1 19.5 -8 -1.5 0 0 1 \n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 2\n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 2\n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 46\n2 0 0 0 0 0 1 1 0 0 0 1 0 4.5999999999999996\n1 0 -8 0 0 0 1 1 0 0 0 1 0 \n2 0 -8 -19 0 0 1 1 0 0 0 1 0 14\n1 0 -8 0 0 0 1 1 0 0 0 1 0 \n1 0 0 1.5 0 0 1 1 0 0 0 1 0 \n2 0 0 0 0 0 1 1 0 0 0 1 0 2.5\n2 0 -8 -19 0 0 1 1 0 0 0 1 0 14\n1 0 -8 0 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 0 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 0 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 0 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 0 0 0 1 1 0 0 0 1 0 \n1 -17.5 -4.5 -1 0 1 0 0 0 1 1 0 0 \n2 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 -17.5 -11.5 -1 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 -1 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 -1 0 1 0 0 0 1 1 0 0 \n1 -7.2999999999999998 -26 -19 1 0 0 0 0 1 0 -1 0 \n1 0 -8 -19 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 -1 0 0 1 1 0 0 0 1 0 \n1 -17.5 -4.5 -1 0 1 0 0 0 1 1 0 0 \n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 0 -8 0 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 0 0 0 1 1 0 0 0 1 0 \n2 -17.5 -8 -1.5 0 0 1 1 0 0 0 1 0 2\n1 -17.5 -11.5 0 0 0 1 1 0 0 0 1 0 \n2 17.5 -8 -1.5 0 0 1 1 0 0 0 1 0 2\n1 -17.5 -11.5 -1 0 1 0 0 0 1 1 0 0 \n2 17.5 -8 -1 0 0 1 1 0 0 0 1 0 3.5\n1 0 0 15.199999999999999 0 0 1 1 0 0 0 1 0 \n1 -4 1.5 4.2000000000000002 0 1 0 0 0 1 1 0 0 \n1 -4 1.5 4.2000000000000002 0 0 1 1 0 0 0 1 0 \n1 -4 -1.5 4.2000000000000002 0 1 0 0 0 1 1 0 0 \n1 -4 -5.5 4.2000000000000002 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 -1 0 0 1 1 0 0 0 1 0 \n1 -7.2999999999999998 -26 0 0 0 1 1 0 0 0 1 0 \n1 -7.2999999999999998 -26 -19 0 0 1 1 0 0 0 1 0 \n1 -7.2999999999999998 -26 -19 0 1 0 0 0 1 1 0 0 \n1 0 -8 -19 0 0 1 1 0 0 0 1 0 \n1 7.2999999999999998 -26 -19 1 0 0 0 0 1 0 -1 0 \n1 -17.5 -11.5 -1 0 0 1 1 0 0 0 1 0 \n1 -17.5 -11.5 -1 0 0 1 1 0 0 0 1 0 \n1 -17.5 -8 0 0 0 1 1 0 0 0 1 0 \n1 17.5 -8 0 0 0 1 1 0 0 0 1 0 \n1 -17.5 -8 -1 0 0 1 1 0 0 0 1 0 \n1 17.5 -8 -1 0 0 1 1 0 0 0 1 0 \nTriangulations 0\n\nTShapes 265\nVe\n1e-07\n4.6 -1.12667505521556e-15 1.5\n0 0\n\n0101101\n*\nVe\n1e-07\n4.6 -1.12667505521556e-15 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  1 0 0 1.5\n3  1 2CN 1 0 0 1.5\n0\n\n0101000\n-265 0 +264 0 *\nVe\n1.00000037310473e-07\n0.953939201416591 -4.50000000000004 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  2 0 4.92128299764731 6.28318530717959\n2  3 1 0 4.92128299764731 6.28318530717959\n0\n\n0101000\n+262 0 -264 0 *\nVe\n1.00000059513029e-07\n-0.953939201416385 -4.50000000000006 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  3 0 4.50349496312211 4.92128299764731\n2  3 1 0 4.50349496312211 4.92128299764731\n0\n\n0101000\n+260 0 -262 0 *\nEd\n 1e-07 1 1 0\n1  4 0 0 4.50349496312211\n2  3 1 0 0 4.50349496312211\n0\n\n0101000\n+264 0 -260 0 *\nEd\n 1e-07 1 1 0\n1  5 0 0 6.28318530717959\n2  4 1 0 0 6.28318530717959\n0\n\n0101000\n+265 0 -265 0 *\nWi\n\n0101100\n+263 0 +261 0 +259 0 +258 0 -263 0 -257 0 *\nFa\n0  1e-07 1 0\n\n0101000\n+256 0 *\nVe\n1.00000027875222e-07\n13.555441711726 -4.50000000000002 0\n0 0\n\n0101101\n*\nVe\n1.00000140646635e-07\n-13.555441711726 -4.50000000000012 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  6 0 0.252680255142077 2.88891239844772\n2  5 3 0 0.252680255142077 2.88891239844772\n0\n\n0101000\n+254 0 -253 0 *\nEd\n 1e-07 1 1 0\n1  7 0 18.4539392014166 31.055441711726\n0\n\n0101000\n+262 0 -254 0 *\nEd\n 1e-07 1 1 0\n1  8 0 3.94455828827398 16.5460607985836\n0\n\n0101000\n+253 0 -260 0 *\nWi\n\n0101100\n+252 0 +251 0 -261 0 -258 0 +250 0 *\nFa\n0  1e-07 2 0\n\n0101000\n+249 0 *\nVe\n1.00000140646635e-07\n-13.555441711726 -11.4999999999999 0\n0 0\n\n0101101\n*\nVe\n1.00000023832328e-07\n13.555441711726 -11.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  9 0 3.94455828827398 31.055441711726\n0\n\n0101000\n+247 0 -246 0 *\nVe\n2.39008116780234e-05\n-14 -8 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  10 0 3.14159265358979 3.39427290873186\n0\n\n0101000\n+244 0 -247 0 *\nEd\n 1e-07 1 1 0\n1  11 0 2.88891239844772 3.14159265358979\n0\n\n0101000\n+253 0 -244 0 *\nVe\n2.39008116727691e-05\n14 -8 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  12 0 0 0.252680255142077\n0\n\n0101000\n+241 0 -254 0 *\nEd\n 1e-07 1 1 0\n1  13 0 6.03050505203751 6.28318530717959\n0\n\n0101000\n+246 0 -241 0 *\nWi\n\n0101100\n+245 0 +243 0 +242 0 -250 0 -259 0 -251 0 +240 0 +239 0 *\nFa\n0  1e-07 4 0\n\n0101000\n+238 0 *\nWi\n\n0101100\n+257 0 *\nVe\n1.00000000612323e-07\n2.5 -6.12323399573677e-16 1.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  14 0 0 6.28318530717959\n2  6 6 0 0 6.28318530717959\n0\n\n0101000\n+235 0 -235 0 *\nWi\n\n0101100\n-234 0 *\nFa\n0  1e-07 5 0\n\n0101000\n+236 0 +233 0 *\nVe\n1.00000003552714e-07\n-13.555441711726 -4.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  15 0 18 19\n2  7 3 0 18 19\n0\n\n0101000\n+231 0 -253 0 *\nVe\n2.39008116780234e-05\n-14 -8 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  16 0 2.88891239844771 3.14159265358979\n2  8 3 0 2.88891239844771 3.14159265358979\n0\n\n0101000\n+231 0 -229 0 *\nVe\n1.00000001776357e-07\n-13.555441711726 -11.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  17 0 3.14159265358979 3.39427290873187\n2  8 3 0 3.14159265358979 3.39427290873187\n0\n\n0101000\n+229 0 -227 0 *\nEd\n 1e-07 1 1 0\n1  18 0 18 19\n2  9 3 0 18 19\n0\n\n0101000\n+227 0 -247 0 *\nVe\n1.00000248030881e-07\n-7.29999999999984 -19.9461290801667 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  19 0 3.39427290873186 4.1638647019436\n2  5 3 0 3.39427290873186 4.1638647019436\n0\n\n0101000\n+247 0 -224 0 *\nVe\n1.00000466631901e-07\n-7.30000000000029 -19.9461290801662 -19\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  20 0 0 19\n2  10 3 0 0 19\n0\n\n0101000\n+222 0 -224 0 *\nVe\n1e-07\n14 -8 -19\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  21 0 0 4.16386470194356\n2  11 3 0 0 4.16386470194356\n0\n\n0101000\n+220 0 -222 0 *\nVe\n2.39008116727691e-05\n14 -8 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  22 0 0 18\n2  12 3 0 0 18\n2  13 7 0 0 18\n4 CN 3 0 7 0\n0\n\n0101000\n+220 0 -218 0 *\nVe\n1.00000001986027e-07\n13.555441711726 -4.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  23 0 0 0.252680255142079\n2  14 3 0 0 0.252680255142079\n0\n\n0101000\n+218 0 -216 0 *\nEd\n 1e-07 1 1 0\n1  24 0 18 19\n2  15 3 0 18 19\n0\n\n0101000\n+216 0 -254 0 *\nWi\n\n0101100\n-252 0 +230 0 -228 0 -226 0 -225 0 -223 0 +221 0 +219 0 -217 0 -215 0 \n-214 0 *\nFa\n0  1e-07 3 0\n\n0101000\n+213 0 *\nVe\n1.00000249728228e-07\n7.29999999999984 -19.9461290801667 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  25 0 5.26091325882577 6.03050505203751\n2  5 7 0 5.26091325882577 6.03050505203751\n0\n\n0101000\n+211 0 -246 0 *\nVe\n1e-07\n7.3 -18 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  26 0 6.05387091983329 8\n0\n\n0101000\n+211 0 -209 0 *\nVe\n1e-07\n-7.3 -18 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  27 0 0 14.6\n0\n\n0101000\n-209 0 +207 0 *\nEd\n 1e-07 1 1 0\n1  28 0 6.05387091983329 8\n0\n\n0101000\n+224 0 -207 0 *\nWi\n\n0101100\n-245 0 +210 0 -208 0 +206 0 +205 0 +223 0 *\nFa\n0  1e-07 8 0\n\n0101000\n+204 0 *\nVe\n1.0000000116861e-07\n-17.5 -11.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  29 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+202 0 -244 0 *\nEd\n 1e-07 1 1 0\n1  30 0 0 3.94455828827398\n0\n\n0101000\n+202 0 -247 0 *\nWi\n\n0101100\n-201 0 -243 0 +200 0 *\nFa\n0  1e-07 9 0\n\n0101000\n+199 0 *\nVe\n1.0000000116861e-07\n-17.5 -4.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  31 0 0 3.94455828827398\n0\n\n0101000\n+197 0 -253 0 *\nEd\n 1e-07 1 1 0\n1  32 0 0 1.5707963267949\n0\n\n0101000\n+244 0 -197 0 *\nWi\n\n0101100\n-196 0 -242 0 -195 0 *\nFa\n0  1e-07 10 0\n\n0101000\n+194 0 *\nVe\n1.0000000116861e-07\n17.5 -4.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  33 0 31.055441711726 35\n0\n\n0101000\n+254 0 -192 0 *\nEd\n 1e-07 1 1 0\n1  34 0 1.5707963267949 3.14159265358979\n0\n\n0101000\n+192 0 -241 0 *\nWi\n\n0101100\n-191 0 -190 0 -240 0 *\nFa\n0  1e-07 11 0\n\n0101000\n+189 0 *\nVe\n1.0000000116861e-07\n17.5 -11.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  35 0 3.14159265358979 4.71238898038469\n0\n\n0101000\n+241 0 -187 0 *\nEd\n 1e-07 1 1 0\n1  36 0 31.055441711726 35\n0\n\n0101000\n+246 0 -187 0 *\nWi\n\n0101100\n-186 0 +185 0 -239 0 *\nFa\n0  1e-07 12 0\n\n0101000\n+184 0 *\nVe\n1e-07\n2.5 -6.12323399573677e-16 15.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  37 0 1.5 15.2\n3  16 17CN 6 0 1.5 15.2\n0\n\n0101000\n+235 0 -182 0 *\nVe\n1.5e-07\n2 1.5 15.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  38 0 0 0.643501108793284\n2  18 6 0 0 0.643501108793284\n0\n\n0101000\n+182 0 -180 0 *\nVe\n1e-07\n2 1.5 4.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  39 0 4.2 15.2\n2  19 6 0 4.2 15.2\n0\n\n0101000\n+178 0 -180 0 *\nVe\n1e-07\n-2 1.5 4.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  40 0 0.643501108793284 2.49809154479651\n2  20 6 0 0.643501108793284 2.49809154479651\n0\n\n0101000\n+178 0 -176 0 *\nVe\n1.5e-07\n-2 1.5 15.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  41 0 4.2 15.2\n2  21 6 0 4.2 15.2\n0\n\n0101000\n+176 0 -174 0 *\nVe\n1.50000000666134e-07\n-2 -1.5 15.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  42 0 2.49809154479651 3.78509376238308\n2  18 6 0 2.49809154479651 3.78509376238308\n0\n\n0101000\n+174 0 -172 0 *\nVe\n1.00000000800593e-07\n-2 -1.5 4.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  43 0 4.2 15.2\n2  22 6 0 4.2 15.2\n0\n\n0101000\n+170 0 -172 0 *\nVe\n1.00000000314018e-07\n2 -1.5 4.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  44 0 3.78509376238308 5.6396841983863\n2  23 6 0 3.78509376238308 5.6396841983863\n0\n\n0101000\n+170 0 -168 0 *\nVe\n1.50000000314018e-07\n2 -1.5 15.2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  45 0 4.2 15.2\n2  24 6 0 4.2 15.2\n0\n\n0101000\n+168 0 -166 0 *\nEd\n 1e-07 1 1 0\n1  46 0 5.6396841983863 6.28318530717959\n2  18 6 0 5.6396841983863 6.28318530717959\n0\n\n0101000\n+166 0 -182 0 *\nWi\n\n0101100\n+181 0 +234 0 -181 0 -179 0 +177 0 -175 0 -173 0 -171 0 +169 0 -167 0 \n-165 0 -164 0 *\nFa\n0  1e-07 6 0\n\n0101000\n+163 0 *\nVe\n1.0000000116861e-07\n-17.5 -4.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  47 0 0 3.94455828827404\n0\n\n0101000\n+161 0 -231 0 *\nEd\n 1e-07 1 1 0\n1  48 0 0 1\n2  25 14 0 0 1\n0\n\n0101000\n-197 0 +161 0 *\nWi\n\n0101100\n-160 0 -230 0 +196 0 +159 0 *\nFa\n0  1e-07 13 0\n\n0101000\n+158 0 *\nEd\n 1e-07 1 1 0\n1  49 0 0 1.5707963267949\n0\n\n0101000\n+229 0 -161 0 *\nWi\n\n0101100\n-160 0 -228 0 -156 0 *\nFa\n0  1e-07 15 0\n\n0101000\n+155 0 *\nVe\n1.0000000116861e-07\n-17.5 -11.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  50 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+153 0 -229 0 *\nEd\n 1e-07 1 1 0\n1  51 0 0 3.94455828827404\n0\n\n0101000\n+153 0 -227 0 *\nWi\n\n0101100\n-152 0 -226 0 +151 0 *\nFa\n0  1e-07 16 0\n\n0101000\n+150 0 *\nEd\n 1e-07 1 1 0\n1  52 0 0 1\n2  26 14 0 0 1\n0\n\n0101000\n-202 0 +153 0 *\nWi\n\n0101100\n-151 0 -225 0 +200 0 +148 0 *\nFa\n0  1e-07 17 0\n\n0101000\n+147 0 *\nVe\n1e-07\n-7.3 -26 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  53 0 0 6.05387091983329\n0\n\n0101000\n+145 0 -224 0 *\nVe\n1e-07\n-7.3 -26 -19\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  54 0 0 6.05387091983385\n0\n\n0101000\n+143 0 -222 0 *\nEd\n 1e-07 1 1 0\n1  55 0 0 19\n0\n\n0101000\n-145 0 +143 0 *\nWi\n\n0101100\n-144 0 +221 0 +142 0 -141 0 *\nFa\n0  1e-07 18 0\n\n0101000\n+140 0 *\nVe\n1.00000871701306e-07\n7.29999999999945 -19.9461290801672 -19\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  56 0 5.26091325882573 6.28318530717959\n2  11 7 0 5.26091325882573 6.28318530717959\n0\n\n0101000\n+138 0 -220 0 *\nVe\n1e-07\n7.3 -18 -19\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  57 0 6.05387091983281 8\n0\n\n0101000\n+138 0 -136 0 *\nVe\n1e-07\n-7.3 -18 -19\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  58 0 0 14.6\n0\n\n0101000\n-136 0 +134 0 *\nEd\n 1e-07 1 1 0\n1  59 0 6.05387091983385 8\n0\n\n0101000\n+222 0 -134 0 *\nWi\n\n0101100\n+137 0 -135 0 +133 0 +132 0 +219 0 *\nFa\n0  1e-07 19 0\n\n0101000\n+131 0 *\nEd\n 1e-07 1 1 0\n1  60 0 0 19\n2  27 7 0 0 19\n0\n\n0101000\n+138 0 -211 0 *\nVe\n1.00000005329071e-07\n13.555441711726 -11.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  61 0 18 19\n2  28 7 0 18 19\n0\n\n0101000\n+128 0 -246 0 *\nEd\n 1e-07 1 1 0\n1  62 0 6.03050505203751 6.28318530717959\n2  29 7 0 6.03050505203751 6.28318530717959\n0\n\n0101000\n+128 0 -218 0 *\nWi\n\n0101100\n+217 0 +137 0 -129 0 -210 0 +127 0 -126 0 *\nFa\n0  1e-07 7 0\n\n0101000\n+125 0 *\nVe\n1.0000000116861e-07\n17.5 -4.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  63 0 31.055441711726 35\n0\n\n0101000\n+216 0 -123 0 *\nEd\n 1e-07 1 1 0\n1  64 0 1.5707963267949 3.14159265358979\n0\n\n0101000\n+123 0 -218 0 *\nWi\n\n0101100\n-122 0 -121 0 -215 0 *\nFa\n0  1e-07 20 0\n\n0101000\n+120 0 *\nEd\n 1e-07 1 1 0\n1  65 0 0 1\n2  30 22 0 0 1\n0\n\n0101000\n-192 0 +123 0 *\nWi\n\n0101100\n-122 0 -118 0 +191 0 +214 0 *\nFa\n0  1e-07 21 0\n\n0101000\n+117 0 *\nEd\n 1e-07 1 1 0\n1  66 0 4.1638647019436 5.26091325882577\n0\n\n0101000\n+224 0 -211 0 *\nWi\n\n0101100\n-205 0 -206 0 +208 0 +115 0 *\nFa\n0  1e-07 23 0\n\n0101000\n+114 0 *\nVe\n1e-07\n-17.5 -10 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  67 0 0 1.5\n0\n\n0101000\n+202 0 -112 0 *\nVe\n1e-07\n-15.5 -8 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  68 0 4.71238898038469 6.28318530717959\n2  31 25 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+112 0 -110 0 *\nVe\n1e-07\n-17.5 -6 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  69 0 0 1.5707963267949\n2  32 25 0 0 1.5707963267949\n0\n\n0101000\n+110 0 -108 0 *\nEd\n 1e-07 1 1 0\n1  70 0 5.5 7\n0\n\n0101000\n+108 0 -197 0 *\nWi\n\n0101100\n+201 0 -111 0 -109 0 -107 0 -106 0 +195 0 *\nFa\n0  1e-07 24 0\n\n0101000\n+105 0 *\nVe\n1e-07\n17.5 -6 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  71 0 5.5 7\n0\n\n0101000\n+103 0 -192 0 *\nVe\n1e-07\n17.5 -10 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  72 0 1.5707963267949 4.71238898038469\n2  33 27 0 1.5707963267949 4.71238898038469\n0\n\n0101000\n+103 0 -101 0 *\nEd\n 1e-07 1 1 0\n1  73 0 0 1.5\n0\n\n0101000\n+187 0 -101 0 *\nWi\n\n0101100\n+186 0 +190 0 +102 0 -100 0 +99 0 *\nFa\n0  1e-07 26 0\n\n0101000\n+98 0 *\nVe\n1.0000000116861e-07\n17.5 -11.5 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  74 0 31.055441711726 35\n0\n\n0101000\n+128 0 -96 0 *\nEd\n 1e-07 1 1 0\n1  75 0 0 1\n2  34 29 0 0 1\n0\n\n0101000\n-187 0 +96 0 *\nWi\n\n0101100\n-95 0 -94 0 +185 0 +127 0 *\nFa\n0  1e-07 28 0\n\n0101000\n+93 0 *\nEd\n 1.5e-07 1 1 0\n1  76 0 -4 0\n0\n\n0101000\n+180 0 -174 0 *\nEd\n 1.5e-07 1 1 0\n1  77 0 -4 4.44089209850063e-16\n0\n\n0101000\n+166 0 -172 0 *\nWi\n\n0101100\n+91 0 +179 0 +164 0 -90 0 +171 0 *\nFa\n0  1e-07 30 0\n\n0101000\n+89 0 *\nEd\n 1e-07 1 1 0\n1  78 0 2 6\n0\n\n0101000\n+176 0 -178 0 *\nWi\n\n0101100\n-87 0 -177 0 -91 0 +173 0 *\nFa\n0  1e-07 31 0\n\n0101000\n+86 0 *\nWi\n\n0101100\n+175 0 +87 0 *\nFa\n0  1e-07 32 0\n\n0101000\n+84 0 *\nEd\n 1e-07 1 1 0\n1  79 0 2 6\n0\n\n0101000\n+170 0 -168 0 *\nWi\n\n0101100\n-82 0 -165 0 -90 0 +169 0 *\nFa\n0  1e-07 33 0\n\n0101000\n+81 0 *\nWi\n\n0101100\n-82 0 +167 0 *\nFa\n0  1e-07 34 0\n\n0101000\n+79 0 *\nEd\n 1e-07 1 1 0\n1  80 0 1.5707963267949 4.71238898038469\n2  35 14 0 1.5707963267949 4.71238898038469\n0\n\n0101000\n+197 0 -202 0 *\nEd\n 1e-07 1 1 0\n1  81 0 1.5707963267949 4.71238898038469\n2  36 14 0 1.5707963267949 4.71238898038469\n0\n\n0101000\n+161 0 -153 0 *\nWi\n\n0101100\n-77 0 +148 0 +76 0 -159 0 *\nFa\n0  1e-07 14 0\n\n0101000\n+75 0 *\nVe\n1e-07\n-17.5 -10 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  82 0 0 1.5\n0\n\n0101000\n+153 0 -73 0 *\nVe\n1e-07\n-15.5 -8 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  83 0 4.71238898038469 6.28318530717959\n2  37 25 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+73 0 -71 0 *\nVe\n1e-07\n-17.5 -6 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  84 0 0 1.5707963267949\n2  38 25 0 0 1.5707963267949\n0\n\n0101000\n+71 0 -69 0 *\nEd\n 1e-07 1 1 0\n1  85 0 5.5 7\n0\n\n0101000\n+69 0 -161 0 *\nWi\n\n0101100\n+152 0 -72 0 -70 0 -68 0 -67 0 +156 0 *\nFa\n0  1e-07 35 0\n\n0101000\n+66 0 *\nVe\n1e-07\n7.3 -26 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  86 0 0 6.05387091983329\n0\n\n0101000\n+64 0 -211 0 *\nEd\n 1e-07 1 1 0\n1  87 0 0 14.6\n0\n\n0101000\n-64 0 +145 0 *\nWi\n\n0101100\n-144 0 -115 0 +63 0 +62 0 *\nFa\n0  1e-07 36 0\n\n0101000\n+61 0 *\nEd\n 1e-07 1 1 0\n1  88 0 4.16386470194356 5.26091325882573\n0\n\n0101000\n+222 0 -138 0 *\nVe\n1e-07\n7.3 -26 -19\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  89 0 0 6.05387091983281\n0\n\n0101000\n+58 0 -138 0 *\nEd\n 1e-07 1 1 0\n1  90 0 0 14.6\n0\n\n0101000\n-58 0 +143 0 *\nWi\n\n0101100\n-142 0 -59 0 +57 0 +56 0 *\nFa\n0  1e-07 37 0\n\n0101000\n+55 0 *\nEd\n 1e-07 1 1 0\n1  91 0 0 19\n0\n\n0101000\n-64 0 +58 0 *\nWi\n\n0101100\n-56 0 -53 0 +62 0 +141 0 *\nFa\n0  1e-07 38 0\n\n0101000\n+52 0 *\nWi\n\n0101100\n-132 0 -133 0 +135 0 +59 0 *\nFa\n0  1e-07 39 0\n\n0101000\n+50 0 *\nWi\n\n0101100\n-63 0 +129 0 +57 0 -53 0 *\nFa\n0  1e-07 40 0\n\n0101000\n+48 0 *\nEd\n 1e-07 1 1 0\n1  92 0 3.14159265358979 4.71238898038469\n0\n\n0101000\n+218 0 -96 0 *\nWi\n\n0101100\n-46 0 +95 0 -126 0 *\nFa\n0  1e-07 41 0\n\n0101000\n+45 0 *\nVe\n1e-07\n17.5 -6 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  93 0 5.5 7\n0\n\n0101000\n+43 0 -123 0 *\nVe\n1e-07\n17.5 -10 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  94 0 1.5707963267949 4.71238898038469\n2  39 27 0 1.5707963267949 4.71238898038469\n0\n\n0101000\n+43 0 -41 0 *\nEd\n 1e-07 1 1 0\n1  95 0 0 1.5\n0\n\n0101000\n+96 0 -41 0 *\nWi\n\n0101100\n+46 0 +121 0 +42 0 -40 0 +39 0 *\nFa\n0  1e-07 42 0\n\n0101000\n+38 0 *\nVe\n1e-07\n21 -8 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  96 0 0 1.5707963267949\n2  40 22 0 0 1.5707963267949\n0\n\n0101000\n+36 0 -192 0 *\nVe\n1e-07\n21 -8 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  97 0 0 1.5707963267949\n2  41 22 0 0 1.5707963267949\n0\n\n0101000\n+34 0 -123 0 *\nEd\n 1e-07 1 1 0\n1  98 0 0 1\n2  42 22 0 0 1\n2  43 29 0 0 1\n4 CN 22 0 29 0\n0\n\n0101000\n-36 0 +34 0 *\nWi\n\n0101100\n-35 0 +118 0 +33 0 -32 0 *\nFa\n0  1e-07 22 0\n\n0101000\n+31 0 *\nEd\n 1e-07 1 1 0\n1  99 0 1.5707963267949 4.71238898038469\n2  44 25 0 1.5707963267949 4.71238898038469\n0\n\n0101000\n+108 0 -112 0 *\nWi\n\n0101100\n+77 0 +106 0 -29 0 +111 0 *\nFa\n0  1e-07 43 0\n\n0101000\n+28 0 *\nEd\n 1e-07 1 1 0\n1  100 0 0.5 1.5\n3  45 46CN 25 0 0.5 1.5\n0\n\n0101000\n+71 0 -110 0 *\nEd\n 1e-07 1 1 0\n1  101 0 1.5707963267949 4.71238898038469\n2  47 25 0 1.5707963267949 4.71238898038469\n0\n\n0101000\n+69 0 -73 0 *\nWi\n\n0101100\n-107 0 -29 0 -109 0 +26 0 +70 0 +25 0 +68 0 -26 0 *\nFa\n0  1e-07 25 0\n\n0101000\n+24 0 *\nVe\n1e-07\n19.5 -8 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  102 0 4.71238898038469 6.28318530717959\n2  48 27 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+101 0 -22 0 *\nEd\n 1e-07 1 1 0\n1  103 0 0 1.5707963267949\n2  49 27 0 0 1.5707963267949\n0\n\n0101000\n+22 0 -103 0 *\nEd\n 1e-07 1 1 0\n1  104 0 4.71238898038469 6.28318530717959\n2  40 29 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+187 0 -36 0 *\nWi\n\n0101100\n-99 0 -21 0 -20 0 -102 0 +35 0 +19 0 *\nFa\n0  1e-07 44 0\n\n0101000\n+18 0 *\nVe\n1e-07\n19.5 -8 -1\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  105 0 0.5 1.5\n3  50 51CN 27 0 0.5 1.5\n0\n\n0101000\n+16 0 -22 0 *\nEd\n 1e-07 1 1 0\n1  106 0 4.71238898038469 6.28318530717959\n2  52 27 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+41 0 -16 0 *\nEd\n 1e-07 1 1 0\n1  107 0 0 1.5707963267949\n2  53 27 0 0 1.5707963267949\n0\n\n0101000\n+16 0 -43 0 *\nWi\n\n0101100\n-20 0 -100 0 -21 0 +15 0 +14 0 +40 0 +13 0 -15 0 *\nFa\n0  1e-07 27 0\n\n0101000\n+12 0 *\nEd\n 1e-07 1 1 0\n1  108 0 4.71238898038469 6.28318530717959\n2  41 29 0 4.71238898038469 6.28318530717959\n0\n\n0101000\n+96 0 -34 0 *\nWi\n\n0101100\n+32 0 +10 0 -94 0 -19 0 *\nFa\n0  1e-07 29 0\n\n0101000\n+9 0 *\nWi\n\n0101100\n+76 0 +67 0 -25 0 +72 0 *\nFa\n0  1e-07 45 0\n\n0101000\n+7 0 *\nWi\n\n0101100\n-39 0 -14 0 -13 0 -42 0 +33 0 +10 0 *\nFa\n0  1e-07 46 0\n\n0101000\n+5 0 *\nSh\n\n0101100\n+255 0 +248 0 +237 0 +232 0 +212 0 +203 0 +198 0 +193 0 +188 0 +183 0 \n+162 0 +157 0 -154 0 -149 0 -146 0 -139 0 -130 0 +124 0 -119 0 +116 0 \n+113 0 +104 0 +97 0 -92 0 +88 0 +85 0 +83 0 -80 0 +78 0 +74 0 \n-65 0 +60 0 -54 0 -51 0 -49 0 +47 0 -44 0 -37 0 +30 0 +27 0 \n-23 0 +17 0 -11 0 +8 0 -6 0 -4 0 *\nSo\n\n0100000\n+3 0 *\nCo\n\n1100000\n+2 0 *\n\n+1 0 "
+      },
+      "sourceHash": "0d6762a808350cf166d805af44a2a7b3d793b35a84c13c0a050f2f9cbb687f33",
+      "edited": false,
+      "manufacturer": "Unspecified (Maintex family drawing reference)",
+      "model": "28BYJ-48 12V (supplier unconfirmed)",
+      "partNumber": "28BYJ-48 12V (supplier unconfirmed)",
+      "sourceUrl": "https://maintexmotors.com/product/28byj-48-stepper-motor/",
+      "reviewStatus": "REFERENCE VARIANT \u2014 VERIFY SUPPLIER",
+      "engineering": {
+        "id": "motor-stepper-28byj48-12v-reference",
+        "manufacturer": "Unspecified (Maintex family drawing reference)",
+        "partNumber": "28BYJ-48 12V (supplier unconfirmed)",
+        "motorClass": "Light",
+        "recommendedDriverId": "driver-uln2003a-reference",
+        "mechanical": {
+          "bodyDiameterMm": {
+            "value": 28,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "bodyLengthMm": {
+            "value": 19,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "shaftDiameterMm": {
+            "value": 5,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "shaftProjectionMm": {
+            "value": 15.2,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "flatAcrossMm": {
+            "value": 3,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "flatLengthMm": {
+            "value": 11,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "pilotDiameterMm": {
+            "value": 9.2,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "pilotHeightMm": {
+            "value": 1.5,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "mountPitchMm": {
+            "value": 35,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "mountHoleDiameterMm": {
+            "value": 4,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "shaftOffsetMm": {
+            "value": 8,
+            "unit": "mm",
+            "status": "manufacturer-family-reference",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "mountThread": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": "Clearance bore; thread not asserted."
+          },
+          "mountHoleDepthMm": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": "Not dimensioned; full-depth cutters in the simplified envelope are not a depth specification."
+          },
+          "massKg": {
+            "value": null,
+            "unit": "kg",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": "Published nominal mass; no homogeneous density or center of gravity is inferred."
+          },
+          "rotorInertiaKgM2": {
+            "value": null,
+            "unit": "kg*m^2",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia."
+          },
+          "centerOfGravity": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "permittedRadialLoadN": {
+            "value": null,
+            "unit": "N",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "permittedAxialLoadN": {
+            "value": null,
+            "unit": "N",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "connectorClearance": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          }
+        },
+        "electrical": {
+          "windingArrangement": {
+            "value": "four phase/common supply unipolar",
+            "unit": "1",
+            "status": "manufacturer-nominal",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "phaseResistanceOhm": {
+            "value": null,
+            "unit": "ohm",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": "Exact 12V supplier unresolved. Maintex 28BYJ48-054 table gives 130 ohm; not transferred to an unidentified unit."
+          },
+          "phaseInductanceH": {
+            "value": null,
+            "unit": "H",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "phaseRatedCurrentA": {
+            "value": null,
+            "unit": "A",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "fullStepAngleDeg": {
+            "value": null,
+            "unit": "deg",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": "The 5.625-degree 1-2 phase excitation interval is not asserted as a full-step angle."
+          },
+          "publishedExcitationIntervalDeg": {
+            "value": 5.625,
+            "unit": "deg",
+            "status": "manufacturer-family-reference",
+            "source": "maintexVariants",
+            "note": ""
+          },
+          "holdingTorqueNm": {
+            "value": null,
+            "unit": "N*m",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": "Holding torque is not continuous operating torque."
+          },
+          "nominalSupplyV": {
+            "value": 12,
+            "unit": "V",
+            "status": "reference-only",
+            "source": "cadReference",
+            "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage."
+          },
+          "gearRatio": {
+            "value": 64,
+            "unit": "1",
+            "status": "nominal-reference",
+            "source": "maintexVariants",
+            "note": "Actual supplier gear ratio, backlash and efficiency are unknown."
+          },
+          "torqueConstantNmPerA": {
+            "value": null,
+            "unit": "N*m/A",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "backEmfConstantVsPerRad": {
+            "value": null,
+            "unit": "V*s/rad",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "viscousFrictionNms": {
+            "value": null,
+            "unit": "N*m*s/rad",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "gearboxEfficiency": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          },
+          "dynamicTorqueSpeedCurve": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "maintexDrawing",
+            "note": ""
+          }
+        },
+        "referenceFrames": [
+          {
+            "id": "mount-face",
+            "originMm": [
+              0,
+              0,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ],
+            "xDirection": [
+              1,
+              0,
+              0
+            ]
+          },
+          {
+            "id": "shaft-axis",
+            "originMm": [
+              0,
+              0,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "shaft-tip",
+            "originMm": [
+              0,
+              0,
+              15.2
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-1",
+            "originMm": [
+              -17.5,
+              -8,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-2",
+            "originMm": [
+              17.5,
+              -8,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          }
+        ],
+        "limitations": [
+          "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+          "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+          "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned.",
+          "Supplier/SKU unresolved. Maintex family drawing is only a reference, not verification of any purchased 12V variant.",
+          "Ear thickness 1 mm and plastic exit shape are illustrative. Published family double-flat profile is used; verify the actual shaft."
+        ]
+      }
+    },
+    {
+      "id": "motor-stepper-stepperonline-17hs19-2004s1",
+      "revision": 1,
+      "origin": "commercial",
+      "name": "Medium stepper \u2014 17HS19-2004S1",
+      "category": "Mechanical/Motors/Stepper/Medium",
+      "description": "Reusable medium stepper motor reference. Mounting face at local Z=0; body behind face; output shaft along +Z. Model-specific drawing dimensions; simplified housing. Not certified manufacturing geometry.",
+      "properties": [
+        {
+          "label": "Motor class",
+          "value": "Medium"
+        },
+        {
+          "label": "Recommended driver identifier",
+          "value": "driver-tmc2209-reference"
+        },
+        {
+          "label": "Coordinate convention",
+          "value": "Mount face Z=0; output shaft +Z; body negative Z"
+        },
+        {
+          "label": "Mount-hole centers (mm)",
+          "value": "[[-15.5, -15.5, 0], [-15.5, 15.5, 0], [15.5, -15.5, 0], [15.5, 15.5, 0]]"
+        },
+        {
+          "label": "Mating datum origins (mm)",
+          "value": "[{\"id\": \"mount-face\", \"originMm\": [0, 0, 0], \"axis\": [0, 0, 1], \"xDirection\": [1, 0, 0]}, {\"id\": \"shaft-axis\", \"originMm\": [0, 0, 0], \"axis\": [0, 0, 1]}, {\"id\": \"shaft-tip\", \"originMm\": [0, 0, 24], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-1\", \"originMm\": [-15.5, -15.5, 0], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-2\", \"originMm\": [-15.5, 15.5, 0], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-3\", \"originMm\": [15.5, -15.5, 0], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-4\", \"originMm\": [15.5, 15.5, 0], \"axis\": [0, 0, 1]}]"
+        },
+        {
+          "label": "Mechanical / faceMaximumMm",
+          "value": 42.3,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / bodyLengthMm",
+          "value": 48,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / shaftDiameterMm",
+          "value": 5,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / shaftProjectionMm",
+          "value": 24,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / flatAcrossMm",
+          "value": 4.5,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / flatLengthMm",
+          "value": 15,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / pilotDiameterMm",
+          "value": 22,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / pilotHeightMm",
+          "value": 2,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountPitchMm",
+          "value": 31,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountHoleDiameterMm",
+          "value": 3,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountThread",
+          "value": "M3",
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "Nominal thread envelope only; helical threads and tap drill are not modeled.",
+          "unit": "1"
+        },
+        {
+          "label": "Mechanical / mountHoleDepthMm",
+          "value": 4.5,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "Minimum threaded depth.",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / massKg",
+          "value": 0.39,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://www.omc-stepperonline.com/nema-17-bipolar-59ncm-84oz-in-2a-42x48mm-4-wires-w-1m-cable-connector-17hs19-2004s1",
+          "note": "Published nominal mass; no homogeneous density or center of gravity is inferred.",
+          "unit": "kg"
+        },
+        {
+          "label": "Mechanical / rotorInertiaKgM2",
+          "value": 8.2e-06,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia.",
+          "unit": "kg*m^2"
+        },
+        {
+          "label": "Mechanical / centerOfGravity",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / permittedRadialLoadN",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N"
+        },
+        {
+          "label": "Mechanical / permittedAxialLoadN",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N"
+        },
+        {
+          "label": "Mechanical / connectorClearance",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Electrical / windingArrangement",
+          "value": "two phase bipolar",
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / phaseResistanceOhm",
+          "value": 1.6,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "Per phase at 25 C; revision-specific nominal value.",
+          "unit": "ohm"
+        },
+        {
+          "label": "Electrical / phaseInductanceH",
+          "value": 0.003,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "H"
+        },
+        {
+          "label": "Electrical / phaseRatedCurrentA",
+          "value": 2,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "A"
+        },
+        {
+          "label": "Electrical / fullStepAngleDeg",
+          "value": 1.8,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "deg"
+        },
+        {
+          "label": "Electrical / publishedExcitationIntervalDeg",
+          "value": 1.8,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "deg"
+        },
+        {
+          "label": "Electrical / holdingTorqueNm",
+          "value": 0.59,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "Holding torque is not continuous operating torque.",
+          "unit": "N*m"
+        },
+        {
+          "label": "Electrical / nominalSupplyV",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://docs.google.com/document/d/1C56vMJvwZLRPRPaYo8RQID4N3Q_D6s1qUkklbrhlFa8/edit",
+          "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage.",
+          "unit": "V"
+        },
+        {
+          "label": "Electrical / gearRatio",
+          "value": 1,
+          "confidence": "direct-drive",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / torqueConstantNmPerA",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N*m/A"
+        },
+        {
+          "label": "Electrical / backEmfConstantVsPerRad",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "V*s/rad"
+        },
+        {
+          "label": "Electrical / viscousFrictionNms",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N*m*s/rad"
+        },
+        {
+          "label": "Electrical / gearboxEfficiency",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / dynamicTorqueSpeedCurve",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Geometry limitation 1",
+          "value": "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled."
+        },
+        {
+          "label": "Geometry limitation 2",
+          "value": "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied."
+        },
+        {
+          "label": "Geometry limitation 3",
+          "value": "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned."
+        }
+      ],
+      "provenance": {
+        "sourceDocument": "https://docs.google.com/document/d/1C56vMJvwZLRPRPaYo8RQID4N3Q_D6s1qUkklbrhlFa8/edit",
+        "electricalReference": "https://docs.google.com/document/d/1huFVYliLVgQ3jbtYar8RFib-znZL_OWw1xIB1Myiw70/edit",
+        "checkedDate": "2026-10-21",
+        "drawingUrl": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+        "geometryConstruction": "Existing DjehutiCAD box/cylinder/Boolean commands, published as ordinary BRep component snapshot.",
+        "constructionRecipe": "components/source/stepperonline-17hs19-2004s1.commands.json",
+        "stepModelAvailability": "Manufacturer STEP requires login; not downloaded or represented as official STEP.",
+        "limitations": [
+          "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+          "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+          "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned."
+        ]
+      },
+      "geometry": {
+        "kind": "brep",
+        "level": "simplified",
+        "label": "Drawing-derived mounting/shaft reference; simplified housing; not certified manufacturing geometry",
+        "data": "\nCASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 27\n1 0 4.5 1 0 \n1 0 4.5 1 0 \n1 0 4.5 1 0 \n1 0 0 1 0 \n1 0 4.5 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 0 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 0 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 0 1 0 \n1 0 2 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 0 1 0 \n1 0 2 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 24 1 0 \n1 0.92729521800161219 0 0 1 \n1 0 9 1 0 \n1 2.2142974355881808 0 0 1 \nCurves 36\n1 -21.149999999999999 -21.149999999999999 -48 0 0 1 \n1 -21.149999999999999 -21.149999999999999 0 0 1 0 \n1 -21.149999999999999 21.149999999999999 -48 0 0 1 \n1 -21.149999999999999 -21.149999999999999 -48 0 1 0 \n1 -21.149999999999999 -21.149999999999999 -48 1 0 0 \n1 21.149999999999999 -21.149999999999999 -48 0 0 1 \n1 -21.149999999999999 -21.149999999999999 0 1 0 0 \n1 -21.149999999999999 21.149999999999999 0 1 0 0 \n1 21.149999999999999 -21.149999999999999 0 0 1 0 \n2 -15.5 -15.5 0 0 0 1 1 0 0 0 1 0 1.5\n2 15.5 -15.5 0 0 0 1 1 0 0 0 1 0 1.5\n2 -15.5 15.5 0 0 0 1 1 0 0 0 1 0 1.5\n2 0 0 0 0 0 1 1 0 0 0 1 0 11\n2 15.5 15.5 0 0 0 1 1 0 0 0 1 0 1.5\n1 -21.149999999999999 21.149999999999999 -48 1 0 0 \n1 21.149999999999999 21.149999999999999 -48 0 0 1 \n1 21.149999999999999 -21.149999999999999 -48 0 1 0 \n1 -14 -15.5 -4.5 0 0 1 \n2 -15.5 -15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n1 17 -15.5 -4.5 0 0 1 \n2 15.5 -15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n1 -14 15.5 -4.5 0 0 1 \n2 -15.5 15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n2 0 0 2 0 0 1 1 0 0 0 1 0 11\n1 11 -2.6942229581241772e-15 0 0 0 1 \n1 17 15.5 -4.5 0 0 1 \n2 15.5 15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n2 0 0 2 0 0 1 1 0 0 0 1 0 2.5\n1 2.5 -6.1232339957367663e-16 0 0 0 1 \n2 0 0 24 0 0 1 1 0 0 0 1 0 2.5\n1 1.5 2 0 0 0 1 \n2 0 0 9 0 0 1 1 0 0 0 1 0 2.5\n1 -1.5 2 0 0 0 1 \n2 0 0 24 0 0 1 1 0 0 0 1 0 2.5\n1 -1.75 2 24 -1 0 0 \n1 -3.5 2 9 1 0 0 \nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 20\n1 -21.149999999999999 -21.149999999999999 -48 1 0 0 0 0 1 0 -1 0 \n1 -21.149999999999999 -21.149999999999999 -48 0 1 0 0 0 1 1 0 0 \n1 -21.149999999999999 -21.149999999999999 0 0 0 1 1 0 0 0 1 0 \n2 -15.5 -15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n2 15.5 -15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n2 -15.5 15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n2 0 0 0 0 0 1 1 0 0 0 1 0 11\n2 15.5 15.5 -4.5 0 0 1 1 0 0 0 1 0 1.5\n1 -21.149999999999999 21.149999999999999 -48 0 1 0 0 0 1 1 0 0 \n1 -21.149999999999999 -21.149999999999999 -48 0 0 1 1 0 0 0 1 0 \n1 21.149999999999999 -21.149999999999999 -48 1 0 0 0 0 1 0 -1 0 \n1 -15.5 -15.5 -4.5 0 0 1 1 0 0 0 1 0 \n1 15.5 -15.5 -4.5 0 0 1 1 0 0 0 1 0 \n1 -15.5 15.5 -4.5 0 0 1 1 0 0 0 1 0 \n1 0 0 2 0 0 1 1 0 0 0 1 0 \n2 0 0 0 0 0 1 1 0 0 0 1 0 2.5\n1 15.5 15.5 -4.5 0 0 1 1 0 0 0 1 0 \n1 0 0 24 0 0 1 1 0 0 0 1 0 \n1 -3.5 2 9 0 1 0 0 0 1 1 0 0 \n1 -3.5 2 9 0 0 1 1 0 0 0 1 0 \nTriangulations 0\n\nTShapes 109\nVe\n1e-07\n-21.15 -21.15 0\n0 0\n\n0101101\n*\nVe\n1e-07\n-21.15 -21.15 -48\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  1 0 0 48\n0\n\n0101000\n-109 0 +108 0 *\nVe\n1e-07\n-21.15 21.15 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  2 0 0 42.3\n0\n\n0101000\n-106 0 +109 0 *\nVe\n1e-07\n-21.15 21.15 -48\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  3 0 0 48\n0\n\n0101000\n-106 0 +104 0 *\nEd\n 1e-07 1 1 0\n1  4 0 0 42.3\n0\n\n0101000\n-104 0 +108 0 *\nWi\n\n0101100\n-107 0 -105 0 +103 0 +102 0 *\nFa\n0  1e-07 1 0\n\n0101000\n+101 0 *\nVe\n1e-07\n21.15 -21.15 -48\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  5 0 0 42.3\n0\n\n0101000\n-99 0 +108 0 *\nVe\n1e-07\n21.15 -21.15 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  6 0 0 48\n0\n\n0101000\n-97 0 +99 0 *\nEd\n 1e-07 1 1 0\n1  7 0 0 42.3\n0\n\n0101000\n-97 0 +109 0 *\nWi\n\n0101100\n-98 0 -96 0 +95 0 +107 0 *\nFa\n0  1e-07 2 0\n\n0101000\n+94 0 *\nVe\n1e-07\n21.15 21.15 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  8 0 0 42.3\n0\n\n0101000\n-92 0 +106 0 *\nEd\n 1e-07 1 1 0\n1  9 0 0 42.3\n0\n\n0101000\n-92 0 +97 0 *\nWi\n\n0101100\n-105 0 -91 0 +95 0 +90 0 *\nVe\n1e-07\n-14 -15.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  10 0 0 6.28318530717959\n2  1 4 0 0 6.28318530717959\n0\n\n0101000\n+88 0 -88 0 *\nWi\n\n0101100\n-87 0 *\nVe\n1e-07\n17 -15.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  11 0 0 6.28318530717959\n2  2 5 0 0 6.28318530717959\n0\n\n0101000\n+85 0 -85 0 *\nWi\n\n0101100\n-84 0 *\nVe\n1e-07\n-14 15.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  12 0 0 6.28318530717959\n2  3 6 0 0 6.28318530717959\n0\n\n0101000\n+82 0 -82 0 *\nWi\n\n0101100\n-81 0 *\nVe\n1e-07\n11 -2.69422295812418e-15 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  13 0 0 6.28318530717959\n2  4 7 0 0 6.28318530717959\n0\n\n0101000\n+79 0 -79 0 *\nWi\n\n0101100\n-78 0 *\nVe\n1e-07\n17 15.5 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  14 0 0 6.28318530717959\n2  5 8 0 0 6.28318530717959\n0\n\n0101000\n+76 0 -76 0 *\nWi\n\n0101100\n-75 0 *\nFa\n0  1e-07 3 0\n\n0101000\n+89 0 +86 0 +83 0 +80 0 +77 0 +74 0 *\nVe\n1e-07\n21.15 21.15 -48\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  15 0 0 42.3\n0\n\n0101000\n-72 0 +104 0 *\nEd\n 1e-07 1 1 0\n1  16 0 0 48\n0\n\n0101000\n-92 0 +72 0 *\nWi\n\n0101100\n-71 0 -70 0 +91 0 +103 0 *\nFa\n0  1e-07 9 0\n\n0101000\n+69 0 *\nEd\n 1e-07 1 1 0\n1  17 0 0 42.3\n0\n\n0101000\n-72 0 +99 0 *\nWi\n\n0101100\n-102 0 -71 0 +67 0 +98 0 *\nFa\n0  1e-07 10 0\n\n0101000\n+66 0 *\nWi\n\n0101100\n-96 0 -90 0 +70 0 +67 0 *\nFa\n0  1e-07 11 0\n\n0101000\n+64 0 *\nVe\n1e-07\n-14 -15.5 -4.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  18 0 0 4.5\n3  6 7CN 4 0 0 4.5\n0\n\n0101000\n+62 0 -88 0 *\nEd\n 1e-07 1 1 0\n1  19 0 0 6.28318530717959\n2  8 4 0 0 6.28318530717959\n0\n\n0101000\n+62 0 -62 0 *\nWi\n\n0101100\n-87 0 +61 0 +60 0 -61 0 *\nFa\n0  1e-07 4 0\n\n0101000\n+59 0 *\nVe\n1e-07\n17 -15.5 -4.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  20 0 0 4.5\n3  9 10CN 5 0 0 4.5\n0\n\n0101000\n+57 0 -85 0 *\nEd\n 1e-07 1 1 0\n1  21 0 0 6.28318530717959\n2  11 5 0 0 6.28318530717959\n0\n\n0101000\n+57 0 -57 0 *\nWi\n\n0101100\n-84 0 +56 0 +55 0 -56 0 *\nFa\n0  1e-07 5 0\n\n0101000\n+54 0 *\nVe\n1e-07\n-14 15.5 -4.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  22 0 0 4.5\n3  12 13CN 6 0 0 4.5\n0\n\n0101000\n+52 0 -82 0 *\nEd\n 1e-07 1 1 0\n1  23 0 0 6.28318530717959\n2  14 6 0 0 6.28318530717959\n0\n\n0101000\n+52 0 -52 0 *\nWi\n\n0101100\n-81 0 +51 0 +50 0 -51 0 *\nFa\n0  1e-07 6 0\n\n0101000\n+49 0 *\nVe\n1e-07\n11 -2.69422295812418e-15 2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  24 0 0 6.28318530717959\n2  15 7 0 0 6.28318530717959\n0\n\n0101000\n+47 0 -47 0 *\nEd\n 1e-07 1 1 0\n1  25 0 0 2\n3  16 17CN 7 0 0 2\n0\n\n0101000\n-47 0 +79 0 *\nWi\n\n0101100\n-46 0 +45 0 +78 0 -45 0 *\nFa\n0  1e-07 7 0\n\n0101000\n+44 0 *\nVe\n1e-07\n17 15.5 -4.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  26 0 0 4.5\n3  18 19CN 8 0 0 4.5\n0\n\n0101000\n+42 0 -76 0 *\nEd\n 1e-07 1 1 0\n1  27 0 0 6.28318530717959\n2  20 8 0 0 6.28318530717959\n0\n\n0101000\n+42 0 -42 0 *\nWi\n\n0101100\n-75 0 +41 0 +40 0 -41 0 *\nFa\n0  1e-07 8 0\n\n0101000\n+39 0 *\nWi\n\n0101100\n-60 0 *\nFa\n0  1e-07 12 0\n\n0101000\n-37 0 *\nWi\n\n0101100\n-55 0 *\nFa\n0  1e-07 13 0\n\n0101000\n-35 0 *\nWi\n\n0101100\n-50 0 *\nFa\n0  1e-07 14 0\n\n0101000\n-33 0 *\nWi\n\n0101100\n+46 0 *\nVe\n1.00000000612323e-07\n2.5 -6.12323399573677e-16 2\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  28 0 0 6.28318530717959\n2  21 16 0 0 6.28318530717959\n0\n\n0101000\n+30 0 -30 0 *\nWi\n\n0101100\n-29 0 *\nFa\n0  1e-07 15 0\n\n0101000\n+31 0 +28 0 *\nWi\n\n0101100\n-40 0 *\nFa\n0  1e-07 17 0\n\n0101000\n-26 0 *\nVe\n1e-07\n2.5 -6.12323399573677e-16 24\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  29 0 2 24\n3  22 23CN 16 0 2 24\n0\n\n0101000\n+30 0 -24 0 *\nVe\n1.5e-07\n1.5 2 24\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  30 0 0 0.927295218001612\n2  24 16 0 0 0.927295218001612\n0\n\n0101000\n+24 0 -22 0 *\nVe\n1e-07\n1.5 2 9\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  31 0 9 24\n2  25 16 0 9 24\n0\n\n0101000\n+20 0 -22 0 *\nVe\n1.00000000628037e-07\n-1.5 2 9\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  32 0 0.927295218001612 2.21429743558818\n2  26 16 0 0.927295218001612 2.21429743558818\n0\n\n0101000\n+20 0 -18 0 *\nVe\n1.50000000444089e-07\n-1.5 2 24\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  33 0 9 24\n2  27 16 0 9 24\n0\n\n0101000\n+18 0 -16 0 *\nEd\n 1e-07 1 1 0\n1  34 0 2.21429743558818 6.28318530717959\n2  24 16 0 2.21429743558818 6.28318530717959\n0\n\n0101000\n+16 0 -24 0 *\nWi\n\n0101100\n+29 0 -23 0 -21 0 +19 0 -17 0 -15 0 -14 0 +23 0 *\nFa\n0  1e-07 16 0\n\n0101000\n+13 0 *\nEd\n 1.5e-07 1 1 0\n1  35 0 -3.25 -0.25\n0\n\n0101000\n+22 0 -16 0 *\nWi\n\n0101100\n+14 0 +11 0 +21 0 *\nFa\n0  1e-07 18 0\n\n0101000\n+10 0 *\nEd\n 1e-07 1 1 0\n1  36 0 2 5\n0\n\n0101000\n+18 0 -20 0 *\nWi\n\n0101100\n-8 0 -19 0 -11 0 +15 0 *\nFa\n0  1e-07 19 0\n\n0101000\n+7 0 *\nWi\n\n0101100\n+17 0 +8 0 *\nFa\n0  1e-07 20 0\n\n0101000\n+5 0 *\nSh\n\n0101100\n-100 0 -93 0 +73 0 +68 0 -65 0 +63 0 -58 0 -53 0 -48 0 +43 0 \n-38 0 +36 0 +34 0 +32 0 +27 0 +25 0 +12 0 +9 0 +6 0 +4 0 \n*\nSo\n\n0100000\n+3 0 *\nCo\n\n1100000\n+2 0 *\n\n+1 0 "
+      },
+      "sourceHash": "1fc1633ef06325b0e9b8487da2c424e4a4e113d11de2d9e6f48c7aaeb9817677",
+      "edited": false,
+      "manufacturer": "STEPPERONLINE",
+      "model": "17HS19-2004S1",
+      "partNumber": "17HS19-2004S1",
+      "sourceUrl": "https://www.omc-stepperonline.com/nema-17-bipolar-59ncm-84oz-in-2a-42x48mm-4-wires-w-1m-cable-connector-17hs19-2004s1",
+      "reviewStatus": "DRAWING-VERIFIED INTERFACES / SIMPLIFIED HOUSING",
+      "engineering": {
+        "id": "motor-stepper-stepperonline-17hs19-2004s1",
+        "manufacturer": "STEPPERONLINE",
+        "partNumber": "17HS19-2004S1",
+        "motorClass": "Medium",
+        "recommendedDriverId": "driver-tmc2209-reference",
+        "mechanical": {
+          "faceMaximumMm": {
+            "value": 42.3,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "bodyLengthMm": {
+            "value": 48,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "shaftDiameterMm": {
+            "value": 5,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "shaftProjectionMm": {
+            "value": 24,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "flatAcrossMm": {
+            "value": 4.5,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "flatLengthMm": {
+            "value": 15,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "pilotDiameterMm": {
+            "value": 22,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "pilotHeightMm": {
+            "value": 2,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "mountPitchMm": {
+            "value": 31,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "mountHoleDiameterMm": {
+            "value": 3,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "17drawing",
+            "note": ""
+          },
+          "mountThread": {
+            "value": "M3",
+            "unit": "1",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": "Nominal thread envelope only; helical threads and tap drill are not modeled."
+          },
+          "mountHoleDepthMm": {
+            "value": 4.5,
+            "unit": "mm",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": "Minimum threaded depth."
+          },
+          "massKg": {
+            "value": 0.39,
+            "unit": "kg",
+            "status": "manufacturer-nominal",
+            "source": "17product",
+            "note": "Published nominal mass; no homogeneous density or center of gravity is inferred."
+          },
+          "rotorInertiaKgM2": {
+            "value": 8.2e-06,
+            "unit": "kg*m^2",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia."
+          },
+          "centerOfGravity": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          },
+          "permittedRadialLoadN": {
+            "value": null,
+            "unit": "N",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          },
+          "permittedAxialLoadN": {
+            "value": null,
+            "unit": "N",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          },
+          "connectorClearance": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          }
+        },
+        "electrical": {
+          "windingArrangement": {
+            "value": "two phase bipolar",
+            "unit": "1",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": ""
+          },
+          "phaseResistanceOhm": {
+            "value": 1.6,
+            "unit": "ohm",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": "Per phase at 25 C; revision-specific nominal value."
+          },
+          "phaseInductanceH": {
+            "value": 0.003,
+            "unit": "H",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": ""
+          },
+          "phaseRatedCurrentA": {
+            "value": 2,
+            "unit": "A",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": ""
+          },
+          "fullStepAngleDeg": {
+            "value": 1.8,
+            "unit": "deg",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": ""
+          },
+          "publishedExcitationIntervalDeg": {
+            "value": 1.8,
+            "unit": "deg",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": ""
+          },
+          "holdingTorqueNm": {
+            "value": 0.59,
+            "unit": "N*m",
+            "status": "manufacturer-nominal",
+            "source": "17drawing",
+            "note": "Holding torque is not continuous operating torque."
+          },
+          "nominalSupplyV": {
+            "value": null,
+            "unit": "V",
+            "status": "unknown",
+            "source": "cadReference",
+            "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage."
+          },
+          "gearRatio": {
+            "value": 1,
+            "unit": "1",
+            "status": "direct-drive",
+            "source": "17drawing",
+            "note": ""
+          },
+          "torqueConstantNmPerA": {
+            "value": null,
+            "unit": "N*m/A",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          },
+          "backEmfConstantVsPerRad": {
+            "value": null,
+            "unit": "V*s/rad",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          },
+          "viscousFrictionNms": {
+            "value": null,
+            "unit": "N*m*s/rad",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          },
+          "gearboxEfficiency": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          },
+          "dynamicTorqueSpeedCurve": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "17drawing",
+            "note": ""
+          }
+        },
+        "referenceFrames": [
+          {
+            "id": "mount-face",
+            "originMm": [
+              0,
+              0,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ],
+            "xDirection": [
+              1,
+              0,
+              0
+            ]
+          },
+          {
+            "id": "shaft-axis",
+            "originMm": [
+              0,
+              0,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "shaft-tip",
+            "originMm": [
+              0,
+              0,
+              24
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-1",
+            "originMm": [
+              -15.5,
+              -15.5,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-2",
+            "originMm": [
+              -15.5,
+              15.5,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-3",
+            "originMm": [
+              15.5,
+              -15.5,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-4",
+            "originMm": [
+              15.5,
+              15.5,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          }
+        ],
+        "limitations": [
+          "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+          "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+          "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned."
+        ]
+      },
+      "massKg": 0.39
+    },
+    {
+      "id": "motor-stepper-stepperonline-23hs30-2804s",
+      "revision": 1,
+      "origin": "commercial",
+      "name": "Heavy stepper \u2014 23HS30-2804S",
+      "category": "Mechanical/Motors/Stepper/Heavy",
+      "description": "Reusable heavy stepper motor reference. Mounting face at local Z=0; body behind face; output shaft along +Z. Model-specific drawing dimensions; simplified housing. Not certified manufacturing geometry.",
+      "properties": [
+        {
+          "label": "Motor class",
+          "value": "Heavy"
+        },
+        {
+          "label": "Recommended driver identifier",
+          "value": "driver-dm542t-v4"
+        },
+        {
+          "label": "Coordinate convention",
+          "value": "Mount face Z=0; output shaft +Z; body negative Z"
+        },
+        {
+          "label": "Mount-hole centers (mm)",
+          "value": "[[-23.57, -23.57, 0], [-23.57, 23.57, 0], [23.57, -23.57, 0], [23.57, 23.57, 0]]"
+        },
+        {
+          "label": "Mating datum origins (mm)",
+          "value": "[{\"id\": \"mount-face\", \"originMm\": [0, 0, 0], \"axis\": [0, 0, 1], \"xDirection\": [1, 0, 0]}, {\"id\": \"shaft-axis\", \"originMm\": [0, 0, 0], \"axis\": [0, 0, 1]}, {\"id\": \"shaft-tip\", \"originMm\": [0, 0, 21], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-1\", \"originMm\": [-23.57, -23.57, 0], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-2\", \"originMm\": [-23.57, 23.57, 0], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-3\", \"originMm\": [23.57, -23.57, 0], \"axis\": [0, 0, 1]}, {\"id\": \"mount-hole-4\", \"originMm\": [23.57, 23.57, 0], \"axis\": [0, 0, 1]}]"
+        },
+        {
+          "label": "Mechanical / faceMaximumMm",
+          "value": 57.3,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / bodyLengthMm",
+          "value": 76.5,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / shaftDiameterMm",
+          "value": 6.35,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / shaftProjectionMm",
+          "value": 21,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / flatAcrossMm",
+          "value": 5.85,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / flatLengthMm",
+          "value": 15,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / pilotDiameterMm",
+          "value": 38.1,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / pilotHeightMm",
+          "value": 1.6,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountPitchMm",
+          "value": 47.14,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountHoleDiameterMm",
+          "value": 5.2,
+          "confidence": "manufacturer-drawing",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / mountThread",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "Clearance bore; thread not asserted.",
+          "unit": "1"
+        },
+        {
+          "label": "Mechanical / mountHoleDepthMm",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "Not dimensioned; full-depth cutters in the simplified envelope are not a depth specification.",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / massKg",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "Published nominal mass; no homogeneous density or center of gravity is inferred.",
+          "unit": "kg"
+        },
+        {
+          "label": "Mechanical / rotorInertiaKgM2",
+          "value": 3e-05,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia.",
+          "unit": "kg*m^2"
+        },
+        {
+          "label": "Mechanical / centerOfGravity",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Mechanical / permittedRadialLoadN",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N"
+        },
+        {
+          "label": "Mechanical / permittedAxialLoadN",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N"
+        },
+        {
+          "label": "Mechanical / connectorClearance",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "mm"
+        },
+        {
+          "label": "Electrical / windingArrangement",
+          "value": "two phase bipolar",
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / phaseResistanceOhm",
+          "value": 1.17,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "Per phase at 25 C; revision-specific nominal value.",
+          "unit": "ohm"
+        },
+        {
+          "label": "Electrical / phaseInductanceH",
+          "value": 0.00436,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "H"
+        },
+        {
+          "label": "Electrical / phaseRatedCurrentA",
+          "value": 2.8,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "A"
+        },
+        {
+          "label": "Electrical / fullStepAngleDeg",
+          "value": 1.8,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "deg"
+        },
+        {
+          "label": "Electrical / publishedExcitationIntervalDeg",
+          "value": 1.8,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "deg"
+        },
+        {
+          "label": "Electrical / holdingTorqueNm",
+          "value": 2.0,
+          "confidence": "manufacturer-nominal",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "23HS30 current datasheet revises previous 1.9 Nm to 2.0 Nm.",
+          "unit": "N*m"
+        },
+        {
+          "label": "Electrical / nominalSupplyV",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://docs.google.com/document/d/1C56vMJvwZLRPRPaYo8RQID4N3Q_D6s1qUkklbrhlFa8/edit",
+          "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage.",
+          "unit": "V"
+        },
+        {
+          "label": "Electrical / gearRatio",
+          "value": 1,
+          "confidence": "direct-drive",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / torqueConstantNmPerA",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N*m/A"
+        },
+        {
+          "label": "Electrical / backEmfConstantVsPerRad",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "V*s/rad"
+        },
+        {
+          "label": "Electrical / viscousFrictionNms",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "N*m*s/rad"
+        },
+        {
+          "label": "Electrical / gearboxEfficiency",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Electrical / dynamicTorqueSpeedCurve",
+          "value": null,
+          "confidence": "unknown",
+          "sourceUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+          "note": "",
+          "unit": "1"
+        },
+        {
+          "label": "Geometry limitation 1",
+          "value": "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled."
+        },
+        {
+          "label": "Geometry limitation 2",
+          "value": "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied."
+        },
+        {
+          "label": "Geometry limitation 3",
+          "value": "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned."
+        },
+        {
+          "label": "Geometry limitation 4",
+          "value": "Mounting-bore centers and diameters are drawing-derived; axial hole/flange depth is unspecified. Full-depth envelope cutters are an illustration, not manufacturing data."
+        }
+      ],
+      "provenance": {
+        "sourceDocument": "https://docs.google.com/document/d/1C56vMJvwZLRPRPaYo8RQID4N3Q_D6s1qUkklbrhlFa8/edit",
+        "electricalReference": "https://docs.google.com/document/d/1huFVYliLVgQ3jbtYar8RFib-znZL_OWw1xIB1Myiw70/edit",
+        "checkedDate": "2026-10-21",
+        "drawingUrl": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+        "geometryConstruction": "Existing DjehutiCAD box/cylinder/Boolean commands, published as ordinary BRep component snapshot.",
+        "constructionRecipe": "components/source/stepperonline-23hs30-2804s.commands.json",
+        "stepModelAvailability": "Manufacturer STEP requires login; not downloaded or represented as official STEP.",
+        "limitations": [
+          "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+          "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+          "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned.",
+          "Mounting-bore centers and diameters are drawing-derived; axial hole/flange depth is unspecified. Full-depth envelope cutters are an illustration, not manufacturing data."
+        ]
+      },
+      "geometry": {
+        "kind": "brep",
+        "level": "simplified",
+        "label": "Drawing-derived mounting/shaft reference; simplified housing; not certified manufacturing geometry",
+        "data": "\nCASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 27\n1 0 76.5 1 0 \n1 0 0 1 0 \n1 0 76.5 1 0 \n1 0 76.5 1 0 \n1 0 76.5 1 0 \n1 0 0 1 0 \n1 0 0 1 0 \n1 0 0 1 0 \n1 0 0 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 1.6000000000000001 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 1.6000000000000001 1 0 \n1 6.2831853071795862 -0 0 1 \n1 0 -0 0 1 \n1 0 21 1 0 \n1 1.0019438946035708 0 0 1 \n1 0 6 1 0 \n1 2.1396487589862225 0 0 1 \nCurves 36\n1 -28.649999999999999 -28.649999999999999 -76.5 0 0 1 \n1 -28.649999999999999 -28.649999999999999 0 0 1 0 \n1 -28.649999999999999 28.649999999999999 -76.5 0 0 1 \n1 -28.649999999999999 -28.649999999999999 -76.5 0 1 0 \n1 -28.649999999999999 -28.649999999999999 -76.5 1 0 0 \n1 28.649999999999999 -28.649999999999999 -76.5 0 0 1 \n1 -28.649999999999999 -28.649999999999999 0 1 0 0 \n1 -28.649999999999999 28.649999999999999 0 1 0 0 \n1 28.649999999999999 -28.649999999999999 0 0 1 0 \n2 -23.57 -23.57 0 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 0 0 0 0 0 1 1 0 0 0 1 0 19.050000000000001\n2 23.57 -23.57 0 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 -23.57 23.57 0 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 23.57 23.57 0 0 0 1 1 0 0 0 1 0 2.6000000000000001\n1 -28.649999999999999 28.649999999999999 -76.5 1 0 0 \n1 28.649999999999999 28.649999999999999 -76.5 0 0 1 \n1 28.649999999999999 -28.649999999999999 -76.5 0 1 0 \n2 -23.57 -23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 23.57 -23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 -23.57 23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 23.57 23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n1 -20.969999999999999 -23.57 -76.5 0 0 1 \n2 0 0 1.6000000000000001 0 0 1 1 0 0 0 1 0 19.050000000000001\n1 19.050000000000001 -4.6659043047514161e-15 0 0 0 1 \n1 26.170000000000002 -23.57 -76.5 0 0 1 \n1 -20.969999999999999 23.57 -76.5 0 0 1 \n1 26.170000000000002 23.57 -76.5 0 0 1 \n2 0 0 1.6000000000000001 0 0 1 1 0 0 0 1 0 3.1749999999999998\n1 3.1749999999999998 -7.7765071745856922e-16 0 0 0 1 \n2 0 0 21 0 0 1 1 0 0 0 1 0 3.1749999999999998\n1 1.7102631376487072 2.6749999999999998 0 0 0 1 \n2 0 0 6 0 0 1 1 0 0 0 1 0 3.1749999999999998\n1 -1.7102631376487072 2.6749999999999998 0 0 0 1 \n2 0 0 21 0 0 1 1 0 0 0 1 0 3.1749999999999998\n1 -2.0874999999999999 2.6749999999999998 21 -1 0 0 \n1 -4.1749999999999998 2.6749999999999998 6 1 0 0 \nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 16\n1 -28.649999999999999 -28.649999999999999 -76.5 1 0 0 0 0 1 0 -1 0 \n1 -28.649999999999999 -28.649999999999999 -76.5 0 1 0 0 0 1 1 0 0 \n1 -28.649999999999999 -28.649999999999999 0 0 0 1 1 0 0 0 1 0 \n2 -23.57 -23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 0 0 0 0 0 1 1 0 0 0 1 0 19.050000000000001\n2 23.57 -23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 -23.57 23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n2 23.57 23.57 -76.5 0 0 1 1 0 0 0 1 0 2.6000000000000001\n1 -28.649999999999999 28.649999999999999 -76.5 0 1 0 0 0 1 1 0 0 \n1 -28.649999999999999 -28.649999999999999 -76.5 0 0 1 1 0 0 0 1 0 \n1 28.649999999999999 -28.649999999999999 -76.5 1 0 0 0 0 1 0 -1 0 \n1 0 0 1.6000000000000001 0 0 1 1 0 0 0 1 0 \n2 0 0 0 0 0 1 1 0 0 0 1 0 3.1749999999999998\n1 0 0 21 0 0 1 1 0 0 0 1 0 \n1 -4.1749999999999998 2.6749999999999998 6 0 1 0 0 0 1 1 0 0 \n1 -4.1749999999999998 2.6749999999999998 6 0 0 1 1 0 0 0 1 0 \nTriangulations 0\n\nTShapes 105\nVe\n1e-07\n-28.65 -28.65 0\n0 0\n\n0101101\n*\nVe\n1e-07\n-28.65 -28.65 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  1 0 0 76.5\n0\n\n0101000\n-105 0 +104 0 *\nVe\n1e-07\n-28.65 28.65 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  2 0 0 57.3\n0\n\n0101000\n-102 0 +105 0 *\nVe\n1e-07\n-28.65 28.65 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  3 0 0 76.5\n0\n\n0101000\n-102 0 +100 0 *\nEd\n 1e-07 1 1 0\n1  4 0 0 57.3\n0\n\n0101000\n-100 0 +104 0 *\nWi\n\n0101100\n-103 0 -101 0 +99 0 +98 0 *\nFa\n0  1e-07 1 0\n\n0101000\n+97 0 *\nVe\n1e-07\n28.65 -28.65 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  5 0 0 57.3\n0\n\n0101000\n-95 0 +104 0 *\nVe\n1e-07\n28.65 -28.65 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  6 0 0 76.5\n0\n\n0101000\n-93 0 +95 0 *\nEd\n 1e-07 1 1 0\n1  7 0 0 57.3\n0\n\n0101000\n-93 0 +105 0 *\nWi\n\n0101100\n-94 0 -92 0 +91 0 +103 0 *\nFa\n0  1e-07 2 0\n\n0101000\n+90 0 *\nVe\n1e-07\n28.65 28.65 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  8 0 0 57.3\n0\n\n0101000\n-88 0 +102 0 *\nEd\n 1e-07 1 1 0\n1  9 0 0 57.3\n0\n\n0101000\n-88 0 +93 0 *\nWi\n\n0101100\n-101 0 -87 0 +91 0 +86 0 *\nVe\n1e-07\n-20.97 -23.57 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  10 0 0 6.28318530717959\n2  1 4 0 0 6.28318530717959\n0\n\n0101000\n+84 0 -84 0 *\nWi\n\n0101100\n-83 0 *\nVe\n1e-07\n19.05 -4.66590430475142e-15 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  11 0 0 6.28318530717959\n2  2 5 0 0 6.28318530717959\n0\n\n0101000\n+81 0 -81 0 *\nWi\n\n0101100\n-80 0 *\nVe\n1e-07\n26.17 -23.57 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  12 0 0 6.28318530717959\n2  3 6 0 0 6.28318530717959\n0\n\n0101000\n+78 0 -78 0 *\nWi\n\n0101100\n-77 0 *\nVe\n1e-07\n-20.97 23.57 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  13 0 0 6.28318530717959\n2  4 7 0 0 6.28318530717959\n0\n\n0101000\n+75 0 -75 0 *\nWi\n\n0101100\n-74 0 *\nVe\n1e-07\n26.17 23.57 0\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  14 0 0 6.28318530717959\n2  5 8 0 0 6.28318530717959\n0\n\n0101000\n+72 0 -72 0 *\nWi\n\n0101100\n-71 0 *\nFa\n0  1e-07 3 0\n\n0101000\n+85 0 +82 0 +79 0 +76 0 +73 0 +70 0 *\nVe\n1e-07\n28.65 28.65 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  15 0 0 57.3\n0\n\n0101000\n-68 0 +100 0 *\nEd\n 1e-07 1 1 0\n1  16 0 0 76.5\n0\n\n0101000\n-88 0 +68 0 *\nWi\n\n0101100\n-67 0 -66 0 +87 0 +99 0 *\nFa\n0  1e-07 9 0\n\n0101000\n+65 0 *\nEd\n 1e-07 1 1 0\n1  17 0 0 57.3\n0\n\n0101000\n-68 0 +95 0 *\nWi\n\n0101100\n-98 0 -67 0 +94 0 +63 0 *\nVe\n1e-07\n-20.97 -23.57 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  18 0 0 6.28318530717959\n2  6 4 0 0 6.28318530717959\n0\n\n0101000\n+61 0 -61 0 *\nWi\n\n0101100\n-60 0 *\nVe\n1e-07\n26.17 -23.57 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  19 0 0 6.28318530717959\n2  7 6 0 0 6.28318530717959\n0\n\n0101000\n+58 0 -58 0 *\nWi\n\n0101100\n-57 0 *\nVe\n1e-07\n-20.97 23.57 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  20 0 0 6.28318530717959\n2  8 7 0 0 6.28318530717959\n0\n\n0101000\n+55 0 -55 0 *\nWi\n\n0101100\n-54 0 *\nVe\n1e-07\n26.17 23.57 -76.5\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  21 0 0 6.28318530717959\n2  9 8 0 0 6.28318530717959\n0\n\n0101000\n+52 0 -52 0 *\nWi\n\n0101100\n-51 0 *\nFa\n0  1e-07 10 0\n\n0101000\n+62 0 +59 0 +56 0 +53 0 +50 0 *\nWi\n\n0101100\n-92 0 -86 0 +66 0 +63 0 *\nFa\n0  1e-07 11 0\n\n0101000\n+48 0 *\nEd\n 1e-07 1 1 0\n1  22 0 0 76.5\n3  10 11CN 4 0 0 76.5\n0\n\n0101000\n+61 0 -84 0 *\nWi\n\n0101100\n-83 0 +46 0 +60 0 -46 0 *\nFa\n0  1e-07 4 0\n\n0101000\n+45 0 *\nVe\n1e-07\n19.05 -4.66590430475142e-15 1.6\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  23 0 0 6.28318530717959\n2  12 5 0 0 6.28318530717959\n0\n\n0101000\n+43 0 -43 0 *\nEd\n 1e-07 1 1 0\n1  24 0 0 1.6\n3  13 14CN 5 0 0 1.6\n0\n\n0101000\n-43 0 +81 0 *\nWi\n\n0101100\n-42 0 +41 0 +80 0 -41 0 *\nFa\n0  1e-07 5 0\n\n0101000\n+40 0 *\nEd\n 1e-07 1 1 0\n1  25 0 0 76.5\n3  15 16CN 6 0 0 76.5\n0\n\n0101000\n+58 0 -78 0 *\nWi\n\n0101100\n-77 0 +38 0 +57 0 -38 0 *\nFa\n0  1e-07 6 0\n\n0101000\n+37 0 *\nEd\n 1e-07 1 1 0\n1  26 0 0 76.5\n3  17 18CN 7 0 0 76.5\n0\n\n0101000\n+55 0 -75 0 *\nWi\n\n0101100\n-74 0 +35 0 +54 0 -35 0 *\nFa\n0  1e-07 7 0\n\n0101000\n+34 0 *\nEd\n 1e-07 1 1 0\n1  27 0 0 76.5\n3  19 20CN 8 0 0 76.5\n0\n\n0101000\n+52 0 -72 0 *\nWi\n\n0101100\n-71 0 +32 0 +51 0 -32 0 *\nFa\n0  1e-07 8 0\n\n0101000\n+31 0 *\nWi\n\n0101100\n+42 0 *\nVe\n1.00000000777651e-07\n3.175 -7.77650717458569e-16 1.6\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  28 0 0 6.28318530717959\n2  21 13 0 0 6.28318530717959\n0\n\n0101000\n+28 0 -28 0 *\nWi\n\n0101100\n-27 0 *\nFa\n0  1e-07 12 0\n\n0101000\n+29 0 +26 0 *\nVe\n1e-07\n3.175 -7.77650717458569e-16 21\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  29 0 1.6 21\n3  22 23CN 13 0 1.6 21\n0\n\n0101000\n+28 0 -24 0 *\nVe\n1.5e-07\n1.71026313764871 2.675 21\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  30 0 0 1.00194389460357\n2  24 13 0 0 1.00194389460357\n0\n\n0101000\n+24 0 -22 0 *\nVe\n1.00000000222045e-07\n1.71026313764871 2.675 6\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  31 0 6 21\n2  25 13 0 6 21\n0\n\n0101000\n+20 0 -22 0 *\nVe\n1.00000000222045e-07\n-1.71026313764871 2.675 6\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  32 0 1.00194389460357 2.13964875898622\n2  26 13 0 1.00194389460357 2.13964875898622\n0\n\n0101000\n+20 0 -18 0 *\nVe\n1.5e-07\n-1.71026313764871 2.675 21\n0 0\n\n0101101\n*\nEd\n 1e-07 1 1 0\n1  33 0 6 21\n2  27 13 0 6 21\n0\n\n0101000\n+18 0 -16 0 *\nEd\n 1e-07 1 1 0\n1  34 0 2.13964875898622 6.28318530717959\n2  24 13 0 2.13964875898622 6.28318530717959\n0\n\n0101000\n+16 0 -24 0 *\nWi\n\n0101100\n+27 0 -23 0 -21 0 +19 0 -17 0 -15 0 -14 0 +23 0 *\nFa\n0  1e-07 13 0\n\n0101000\n+13 0 *\nEd\n 1.5e-07 1 1 0\n1  35 0 -3.79776313764871 -0.377236862351293\n0\n\n0101000\n+22 0 -16 0 *\nWi\n\n0101100\n+14 0 +11 0 +21 0 *\nFa\n0  1e-07 14 0\n\n0101000\n+10 0 *\nEd\n 1e-07 1 1 0\n1  36 0 2.46473686235129 5.88526313764871\n0\n\n0101000\n+18 0 -20 0 *\nWi\n\n0101100\n-8 0 -19 0 -11 0 +15 0 *\nFa\n0  1e-07 15 0\n\n0101000\n+7 0 *\nWi\n\n0101100\n+17 0 +8 0 *\nFa\n0  1e-07 16 0\n\n0101000\n+5 0 *\nSh\n\n0101100\n-96 0 -89 0 +69 0 +64 0 -49 0 +47 0 -44 0 +39 0 -36 0 -33 0 \n-30 0 +25 0 +12 0 +9 0 +6 0 +4 0 *\nSo\n\n0100000\n+3 0 *\nCo\n\n1100000\n+2 0 *\n\n+1 0 "
+      },
+      "sourceHash": "10a771e96970f3ff16e65100a839a2e625bd7b02d19028669dff25b3b7cd0124",
+      "edited": false,
+      "manufacturer": "STEPPERONLINE",
+      "model": "23HS30-2804S",
+      "partNumber": "23HS30-2804S",
+      "sourceUrl": "https://www.omc-stepperonline.com/nema-23-bipolar-1-8deg-1-9nm-269oz-in-2-8a-3-2v-57x57x76mm-4-wires-23hs30-2804s",
+      "reviewStatus": "DRAWING-VERIFIED INTERFACES / SIMPLIFIED HOUSING",
+      "engineering": {
+        "id": "motor-stepper-stepperonline-23hs30-2804s",
+        "manufacturer": "STEPPERONLINE",
+        "partNumber": "23HS30-2804S",
+        "motorClass": "Heavy",
+        "recommendedDriverId": "driver-dm542t-v4",
+        "mechanical": {
+          "faceMaximumMm": {
+            "value": 57.3,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "bodyLengthMm": {
+            "value": 76.5,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "shaftDiameterMm": {
+            "value": 6.35,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "shaftProjectionMm": {
+            "value": 21,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "flatAcrossMm": {
+            "value": 5.85,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "flatLengthMm": {
+            "value": 15,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "pilotDiameterMm": {
+            "value": 38.1,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "pilotHeightMm": {
+            "value": 1.6,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "mountPitchMm": {
+            "value": 47.14,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "mountHoleDiameterMm": {
+            "value": 5.2,
+            "unit": "mm",
+            "status": "manufacturer-drawing",
+            "source": "23drawing",
+            "note": ""
+          },
+          "mountThread": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": "Clearance bore; thread not asserted."
+          },
+          "mountHoleDepthMm": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": "Not dimensioned; full-depth cutters in the simplified envelope are not a depth specification."
+          },
+          "massKg": {
+            "value": null,
+            "unit": "kg",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": "Published nominal mass; no homogeneous density or center of gravity is inferred."
+          },
+          "rotorInertiaKgM2": {
+            "value": 3e-05,
+            "unit": "kg*m^2",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia."
+          },
+          "centerOfGravity": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          },
+          "permittedRadialLoadN": {
+            "value": null,
+            "unit": "N",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          },
+          "permittedAxialLoadN": {
+            "value": null,
+            "unit": "N",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          },
+          "connectorClearance": {
+            "value": null,
+            "unit": "mm",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          }
+        },
+        "electrical": {
+          "windingArrangement": {
+            "value": "two phase bipolar",
+            "unit": "1",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": ""
+          },
+          "phaseResistanceOhm": {
+            "value": 1.17,
+            "unit": "ohm",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": "Per phase at 25 C; revision-specific nominal value."
+          },
+          "phaseInductanceH": {
+            "value": 0.00436,
+            "unit": "H",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": ""
+          },
+          "phaseRatedCurrentA": {
+            "value": 2.8,
+            "unit": "A",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": ""
+          },
+          "fullStepAngleDeg": {
+            "value": 1.8,
+            "unit": "deg",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": ""
+          },
+          "publishedExcitationIntervalDeg": {
+            "value": 1.8,
+            "unit": "deg",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": ""
+          },
+          "holdingTorqueNm": {
+            "value": 2.0,
+            "unit": "N*m",
+            "status": "manufacturer-nominal",
+            "source": "23drawing",
+            "note": "23HS30 current datasheet revises previous 1.9 Nm to 2.0 Nm."
+          },
+          "nominalSupplyV": {
+            "value": null,
+            "unit": "V",
+            "status": "unknown",
+            "source": "cadReference",
+            "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage."
+          },
+          "gearRatio": {
+            "value": 1,
+            "unit": "1",
+            "status": "direct-drive",
+            "source": "23drawing",
+            "note": ""
+          },
+          "torqueConstantNmPerA": {
+            "value": null,
+            "unit": "N*m/A",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          },
+          "backEmfConstantVsPerRad": {
+            "value": null,
+            "unit": "V*s/rad",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          },
+          "viscousFrictionNms": {
+            "value": null,
+            "unit": "N*m*s/rad",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          },
+          "gearboxEfficiency": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          },
+          "dynamicTorqueSpeedCurve": {
+            "value": null,
+            "unit": "1",
+            "status": "unknown",
+            "source": "23drawing",
+            "note": ""
+          }
+        },
+        "referenceFrames": [
+          {
+            "id": "mount-face",
+            "originMm": [
+              0,
+              0,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ],
+            "xDirection": [
+              1,
+              0,
+              0
+            ]
+          },
+          {
+            "id": "shaft-axis",
+            "originMm": [
+              0,
+              0,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "shaft-tip",
+            "originMm": [
+              0,
+              0,
+              21
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-1",
+            "originMm": [
+              -23.57,
+              -23.57,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-2",
+            "originMm": [
+              -23.57,
+              23.57,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-3",
+            "originMm": [
+              23.57,
+              -23.57,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          },
+          {
+            "id": "mount-hole-4",
+            "originMm": [
+              23.57,
+              23.57,
+              0
+            ],
+            "axis": [
+              0,
+              0,
+              1
+            ]
+          }
+        ],
+        "limitations": [
+          "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+          "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+          "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned.",
+          "Mounting-bore centers and diameters are drawing-derived; axial hole/flange depth is unspecified. Full-depth envelope cutters are an illustration, not manufacturing data."
+        ]
+      }
     }
   ]
 }

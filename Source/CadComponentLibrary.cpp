@@ -31,8 +31,12 @@ bool CadComponentLibrary::ensureLoaded(juce::String& error)
     diskText=file.existsAsFile()?file.loadFileAsString():juce::String();
     const auto json=file.existsAsFile()?diskText:juce::String::fromUTF8(EngineeringData::componentlibraryseed_json,EngineeringData::componentlibraryseed_jsonSize);
     if(!decode(juce::JSON::parse(json),next,error))return false;
+    // Add newly shipped definitions to an existing catalog, without replacing user edits or document snapshots.
+    juce::Array<juce::var> bundled;
+    if(!decode(juce::JSON::parse(juce::String::fromUTF8(EngineeringData::componentlibraryseed_json,EngineeringData::componentlibraryseed_jsonSize)),bundled,error))return false;
+    for(const auto& stock:craft::templates())bundled.add(stock);
     bool extended=false;
-    for(const auto& stock:craft::templates())
+    for(const auto& stock:bundled)
     {
         bool present=false;for(const auto& entry:next)if(entry["id"]==stock["id"]){present=true;break;}
         if(!present){if(!validate(stock,error))return false;next.add(stock);extended=true;}

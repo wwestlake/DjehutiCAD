@@ -1,0 +1,1019 @@
+{
+  "format": "djehuti-stepper-motor-reference",
+  "schemaVersion": 1,
+  "checkedDate": "2026-10-21",
+  "sources": {
+    "cadReference": "https://docs.google.com/document/d/1C56vMJvwZLRPRPaYo8RQID4N3Q_D6s1qUkklbrhlFa8/edit",
+    "electricalReference": "https://docs.google.com/document/d/1huFVYliLVgQ3jbtYar8RFib-znZL_OWw1xIB1Myiw70/edit",
+    "maintex": "https://maintexmotors.com/product/28byj-48-stepper-motor/",
+    "maintexDrawing": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-diagram-1024x738.png",
+    "maintexVariants": "https://maintexmotors.com/wp-content/uploads/2024/11/28BYJ48-stepper-motor-datasheet-.jpg",
+    "17product": "https://www.omc-stepperonline.com/nema-17-bipolar-59ncm-84oz-in-2a-42x48mm-4-wires-w-1m-cable-connector-17hs19-2004s1",
+    "17drawing": "https://files.omc-stepperonline.com/17HS19-2004S1_Full_Datasheet.pdf",
+    "23product": "https://www.omc-stepperonline.com/nema-23-bipolar-1-8deg-1-9nm-269oz-in-2-8a-3-2v-57x57x76mm-4-wires-23hs30-2804s",
+    "23drawing": "https://files.omc-stepperonline.com/23HS30-2804S_Full_Datasheet.pdf",
+    "uln2003": "https://www.ti.com/lit/ds/symlink/uln2003a.pdf",
+    "tmc2209": "https://www.analog.com/media/en/technical-documentation/data-sheets/TMC2209_datasheet_rev1.09.pdf",
+    "dm542t": "https://www.omc-stepperonline.com/download/DM542T_V4.0_user_manual.pdf"
+  },
+  "motors": [
+    {
+      "id": "motor-stepper-28byj48-12v-reference",
+      "manufacturer": "Unspecified (Maintex family drawing reference)",
+      "partNumber": "28BYJ-48 12V (supplier unconfirmed)",
+      "motorClass": "Light",
+      "recommendedDriverId": "driver-uln2003a-reference",
+      "mechanical": {
+        "bodyDiameterMm": {
+          "value": 28,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "bodyLengthMm": {
+          "value": 19,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "shaftDiameterMm": {
+          "value": 5,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "shaftProjectionMm": {
+          "value": 15.2,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "flatAcrossMm": {
+          "value": 3,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "flatLengthMm": {
+          "value": 11,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "pilotDiameterMm": {
+          "value": 9.2,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "pilotHeightMm": {
+          "value": 1.5,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "mountPitchMm": {
+          "value": 35,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "mountHoleDiameterMm": {
+          "value": 4,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "shaftOffsetMm": {
+          "value": 8,
+          "unit": "mm",
+          "status": "manufacturer-family-reference",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "mountThread": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": "Clearance bore; thread not asserted."
+        },
+        "mountHoleDepthMm": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": "Not dimensioned; full-depth cutters in the simplified envelope are not a depth specification."
+        },
+        "massKg": {
+          "value": null,
+          "unit": "kg",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": "Published nominal mass; no homogeneous density or center of gravity is inferred."
+        },
+        "rotorInertiaKgM2": {
+          "value": null,
+          "unit": "kg*m^2",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia."
+        },
+        "centerOfGravity": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "permittedRadialLoadN": {
+          "value": null,
+          "unit": "N",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "permittedAxialLoadN": {
+          "value": null,
+          "unit": "N",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "connectorClearance": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        }
+      },
+      "electrical": {
+        "windingArrangement": {
+          "value": "four phase/common supply unipolar",
+          "unit": "1",
+          "status": "manufacturer-nominal",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "phaseResistanceOhm": {
+          "value": null,
+          "unit": "ohm",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": "Exact 12V supplier unresolved. Maintex 28BYJ48-054 table gives 130 ohm; not transferred to an unidentified unit."
+        },
+        "phaseInductanceH": {
+          "value": null,
+          "unit": "H",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "phaseRatedCurrentA": {
+          "value": null,
+          "unit": "A",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "fullStepAngleDeg": {
+          "value": null,
+          "unit": "deg",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": "The 5.625-degree 1-2 phase excitation interval is not asserted as a full-step angle."
+        },
+        "publishedExcitationIntervalDeg": {
+          "value": 5.625,
+          "unit": "deg",
+          "status": "manufacturer-family-reference",
+          "source": "maintexVariants",
+          "note": ""
+        },
+        "holdingTorqueNm": {
+          "value": null,
+          "unit": "N*m",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": "Holding torque is not continuous operating torque."
+        },
+        "nominalSupplyV": {
+          "value": 12,
+          "unit": "V",
+          "status": "reference-only",
+          "source": "cadReference",
+          "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage."
+        },
+        "gearRatio": {
+          "value": 64,
+          "unit": "1",
+          "status": "nominal-reference",
+          "source": "maintexVariants",
+          "note": "Actual supplier gear ratio, backlash and efficiency are unknown."
+        },
+        "torqueConstantNmPerA": {
+          "value": null,
+          "unit": "N*m/A",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "backEmfConstantVsPerRad": {
+          "value": null,
+          "unit": "V*s/rad",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "viscousFrictionNms": {
+          "value": null,
+          "unit": "N*m*s/rad",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "gearboxEfficiency": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        },
+        "dynamicTorqueSpeedCurve": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "maintexDrawing",
+          "note": ""
+        }
+      },
+      "referenceFrames": [
+        {
+          "id": "mount-face",
+          "originMm": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "xDirection": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "shaft-axis",
+          "originMm": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "shaft-tip",
+          "originMm": [
+            0,
+            0,
+            15.2
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-1",
+          "originMm": [
+            -17.5,
+            -8,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-2",
+          "originMm": [
+            17.5,
+            -8,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "limitations": [
+        "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+        "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+        "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned.",
+        "Supplier/SKU unresolved. Maintex family drawing is only a reference, not verification of any purchased 12V variant.",
+        "Ear thickness 1 mm and plastic exit shape are illustrative. Published family double-flat profile is used; verify the actual shaft."
+      ]
+    },
+    {
+      "id": "motor-stepper-stepperonline-17hs19-2004s1",
+      "manufacturer": "STEPPERONLINE",
+      "partNumber": "17HS19-2004S1",
+      "motorClass": "Medium",
+      "recommendedDriverId": "driver-tmc2209-reference",
+      "mechanical": {
+        "faceMaximumMm": {
+          "value": 42.3,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "bodyLengthMm": {
+          "value": 48,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "shaftDiameterMm": {
+          "value": 5,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "shaftProjectionMm": {
+          "value": 24,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "flatAcrossMm": {
+          "value": 4.5,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "flatLengthMm": {
+          "value": 15,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "pilotDiameterMm": {
+          "value": 22,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "pilotHeightMm": {
+          "value": 2,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "mountPitchMm": {
+          "value": 31,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "mountHoleDiameterMm": {
+          "value": 3,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "17drawing",
+          "note": ""
+        },
+        "mountThread": {
+          "value": "M3",
+          "unit": "1",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": "Nominal thread envelope only; helical threads and tap drill are not modeled."
+        },
+        "mountHoleDepthMm": {
+          "value": 4.5,
+          "unit": "mm",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": "Minimum threaded depth."
+        },
+        "massKg": {
+          "value": 0.39,
+          "unit": "kg",
+          "status": "manufacturer-nominal",
+          "source": "17product",
+          "note": "Published nominal mass; no homogeneous density or center of gravity is inferred."
+        },
+        "rotorInertiaKgM2": {
+          "value": 8.2e-06,
+          "unit": "kg*m^2",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia."
+        },
+        "centerOfGravity": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        },
+        "permittedRadialLoadN": {
+          "value": null,
+          "unit": "N",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        },
+        "permittedAxialLoadN": {
+          "value": null,
+          "unit": "N",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        },
+        "connectorClearance": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        }
+      },
+      "electrical": {
+        "windingArrangement": {
+          "value": "two phase bipolar",
+          "unit": "1",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": ""
+        },
+        "phaseResistanceOhm": {
+          "value": 1.6,
+          "unit": "ohm",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": "Per phase at 25 C; revision-specific nominal value."
+        },
+        "phaseInductanceH": {
+          "value": 0.003,
+          "unit": "H",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": ""
+        },
+        "phaseRatedCurrentA": {
+          "value": 2,
+          "unit": "A",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": ""
+        },
+        "fullStepAngleDeg": {
+          "value": 1.8,
+          "unit": "deg",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": ""
+        },
+        "publishedExcitationIntervalDeg": {
+          "value": 1.8,
+          "unit": "deg",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": ""
+        },
+        "holdingTorqueNm": {
+          "value": 0.59,
+          "unit": "N*m",
+          "status": "manufacturer-nominal",
+          "source": "17drawing",
+          "note": "Holding torque is not continuous operating torque."
+        },
+        "nominalSupplyV": {
+          "value": null,
+          "unit": "V",
+          "status": "unknown",
+          "source": "cadReference",
+          "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage."
+        },
+        "gearRatio": {
+          "value": 1,
+          "unit": "1",
+          "status": "direct-drive",
+          "source": "17drawing",
+          "note": ""
+        },
+        "torqueConstantNmPerA": {
+          "value": null,
+          "unit": "N*m/A",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        },
+        "backEmfConstantVsPerRad": {
+          "value": null,
+          "unit": "V*s/rad",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        },
+        "viscousFrictionNms": {
+          "value": null,
+          "unit": "N*m*s/rad",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        },
+        "gearboxEfficiency": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        },
+        "dynamicTorqueSpeedCurve": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "17drawing",
+          "note": ""
+        }
+      },
+      "referenceFrames": [
+        {
+          "id": "mount-face",
+          "originMm": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "xDirection": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "shaft-axis",
+          "originMm": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "shaft-tip",
+          "originMm": [
+            0,
+            0,
+            24
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-1",
+          "originMm": [
+            -15.5,
+            -15.5,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-2",
+          "originMm": [
+            -15.5,
+            15.5,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-3",
+          "originMm": [
+            15.5,
+            -15.5,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-4",
+          "originMm": [
+            15.5,
+            15.5,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "limitations": [
+        "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+        "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+        "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned."
+      ]
+    },
+    {
+      "id": "motor-stepper-stepperonline-23hs30-2804s",
+      "manufacturer": "STEPPERONLINE",
+      "partNumber": "23HS30-2804S",
+      "motorClass": "Heavy",
+      "recommendedDriverId": "driver-dm542t-v4",
+      "mechanical": {
+        "faceMaximumMm": {
+          "value": 57.3,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "bodyLengthMm": {
+          "value": 76.5,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "shaftDiameterMm": {
+          "value": 6.35,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "shaftProjectionMm": {
+          "value": 21,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "flatAcrossMm": {
+          "value": 5.85,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "flatLengthMm": {
+          "value": 15,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "pilotDiameterMm": {
+          "value": 38.1,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "pilotHeightMm": {
+          "value": 1.6,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "mountPitchMm": {
+          "value": 47.14,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "mountHoleDiameterMm": {
+          "value": 5.2,
+          "unit": "mm",
+          "status": "manufacturer-drawing",
+          "source": "23drawing",
+          "note": ""
+        },
+        "mountThread": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": "Clearance bore; thread not asserted."
+        },
+        "mountHoleDepthMm": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": "Not dimensioned; full-depth cutters in the simplified envelope are not a depth specification."
+        },
+        "massKg": {
+          "value": null,
+          "unit": "kg",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": "Published nominal mass; no homogeneous density or center of gravity is inferred."
+        },
+        "rotorInertiaKgM2": {
+          "value": 3e-05,
+          "unit": "kg*m^2",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": "Converted from g*cm^2 by 1e-7; motor rotor only, not output-load inertia."
+        },
+        "centerOfGravity": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        },
+        "permittedRadialLoadN": {
+          "value": null,
+          "unit": "N",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        },
+        "permittedAxialLoadN": {
+          "value": null,
+          "unit": "N",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        },
+        "connectorClearance": {
+          "value": null,
+          "unit": "mm",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        }
+      },
+      "electrical": {
+        "windingArrangement": {
+          "value": "two phase bipolar",
+          "unit": "1",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": ""
+        },
+        "phaseResistanceOhm": {
+          "value": 1.17,
+          "unit": "ohm",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": "Per phase at 25 C; revision-specific nominal value."
+        },
+        "phaseInductanceH": {
+          "value": 0.00436,
+          "unit": "H",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": ""
+        },
+        "phaseRatedCurrentA": {
+          "value": 2.8,
+          "unit": "A",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": ""
+        },
+        "fullStepAngleDeg": {
+          "value": 1.8,
+          "unit": "deg",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": ""
+        },
+        "publishedExcitationIntervalDeg": {
+          "value": 1.8,
+          "unit": "deg",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": ""
+        },
+        "holdingTorqueNm": {
+          "value": 2.0,
+          "unit": "N*m",
+          "status": "manufacturer-nominal",
+          "source": "23drawing",
+          "note": "23HS30 current datasheet revises previous 1.9 Nm to 2.0 Nm."
+        },
+        "nominalSupplyV": {
+          "value": null,
+          "unit": "V",
+          "status": "unknown",
+          "source": "cadReference",
+          "note": "For bipolar motors, bus voltage is selected by the chopper driver; phase R*I is not bus voltage."
+        },
+        "gearRatio": {
+          "value": 1,
+          "unit": "1",
+          "status": "direct-drive",
+          "source": "23drawing",
+          "note": ""
+        },
+        "torqueConstantNmPerA": {
+          "value": null,
+          "unit": "N*m/A",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        },
+        "backEmfConstantVsPerRad": {
+          "value": null,
+          "unit": "V*s/rad",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        },
+        "viscousFrictionNms": {
+          "value": null,
+          "unit": "N*m*s/rad",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        },
+        "gearboxEfficiency": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        },
+        "dynamicTorqueSpeedCurve": {
+          "value": null,
+          "unit": "1",
+          "status": "unknown",
+          "source": "23drawing",
+          "note": ""
+        }
+      },
+      "referenceFrames": [
+        {
+          "id": "mount-face",
+          "originMm": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ],
+          "xDirection": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "shaft-axis",
+          "originMm": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "shaft-tip",
+          "originMm": [
+            0,
+            0,
+            21
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-1",
+          "originMm": [
+            -23.57,
+            -23.57,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-2",
+          "originMm": [
+            -23.57,
+            23.57,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-3",
+          "originMm": [
+            23.57,
+            -23.57,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "mount-hole-4",
+          "originMm": [
+            23.57,
+            23.57,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "limitations": [
+        "Simplified conservative housing envelope; cosmetics, internal motor/gear train and manufacturer tolerances are not fully modeled.",
+        "Connector/cable service-loop clearance is unknown; no fabricated keepout dimensions are supplied.",
+        "Mass distribution and center of gravity are unknown. No homogeneous engineering material is assigned.",
+        "Mounting-bore centers and diameters are drawing-derived; axial hole/flange depth is unspecified. Full-depth envelope cutters are an illustration, not manufacturing data."
+      ]
+    }
+  ]
+}
