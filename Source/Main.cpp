@@ -14,7 +14,6 @@
 #include "Viewport3D.h"
 #include "CadMaterialsManager.h"
 #include "CadFixturesPanel.h"
-#include "CadCoilWinderChecks.h"
 namespace djehuti::cad { bool runCadStockCheck(juce::var&); }
 
 #include <BRepBndLib.hxx>
@@ -1253,7 +1252,7 @@ class DjehutiCADApplication final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "DjehutiCAD"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return getCommandLineParameters().startsWith("--cad-fixture-") || getCommandLineParameters().startsWith("--cad-component-") || getCommandLineParameters().startsWith("--cad-craft-") || getCommandLineParameters().startsWith("--cad-coil-winder-"); }
+    bool moreThanOneInstanceAllowed() override { return getCommandLineParameters().startsWith("--cad-fixture-") || getCommandLineParameters().startsWith("--cad-component-") || getCommandLineParameters().startsWith("--cad-craft-"); }
 
     void initialise(const juce::String& commandLine) override
     {
@@ -1276,11 +1275,6 @@ public:
         {
             const bool interactive=commandLine.contains("--interactive");juce::MessageManager::callAsync([this,interactive]
             {const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/craft-ui-check-p5").getChildFile(juce::Uuid().toDashedString());juce::var report;const bool ok=djehuti::cad::runCadCraftPhase5UiCheck(report,folder,interactive);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-craft-phase5-ui-check.result.json").replaceWithText(juce::JSON::toString(report));setApplicationReturnValue(ok?0:1);if(!interactive)juce::MessageManager::callAsync([this]{quit();});});return;
-        }
-        if(commandLine.startsWith("--cad-coil-winder-check"))
-        {
-            juce::var report;const bool ok=djehuti::cad::runCadCoilWinderCheck(report);
-            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-coil-winder-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(ok?0:1);
         }
         if(commandLine.startsWith("--cad-craft-phase4-check"))
         {
