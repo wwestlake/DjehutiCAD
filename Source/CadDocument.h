@@ -32,6 +32,7 @@
 #include "CadCraftKit.h"
 
 #include <cstdint>
+#include <array>
 #include <map>
 #include <memory>
 #include <optional>
@@ -46,6 +47,16 @@ namespace djehuti::cad
 // face is named persistently. Derived on every rebuild, never stored as geometry.
 using CadFaceOrigins = std::vector<std::pair<TopoDS_Shape, juce::StringArray>>;
 
+struct CadRevolveParameters
+{
+    juce::String axisType = "sketchV";
+    std::array<double, 3> origin { 0, 0, 0 }, direction { 0, 1, 0 };
+    double angleDegrees = 360.0;
+    bool reverse = false;
+};
+juce::var revolveParametersToJson(const CadRevolveParameters&);
+bool readRevolveParameters(const juce::var&, CadRevolveParameters&, juce::String& error);
+
 struct CadFeature
 {
     juce::String id, name, type;
@@ -56,6 +67,7 @@ struct CadFeature
     double x = 0.0, y = 0.0, z = 0.0, rx = 0.0, ry = 0.0, rz = 0.0;
     bool visible = true;
     juce::StringArray edges;  // for fillet: persistent edge reference tokens
+    CadRevolveParameters revolve;
     TopoDS_Shape shape;
     CadFaceOrigins faceOrigins;   // derived with shape
 };
@@ -193,6 +205,8 @@ public:
     // segment connected there, keeping the handle length. A one-time edit, not a persistent constraint.
     bool smoothSketchJoint(const juce::String& sketchId, const juce::String& bezierId, const juce::String& end, juce::String& error);
     bool createExtrude(const juce::String& sketchId, double depth, bool reverse, juce::String& id, juce::String& error);
+    bool createRevolve(const juce::String& sketchId, const CadRevolveParameters&, juce::String& id, juce::String& error);
+    bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters&, juce::String& error);
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
@@ -324,6 +338,7 @@ private:
     bool validateSketch(const CadSketch& sketch, juce::String& error) const;
     bool sketchProfiles(const CadSketch& sketch, const CadSketchFrame& frame, std::vector<TopoDS_Face>& faces, juce::String& error, std::vector<std::pair<TopoDS_Shape, juce::String>>* edgeEntities = nullptr) const;
     TopoDS_Shape extrudeSketch(const CadSketch& sketch, const CadSketchFrame& frame, double depth, bool reverse, juce::String& error, CadFaceOrigins* origins = nullptr, const juce::String& owner = {}) const;
+    TopoDS_Shape revolveSketch(const CadFeature&, const CadSketch&, const CadSketchFrame&, CadFaceOrigins&, juce::String& error);
     static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);
@@ -397,6 +412,9 @@ public:
     bool addSketchBezier(const juce::String& sketchId, double x1, double y1, double cx1, double cy1, double cx2, double cy2, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {}) { return model.addSketchBezier(sketchId, x1, y1, cx1, cy1, cx2, cy2, x2, y2, entityId, error, firstConnection, secondConnection); }
     bool smoothSketchJoint(const juce::String& sketchId, const juce::String& bezierId, const juce::String& end, juce::String& error) { return model.smoothSketchJoint(sketchId, bezierId, end, error); }
     bool createExtrude(const juce::String& sketchId, double depth, bool reverse, juce::String& id, juce::String& error) { return model.createExtrude(sketchId, depth, reverse, id, error); }
+    bool createRevolve(const juce::String& sketchId, const CadRevolveParameters& p, juce::String& id, juce::String& error) { return model.createRevolve(sketchId, p, id, error); }
+    bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters& p, juce::String& error) { return model.updateRevolve(id, sketchId, p, error); }
+    juce::var revolveCommand(const juce::var& args);
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);

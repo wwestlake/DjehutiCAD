@@ -4,6 +4,12 @@ DjehutiCAD is an independent FRust-programmable mechanical CAD application built
 
 The application includes sketch/solid modeling, Boolean operations, an authoritative OCAF document with undo/redo, multiple 3D views, mechanical joints/couplings and constraint solving, local inverse-kinematics targets, a DEWB motion interface, FRust/node integration, and a BYOK agent. Capabilities and recorded verification limits are described in the documentation and handoff.
 
+Modeling tools include Box, Cylinder, Extrude, Cut, Union/Subtract/Intersect,
+constant-radius Fillet, and [Parametric Revolve](docs/PARAMETRIC_REVOLVE.md).
+Revolve supports full/partial angles, selectable/custom axes, editable parameters,
+sketch-driven rebuilding, and shared GUI/agent/API commands. Sweep, Loft and
+editable NURBS surfaces remain future work.
+
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 

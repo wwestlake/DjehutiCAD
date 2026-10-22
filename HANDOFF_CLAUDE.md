@@ -1116,7 +1116,8 @@ Useful entry points:
 - There is no arbitrary face-attached sketch system.
 - There is no general topology-selection UI or broad persistent face/edge
   guarantee.
-- Loft, sweep and revolve are not implemented.
+- Loft and sweep are not implemented. Parametric Revolve is implemented; see
+  `docs/PARAMETRIC_REVOLVE.md` for the current GUI, API and verification record.
 - Mesh and GUI behavior still need focused direct observation when the native
   application is available through an appropriate UI surface.
 - Sketches are not drawn in the 3D model view; they appear only in the sketch

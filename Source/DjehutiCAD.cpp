@@ -153,6 +153,12 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
+        if (name == "cad_revolve")
+        {
+            auto result = safeThis->cadService->revolveCommand(parsedArgs);
+            result.getDynamicObject()->setProperty("state", safeThis->cadWorkspace->automationState());
+            return juce::JSON::toString(result, false, 17).toStdString();
+        }
         if (name == "cad_workspace") return runWorkspaceCommand(safeThis, arguments);
         if (name == "cad_check_interference")
         {

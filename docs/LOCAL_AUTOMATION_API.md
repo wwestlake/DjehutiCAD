@@ -58,6 +58,9 @@ once finished.
 ## Tools
 
 All agent tools are available:
+- Revolve: `cad_revolve` supports `create`, `get`, `update` and `delete` using stable
+  feature IDs and structured parameters. See [Parametric Revolve](PARAMETRIC_REVOLVE.md)
+  for axis choices, degree/mm conventions, examples and error responses.
 - modeling: `cad_create_box`, `cad_create_sketch`, `cad_sketch_*`, `cad_extrude`, `cad_cut`, `cad_boolean`,
   `cad_set_dimensions`, `cad_set_placement`, `cad_undo`, `cad_redo`;
 - assembly and motion: `cad_create_instance`, `cad_create_joint`, couplings, roles, `cad_motion_*`;
@@ -67,7 +70,13 @@ All agent tools are available:
   Assembly > Check interference;
 - workspace: `cad_workspace`, `open_*`.
 
-The `cad_ui` tool operates the visible workspace like a person does, so a recording shows the same task panels:
+The `cad_ui` tool operates the visible workspace like a person does, so a recording shows the same task panels.
+`command: "revolve"` opens the Revolve task. Its fields are `revolveProfile` (profile
+choice), `axisType` (Sketch U/V, World X/Y/Z, Custom), `angleDegrees`,
+`revolveReverse`, and custom-only `axisX/Y/Z` and `axisDX/DY/DZ`. Select a Revolve body
+to edit those fields in its inspector, then click `apply`. Feature state includes
+the complete Revolve `parameters` object. Combo choices accept their displayed text
+or zero-based index.
 
 | action | Arguments | Effect |
 |---|---|---|

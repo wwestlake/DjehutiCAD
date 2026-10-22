@@ -1,5 +1,13 @@
 # DjehutiCAD Architecture Handoff
 
+Current expansion update (October 22, 2026): parametric Revolve is implemented
+through CadCommandService/OCAF with full/partial angles, sketch/world/custom axes,
+editable parameters, dependent rebuilding and native/engineering JSON persistence.
+The GUI, `cad_revolve` agent/HTTP tool, FRust host function and CAD Revolve node use
+the same document commands. The focused Debug build and 38 service/kernel checks
+plus 7 GUI task-control checks passed. See `docs/PARAMETRIC_REVOLVE.md` for current
+behavior and limits. Older scope statements below describe earlier milestones.
+
 The live CAD document is OCAF-backed. Djehuti owns stable public feature IDs,
 feature semantics, dimensions, units, visibility, and relationships; OCCT
 owns solid evaluation, Boolean operations, naming infrastructure, and

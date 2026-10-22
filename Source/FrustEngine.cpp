@@ -342,6 +342,19 @@ extern "C" const char* djehuti_cad_ik(const char* command, const char* argsJson)
     return returnCad(result);
 }
 
+// Same structured command as the agent/API and the document commands used by the GUI.
+extern "C" const char* djehuti_cad_revolve(const char* argsJson)
+{
+    if (auto service = activeCadService())
+    {
+        const auto reply = service->revolveCommand(juce::JSON::parse(argsJson != nullptr ? argsJson : "{}"));
+        setCadError((bool)reply["ok"] ? juce::String() : reply["error"].toString());
+        return returnCad(juce::JSON::toString(reply, false, 17));
+    }
+    setCadError("No CAD document is attached.");
+    return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+
 // Manufacturing export: args_json as for the cad_export agent tool ({format, path, parts, quality, ...}); returns result JSON.
 extern "C" const char* djehuti_cad_export(const char* argsJson)
 {
@@ -411,6 +424,7 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_sketch_dimension", reinterpret_cast<void*>(&djehuti_cad_sketch_dimension));
         frust_plugin_register_host_function("djehuti_cad_sketch_position", reinterpret_cast<void*>(&djehuti_cad_sketch_position));
         frust_plugin_register_host_function("djehuti_cad_sketch_constraint", reinterpret_cast<void*>(&djehuti_cad_sketch_constraint));
+        frust_plugin_register_host_function("djehuti_cad_revolve", reinterpret_cast<void*>(&djehuti_cad_revolve));
         frust_plugin_register_host_function("djehuti_cad_extrude", reinterpret_cast<void*>(&djehuti_cad_extrude));
         frust_plugin_register_host_function("djehuti_cad_cut", reinterpret_cast<void*>(&djehuti_cad_cut));
         frust_plugin_register_host_function("djehuti_cad_set_dimensions", reinterpret_cast<void*>(&djehuti_cad_set_dimensions));
@@ -705,6 +719,7 @@ std::string cadPrelude()
            "extern fn djehuti_cad_sketch_dimension(sketch: String, entity: String, value: f64) -> i64;\n"
            "extern fn djehuti_cad_sketch_position(sketch: String, entity: String, x: f64, y: f64) -> i64;\n"
            "extern fn djehuti_cad_sketch_constraint(sketch: String, type: String, first: String, second: String, value: f64) -> String;\n"
+           "extern fn djehuti_cad_revolve(args_json: String) -> String;\n"
            "extern fn djehuti_cad_extrude(sketch: String, depth: f64, reverse: i64) -> String;\n"
            "extern fn djehuti_cad_cut(sketch: String, target: String, depth: f64, through_all: i64, reverse: i64) -> String;\n"
            "extern fn djehuti_cad_set_dimensions(id: String, width: f64, depth: f64, height: f64, radius: f64) -> i64;\n"
@@ -731,7 +746,7 @@ std::string cadPrelude()
 const std::vector<std::string>& cadHostFunctions()
 {
     static const std::vector<std::string> names {
-        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
+        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_revolve", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
         "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
         "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik", "djehuti_cad_list_faces", "djehuti_cad_create_face_sketch", "djehuti_cad_export", "djehuti_cad_workspace"

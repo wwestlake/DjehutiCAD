@@ -17,7 +17,7 @@ const juce::Colour selectedColour(0xffffb86b), targetColour(0xff63d48a), toolCol
 const juce::Colour interferenceColour(0xffe0303a);           // parts of an interfering pair
 constexpr juce::uint32 interferenceRegionArgb = 0xffffe14d;  // outline of the common volume
 
-bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "cut" || type == "union" || type == "subtract" || type == "intersect" || type == "fillet"; }
+bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "revolve" || type == "cut" || type == "union" || type == "subtract" || type == "intersect" || type == "fillet"; }
 bool isPrimitiveType(const juce::String& type) { return type == "box" || type == "cylinder"; }
 // Joint coordinates are radians/metres everywhere except the UI, which shows degrees/millimetres.
 double toUi(const juce::String& jointType, double value) { return jointType == "revolute" ? value * 180.0 / juce::MathConstants<double>::pi : value * 1000.0; }
@@ -668,7 +668,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
-            { "Modify", { E{6,"Extrude...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
@@ -680,6 +680,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
+        else if (id == 37) executeUiCommand("revolve");
         else if (id == 34) executeUiCommand("fillet");
         else if (id == 35) executeUiCommand("curve");
         else if (id == 36) executeUiCommand("materials");
@@ -689,7 +690,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
 
     struct ToolSpec { juce::TextButton* button; const char* tip; };
     for (const auto& spec : { ToolSpec { &sketchButton, "Create a sketch on an origin plane (XY, XZ or YZ)." }, ToolSpec { &boxButton, "Create a box body from width, depth and height." },
-                              ToolSpec { &cylinderButton, "Create a cylinder body from radius and height." }, ToolSpec { &extrudeButton, "Extrude a closed sketch profile into a solid body." },
+                              ToolSpec { &cylinderButton, "Create a cylinder body from radius and height." }, ToolSpec { &extrudeButton, "Extrude a closed sketch profile into a solid body." }, ToolSpec { &revolveButton, "Revolve a closed sketch profile around an axis." },
                               ToolSpec { &cutButton, "Cut a closed sketch profile from a target body." }, ToolSpec { &filletButton, "Create a constant-radius fillet on selected edges of a body." },
                               ToolSpec { &subtractButton, "Subtract a Tool body from a Target body." },
                               ToolSpec { &unionButton, "Combine two bodies into one." }, ToolSpec { &intersectButton, "Keep only the volume shared by two bodies." },
@@ -719,6 +720,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     cylinderButton.onClick = [this] { startTask(Task::newCylinder); };
     extrudeButton.onClick = [this] { startTask(Task::extrude); };
     cutButton.onClick = [this] { startTask(Task::cut); };
+    revolveButton.onClick = [this] { startTask(Task::revolve); };
     filletButton.onClick = [this] { startTask(Task::fillet); };
     subtractButton.onClick = [this] { startTask(Task::boolean, "subtract"); };
     unionButton.onClick = [this] { startTask(Task::boolean, "union"); };
@@ -1013,7 +1015,7 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
     selectFeature(id);
 }
 
-bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::cut || task == Task::fillet || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
 // "face <token> of <body>" for a face-attached sketch.
 juce::String CadWorkspacePanel::supportText(const djehuti::cad::CadSketch& sketch) const { return "face " + sketch.supportFace + " of " + featureName(sketch.supportFeature); }
 bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
@@ -1244,7 +1246,7 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
             selection->setMode(djehuti::cad::CadSelection::Mode::edge);
     }
     if (next == Task::createSketch) { djehuti::cad::CadFaceInfo support; juce::String reason; if (selectedSupport(support, reason)) sketchPlane = "FACE"; }
-    if (next == Task::extrude || next == Task::cut) { if (selected != nullptr && selected->type == "sketch") profileId = selectedId; }
+    if (next == Task::extrude || next == Task::revolve || next == Task::cut) { if (selected != nullptr && selected->type == "sketch") profileId = selectedId; }
     if (next == Task::boolean && isSolid(selectedId)) { targetId = selectedId; activeRole = 1; }
     instanceBodyId.clear(); jointParentId.clear(); jointChildId.clear();
     if (next == Task::newInstance && isSolid(selectedId)) instanceBodyId = selectedId;
@@ -1257,6 +1259,47 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
 
 void CadWorkspacePanel::requestRebuild(bool keepValues) { pendingKeepValues = pendingKeepValues && keepValues; triggerAsyncUpdate(); }
 void CadWorkspacePanel::handleAsyncUpdate() { const auto keep = pendingKeepValues; pendingKeepValues = true; rebuildTaskPanel(keep); }
+
+void CadWorkspacePanel::addRevolveFields(const djehuti::cad::CadRevolveParameters& p, const juce::String& sketchId)
+{
+    juce::StringArray names; revolveProfileIds.clear();
+    for (const auto& f : service->document().features()) if (f.type == "sketch")
+    { names.add(f.name); revolveProfileIds.add(f.id); }
+    form->addChoice("revolveProfile", "Profile", names, revolveProfileIds.indexOf(sketchId), "Closed sketch profile to revolve.");
+    const juce::StringArray types {"sketchU", "sketchV", "worldX", "worldY", "worldZ", "custom"};
+    form->addChoice("axisType", "Axis", {"Sketch U", "Sketch V", "World X", "World Y", "World Z", "Custom"}, types.indexOf(p.axisType),
+                    "Sketch axes follow the sketch. World axes pass through the world origin. The axis must lie in the sketch plane.");
+    form->addNumber("angleDegrees", "Angle", p.angleDegrees, "deg", "Greater than 0, up to 360 degrees for a full revolution.");
+    form->addToggle("revolveReverse", "Reverse rotation", p.reverse, "Reverse rotation about the selected axis (right-hand rule).");
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto letter = juce::StringArray{"X", "Y", "Z"}[i];
+        form->addNumber("axis" + letter, "Axis origin " + letter, p.origin[(size_t)i], "mm", "Custom axis origin in world coordinates.");
+        form->addNumber("axisD" + letter, "Axis direction " + letter, p.direction[(size_t)i], {}, "Custom world direction; any nonzero length is accepted.");
+    }
+    form->addNote("revolveHelp", "Keep the profile on one side of the axis. An edge may lie on the axis. Nested loops form holes.", 2);
+}
+
+djehuti::cad::CadRevolveParameters CadWorkspacePanel::readRevolveForm() const
+{
+    djehuti::cad::CadRevolveParameters p;
+    const juce::StringArray types {"sketchU", "sketchV", "worldX", "worldY", "worldZ", "custom"};
+    const int index = form->choice("axisType");
+    p.axisType = juce::isPositiveAndBelow(index, types.size()) ? types[index] : juce::String();
+    p.angleDegrees = form->number("angleDegrees"); p.reverse = form->toggle("revolveReverse");
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto letter = juce::StringArray{"X", "Y", "Z"}[i];
+        p.origin[(size_t)i] = form->number("axis" + letter); p.direction[(size_t)i] = form->number("axisD" + letter);
+    }
+    return p;
+}
+
+juce::String CadWorkspacePanel::revolveFormSketch() const
+{
+    const int index = form->choice("revolveProfile");
+    return juce::isPositiveAndBelow(index, revolveProfileIds.size()) ? revolveProfileIds[index] : juce::String();
+}
 
 void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
 {
@@ -1328,6 +1371,11 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             }
             else if (f->type == "subtract") { form->addHeader("Subtract"); form->addNote({}, "Target: " + featureName(f->firstOperand) + "\nTool: " + featureName(f->secondOperand), 2); }
             else if (f->type == "union" || f->type == "intersect") { form->addHeader(f->type == "union" ? "Union" : "Intersect"); form->addNote({}, featureName(f->firstOperand) + " and " + featureName(f->secondOperand), 2); }
+            else if (f->type == "revolve")
+            {
+                form->addHeader("Revolve");
+                addRevolveFields(f->revolve, f->sketchId);
+            }
             else if (f->type == "fillet")
             {
                 form->addHeader("Fillet");
@@ -1354,7 +1402,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
         case Task::sketch:
         {
             const auto* sketch = document.findSketch(selectedId);
-            title = f->name; instruction = "Edit the sketch to draw on it, or use it as the profile for Extrude or Cut Sketch.";
+            title = f->name; instruction = "Edit the sketch to draw on it, or use it as the profile for Extrude, Revolve or Cut Sketch.";
             accept = "Edit Sketch"; showCancel = false;
             form->addHeader("Sketch");
             form->addText("name", "Name", f->name, "Friendly sketch name.");
@@ -1362,6 +1410,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             if (sketch != nullptr) form->addNote({}, (sketch->onFace() ? "On " + supportText(*sketch) : sketch->plane + " plane  |  offset " + juce::String(sketch->offset) + " mm") + "  |  " + juce::String((int) sketch->entities.size()) + " entities", sketch->onFace() ? 2 : 1);
             form->addHeader("Use sketch");
             form->addButton("extrude", "Extrude...", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::extrude); }); }, "Extrude this sketch's closed profile.");
+            form->addButton("revolve", "Revolve...", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::revolve); }); }, "Revolve this sketch around an axis.");
             form->addButton("cut", "Cut Sketch...", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::cut); }); }, "Cut this sketch's profile from a body.");
             const auto id = selectedId;
             form->addButton("delete", "Delete", [this, id] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->deleteFeature(id); }); }, "Delete this sketch (Undo restores it).");
@@ -1515,6 +1564,10 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("distance", "Distance", extrudeDistance, "mm", "Extrusion distance from the sketch plane.");
             form->addToggle("reverse", "Reverse direction", false, "Extrude to the opposite side of the sketch plane.");
             break;
+        case Task::revolve:
+            title = "Revolve"; instruction = "Choose a closed sketch and an axis in its plane. Set the rotation angle."; accept = "Revolve";
+            addRevolveFields(revolveSettings, profileId);
+            break;
         case Task::cut:
             title = "Cut Sketch"; instruction = "Choose a sketch profile and the Target body to cut. Pick in the tree or the model view."; accept = "Cut";
             form->addHeader("Inputs");
@@ -1630,7 +1683,12 @@ void CadWorkspacePanel::assignRole(const juce::String& id)
     const auto* f = service->document().find(id);
     if (f == nullptr) return;
     commandMessage.clear();
-    if (task == Task::extrude || task == Task::cut)
+    if (task == Task::revolve && f->type == "sketch")
+    {
+        revolveSettings = readRevolveForm(); profileId = id;
+        rebuildTaskPanel(false); return;
+    }
+    if (task == Task::extrude || task == Task::revolve || task == Task::cut)
     {
         if (f->type == "sketch") profileId = id;
         else if (task == Task::cut && isSolid(id)) targetId = id;
@@ -1681,6 +1739,7 @@ void CadWorkspacePanel::validateTask()
             break;
         case Task::newBox: requirePositive("width", "Width"); requirePositive("depth", "Depth"); requirePositive("height", "Height"); break;
         case Task::newCylinder: requirePositive("radius", "Radius"); requirePositive("height", "Height"); break;
+        case Task::revolve: break;
         case Task::extrude:
             if (profileId.isEmpty()) problem = "Select a sketch with a closed profile in the model tree.";
             requirePositive("distance", "Distance");
@@ -1707,6 +1766,17 @@ void CadWorkspacePanel::validateTask()
             break;
         case Task::none: case Task::sketch: case Task::sketchEdit: break;
         default: validateMotionTask(problem, severity); break;
+    }
+    if (task == Task::revolve || (task == Task::body && form->control("angleDegrees") != nullptr))
+    {
+        if (revolveFormSketch().isEmpty()) { problem = "Select a closed sketch profile."; severity = 2; }
+        requirePositive("angleDegrees", "Revolve angle");
+        if (problem.isEmpty() && form->number("angleDegrees") > 360) { problem = "Revolve angle must be no greater than 360 degrees."; severity = 2; }
+        const bool custom = form->choice("axisType") == 5;
+        for (const auto* key : {"axisX", "axisY", "axisZ", "axisDX", "axisDY", "axisDZ"})
+        { form->setRowVisible(key, custom); if (custom) requireNumber(key, "Custom axis coordinate"); }
+        if (custom && problem.isEmpty() && std::hypot(form->number("axisDX"), form->number("axisDY"), form->number("axisDZ")) < 1e-12)
+        { problem = "Custom axis direction must be nonzero."; severity = 2; }
     }
     if (task == Task::cut) form->setRowVisible("depth", !form->toggle("throughAll"));
     validationMessage = problem; validationSeverity = severity;
@@ -1743,6 +1813,14 @@ void CadWorkspacePanel::acceptTask()
             const auto h = form->control("height") ? form->number("height") : f->height, r = form->control("radius") ? form->number("radius") : f->radius;
             const auto x = form->number("x"), y = form->number("y"), z = form->number("z");
             bool ok = true;
+            if (f->type == "revolve")
+            {
+                const auto p = readRevolveForm(); const auto sketch = revolveFormSketch();
+                if (sketch != f->sketchId || juce::JSON::toString(djehuti::cad::revolveParametersToJson(p),false,17) != juce::JSON::toString(djehuti::cad::revolveParametersToJson(f->revolve),false,17))
+                    ok = service->updateRevolve(selectedId, sketch, p, e);
+                if (!ok) { showError(e); return; }
+                f = document.find(selectedId);
+            }
             if (ok && name != f->name) ok = service->rename(selectedId, name, e);
             if (ok && (f = document.find(selectedId)) != nullptr && (w != f->width || d != f->depth || h != f->height || r != f->radius)) ok = service->setDimensions(selectedId, w, d, h, r, e);
             if (ok && (f = document.find(selectedId)) != nullptr && (x != f->x || y != f->y || z != f->z)) ok = service->setPlacement(selectedId, x, y, z, f->rx, f->ry, f->rz, e);
@@ -1816,6 +1894,11 @@ void CadWorkspacePanel::acceptTask()
             cylinderSize[0] = form->number("radius"); cylinderSize[1] = form->number("height");
             if (!service->createCylinder(cylinderSize[0], cylinderSize[1], id, e)) { showError(e); return; }
             refreshFromDocument(true); selectFeature(id); setMessage(featureName(id) + " created at the origin.", 0);
+            return;
+        case Task::revolve:
+            revolveSettings = readRevolveForm();
+            if (!service->createRevolve(revolveFormSketch(), revolveSettings, id, e)) { showError(e); return; }
+            refreshFromDocument(true); selectFeature(id); setMessage(featureName(id) + " created.", 0);
             return;
         case Task::extrude:
             extrudeDistance = form->number("distance");
@@ -1952,7 +2035,7 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what)
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
-    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &cutButton, &filletButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
+    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &revolveButton, &cutButton, &filletButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
     {
         const auto mode = selection != nullptr ? selection->mode() : djehuti::cad::CadSelection::Mode::body;
         bodyModeButton.setToggleState(mode == djehuti::cad::CadSelection::Mode::body, juce::dontSendNotification);
@@ -1970,13 +2053,14 @@ void CadWorkspacePanel::updateToolbar()
     unionButton.setToggleState(task == Task::boolean && booleanKind == "union", juce::dontSendNotification);
     intersectButton.setToggleState(task == Task::boolean && booleanKind == "intersect", juce::dontSendNotification);
     extrudeButton.setToggleState(task == Task::extrude, juce::dontSendNotification); cutButton.setToggleState(task == Task::cut, juce::dontSendNotification);
+    revolveButton.setToggleState(task == Task::revolve, juce::dontSendNotification);
     filletButton.setToggleState(task == Task::fillet, juce::dontSendNotification);
     sketchButton.setToggleState(task == Task::createSketch, juce::dontSendNotification);
     boxButton.setToggleState(task == Task::newBox, juce::dontSendNotification); cylinderButton.setToggleState(task == Task::newCylinder, juce::dontSendNotification);
     if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + (sketch->onFace() ? "on " + supportText(*sketch) : sketch->plane + " plane"), juce::dontSendNotification);
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
-    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton,&cutButton,&filletButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
+    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton, &revolveButton,&cutButton,&filletButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
     resized(); repaint();
 }
 
@@ -2025,7 +2109,7 @@ void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
         return;
     }
     juce::PopupMenu menu;
-    if (f->type == "sketch") { menu.addItem(1, "Edit Sketch"); menu.addItem(2, "Extrude..."); menu.addItem(3, "Cut Sketch..."); }
+    if (f->type == "sketch") { menu.addItem(1, "Edit Sketch"); menu.addItem(2, "Extrude..."); menu.addItem(12, "Revolve..."); menu.addItem(3, "Cut Sketch..."); }
     if (isSolid(id))
     {
         menu.addItem(4, "Subtract from this body...");
@@ -2050,6 +2134,7 @@ void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
             case 7: safe->toggleVisibility(id); break;
             case 8: safe->deleteFeature(id); break;
             case 9: showCadExportDialog(safe->service, { id }); break;
+            case 12: safe->selectFeature(id); safe->startTask(Task::revolve); break;
             case 10: safe->selectFeature(id); safe->startTask(Task::fillet); break;
             case 11: safe->targetId = id; safe->filletEdges.clear(); safe->updateHighlights(); safe->rebuildTaskPanel(true); break;
             default: break;
@@ -2989,7 +3074,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
     if (command == "clearInterference") { clearInterference(); return true; }
     const std::pair<const char*,juce::TextButton*> commands[] = {
         {"undo",&undoButton},{"redo",&redoButton},{"sketch",&sketchButton},{"box",&boxButton},{"cylinder",&cylinderButton},
-        {"extrude",&extrudeButton},{"cut",&cutButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
+        {"revolve",&revolveButton},{"extrude",&extrudeButton},{"cut",&cutButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
         {"sketchSelect",&selectToolButton},{"line",&lineButton},{"rectangle",&rectangleButton},{"circle",&circleButton},{"curve",&curveButton},{"constrain",&constrainButton},
         {"fitSketch",&fitSketchButton},{"finishSketch",&finishSketchButton},{"instance",&instanceButton},{"joint",&jointButton},{"coupling",&couplingButton},
         {"link",&linkButton},{"ik",&ikButton},{"fit",&fitButton},{"reset",&resetViewButton},{"views",&viewsButton},
@@ -3060,7 +3145,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -3069,6 +3154,8 @@ juce::var CadWorkspacePanel::automationState()
         auto* o = new juce::DynamicObject(); o->setProperty("id", f.id); o->setProperty("name", f.name); o->setProperty("type", f.type); o->setProperty("visible", f.visible);
         o->setProperty("width", f.width); o->setProperty("depth", f.depth); o->setProperty("height", f.height); o->setProperty("radius", f.radius);
         o->setProperty("x", f.x); o->setProperty("y", f.y); o->setProperty("z", f.z);
+        if (f.type == "revolve")
+        { auto p = djehuti::cad::revolveParametersToJson(f.revolve); p.getDynamicObject()->setProperty("sketch", f.sketchId); o->setProperty("parameters", p); }
         if (const auto* sketch = document.findSketch(f.id))
         {
             o->setProperty("plane", sketch->plane); o->setProperty("offset", sketch->offset);
