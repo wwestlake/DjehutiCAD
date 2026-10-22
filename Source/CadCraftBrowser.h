@@ -22,6 +22,7 @@ public:
     bool craftPhase3Check(juce::var& report, const juce::File& folder);
     bool craftPhase4Check(juce::var& report, const juce::File& folder);
     bool craftPhase5Check(juce::var& report, const juce::File& folder);
+    bool craftPhase6Check(juce::var& report, const juce::File& folder);
     std::function<void(std::vector<djehuti::cad::CadOverlayLine>)> setOverlaysCallback;
 private:
     int getNumRows() override;
@@ -114,6 +115,25 @@ private:
     void compareSelectedExperiments();
     void showLaboratoryReport();
 
+    // Phase 6: Project Kits, Fabrication Outputs, and Educational Documentation
+    juce::Label kitHeading;
+    juce::TextEditor kitName, kitAuthor, kitRevision;
+    juce::TextButton generateBomButton {"Consolidated BOM"},
+                     optimizeCutsButton {"Cutting optimization"},
+                     assemblyGuideButton {"Assembly guide"},
+                     exportTemplatesButton {"Fabrication SVG"},
+                     educationalReportButton {"Educational report"},
+                     exportCompleteKitButton {"Export complete kit"};
+
+    void showConsolidatedBOM();
+    void showCuttingOptimization();
+    void showAssemblyGuide();
+    void exportFabricationTemplates();
+    void showEducationalProjectReport();
+    void exportCompleteKit();
+    void syncKitMetadataFromUI();
+    void syncKitMetadataToUI();
+
     juce::var lastSolveResult;
     juce::Array<juce::var> records, materialRecords;
     std::vector<int> shown;
@@ -129,4 +149,6 @@ bool runCadCraftPhase3UiCheck(juce::var& report, const juce::File& folder, bool 
 bool runCadCraftPhase4UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 bool runCadCraftPhase5UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
 bool runCadCraftPhase5Check(juce::var& report);
+bool runCadCraftPhase6UiCheck(juce::var& report, const juce::File& folder, bool interactive = false);
+bool runCadCraftPhase6Check(juce::var& report);
 }

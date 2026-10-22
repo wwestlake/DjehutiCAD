@@ -29,6 +29,7 @@
 #include "CadAnalysisCases.h"
 #include "CadComponents.h"
 #include "CadExport.h"
+#include "CadCraftKit.h"
 
 #include <cstdint>
 #include <map>
@@ -257,6 +258,8 @@ public:
     const CadMaterials& materialsData() const { return materials; }
     const CadSheetStocks& stocksData() const { return sheetStocks; }
     const CadAnalysisCases& analysisData() const { return analysisCases; }
+    const std::optional<kit::CadCraftKitMetadata>& kitData() const { return kitMetadata; }
+    bool setKitMetadata(const kit::CadCraftKitMetadata& meta, juce::String& error);
     juce::var componentData() const;
     const juce::var* componentFor(const juce::String& feature) const;
     bool insertComponent(const juce::var& record,const CadFrame& placement,juce::String& instance,juce::String& error);
@@ -309,6 +312,7 @@ private:
     bool restoreStocksFromOCAF(juce::String& error);
     bool restoreAuthoredFromOCAF(juce::String& error);
     bool restoreAnalysisFromOCAF(juce::String& error);
+    bool restoreKitFromOCAF(juce::String& error);
     bool readComponentData(const juce::var&,juce::String& error);
     bool restoreComponentsFromOCAF(juce::String& error);
     void writeComponentsToOCAF();
@@ -338,6 +342,7 @@ private:
     CadMaterials materials;
     CadSheetStocks sheetStocks;
     CadAnalysisCases analysisCases;
+    std::optional<kit::CadCraftKitMetadata> kitMetadata;
     std::vector<CadComponentDefinition> componentDefinitions;
     static constexpr int componentContainerTag=9;
     std::vector<CadPersistentReference> references;

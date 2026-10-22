@@ -3,6 +3,7 @@
 #include "CadGeometricProperties.h"
 #include "CadEngineeringUnits.h"
 #include "CadStructuralModel.h"
+#include "CadCraftKit.h"
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepGProp.hxx>
@@ -958,6 +959,201 @@ bool runCadCraftPhase5Check(juce::var& report)
           close(reopenedComp.deflectionA_Mm, compAB.deflectionA_Mm, 1e-4) &&
           close(reopenedComp.deflectionB_Mm, compAB.deflectionB_Mm, 1e-4),
           "Re-evaluating experiments on reopened document produces identical results");
+
+    return passed;
+}
+
+bool runCadCraftPhase6Check(juce::var& report)
+{
+    const auto folder = juce::File::getCurrentWorkingDirectory().getChildFile("build/craft-check-p6").getChildFile(juce::Uuid().toDashedString());
+    folder.createDirectory();
+    juce::Array<juce::var> checks;
+    bool passed = true;
+
+    const auto check = [&](bool ok, const juce::String& label, const juce::String& detail = juce::String())
+    {
+        auto item = object();
+        put(item, "check", label);
+        put(item, "passed", ok);
+        if (detail.isNotEmpty()) put(item, "detail", detail);
+        checks.add(item);
+        passed &= ok;
+        report = object();
+        put(report, "passed", passed);
+        put(report, "checks", checks);
+        put(report, "folder", folder.getFullPathName());
+        juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-craft-phase6-check.result.json").replaceWithText(juce::JSON::toString(report));
+        return ok;
+    };
+
+    CadCommandService service;
+    service.setComponentLibraryFile(folder.getChildFile("library.json"));
+    service.setCatalogFile(folder.getChildFile("materials.json"));
+    auto& doc = service.document();
+    const auto command = [&](const char* action, juce::var args = object()) {
+        put(args, "action", action);
+        return service.componentCommand(args);
+    };
+
+    // 1. Construct bridge assembly: 2 longitudinal chords + 1 cross deck member
+    auto r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto chord1 = r["id"].toString();
+    check(chord1.isNotEmpty(), "Insert primary bridge chord: " + chord1);
+
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto chord2 = r["id"].toString();
+    check(chord2.isNotEmpty(), "Insert secondary bridge chord: " + chord2);
+
+    // Place chord 2 parallel at Y = 30 mm
+    CadFrame pChord2; pChord2.y = 30.0;
+    juce::String err;
+    check(doc.setInstancePlacement(chord2, pChord2, err), "Position second chord parallel at Y = 30 mm");
+
+    // Insert transverse deck cross-member
+    r = command("insert", [&]{ auto a = object(); put(a, "component", "craft-wood-strip"); return a; }());
+    const auto deck = r["id"].toString();
+    const auto featDeck = doc.mechanicsData().findInstance(deck)->featureId;
+
+    // Cut deck stick to 30 mm width
+    auto cutArgs = object();
+    put(cutArgs, "feature", featDeck);
+    auto cutDef = object();
+    put(cutDef, "type", "length");
+    put(cutDef, "positionMm", 30.0);
+    put(cutDef, "side", "end");
+    put(cutArgs, "cut", cutDef);
+    r = command("addCut", cutArgs);
+    check((bool)r["ok"], "Trim transverse deck member to 30 mm bridge width");
+
+    // Position deck at midspan spanning between chords
+    CadFrame pDeck;
+    pDeck.x = 60.0; pDeck.y = 0.0; pDeck.z = 3.0;
+    const double qz = std::sin(juce::MathConstants<double>::pi / 4.0);
+    const double qw = std::cos(juce::MathConstants<double>::pi / 4.0);
+    pDeck.qz = qz; pDeck.qw = qw;
+    check(doc.setInstancePlacement(deck, pDeck, err), "Position transverse deck beam spanning chords at midspan");
+
+    // 2. Establish valid PVA bonded joints
+    auto bondArgs1 = object();
+    put(bondArgs1, "instanceA", chord1); put(bondArgs1, "instanceB", deck);
+    put(bondArgs1, "type", "surface"); put(bondArgs1, "adhesive", "adh-pva");
+    r = command("createBond", bondArgs1);
+    const auto bond1Id = r["joint"]["id"].toString();
+
+    auto bondArgs2 = object();
+    put(bondArgs2, "instanceA", chord2); put(bondArgs2, "instanceB", deck);
+    put(bondArgs2, "type", "surface"); put(bondArgs2, "adhesive", "adh-pva");
+    r = command("createBond", bondArgs2);
+    const auto bond2Id = r["joint"]["id"].toString();
+
+    const auto* bj1 = doc.mechanicsData().findBondedJoint(bond1Id);
+    const auto* bj2 = doc.mechanicsData().findBondedJoint(bond2Id);
+    check(bj1 && bj1->status == "valid" && bj2 && bj2->status == "valid",
+          "Establish valid PVA adhesive bonds connecting deck to both chords");
+
+    // 3. Configure and persist Project Kit Metadata
+    kit::CadCraftKitMetadata meta;
+    meta.name = "Warren Truss Craft Bridge Kit";
+    meta.description = "Educational STEM construction kit for building and testing load-bearing craft bridges";
+    meta.author = "DjehutiCAD Engineering Curriculum";
+    meta.audience = "High School Physics / Pre-Engineering";
+    meta.revision = "1.0";
+    meta.notes = "Ensure PVA glue is fully cured (24 hrs) before testing to structural failure.";
+
+    check(doc.setKitMetadata(meta, err), "Store Project Kit metadata in CadDocument", err);
+    check(doc.kitData().has_value() && doc.kitData()->name == "Warren Truss Craft Bridge Kit",
+          "Verify project kit metadata successfully retained in document");
+
+    // 4. Consolidated Bill of Materials
+    const auto bom = kit::generateBOM(doc);
+    check(bom.totalFabricatedParts == 3, "BOM reports exact number of fabricated stock components (3 parts)");
+    check(bom.totalAdhesiveJoints == 2, "BOM reports exact number of structural adhesive joints (2 joints)");
+    check(bom.totalStructureMassG > 0.0, "BOM computes positive structural mass estimate (" + juce::String(bom.totalStructureMassG, 2) + " g)");
+    const auto bomCsv = bom.toCSV();
+    check(bomCsv.contains("fabricatedStock") && bomCsv.contains("consumableAdhesive"),
+          "BOM exports structured CSV with categorized item types and dimensions");
+    const auto bomMd = bom.toMarkdown();
+    check(bomMd.contains("Consolidated Bill of Materials") && bomMd.contains("Summary:"),
+          "BOM exports formatted GitHub-style Markdown documentation table");
+
+    // 5. Stock Cutting Optimization & Nesting
+    const auto plan = kit::generateCuttingOptimization(doc, 1.0);
+    check(plan.totalRawPiecesRequired > 0, "Cutting optimizer computes required raw stock pieces (" + juce::String(plan.totalRawPiecesRequired) + " pieces)");
+    check(plan.totalCutLengthMm > 0.0 && plan.overallUtilizationPercent > 50.0,
+          "Cutting optimizer computes material yield (" + juce::String(plan.overallUtilizationPercent, 1) + "%)");
+    const auto cutCsv = plan.toCSV();
+    check(cutCsv.contains("PieceIndex") && cutCsv.contains("CutLengthMm"),
+          "Cutting optimization exports machine/workshop CSV cut list");
+
+    // 6. Step-by-Step Assembly Guide
+    const auto guide = kit::generateAssemblyGuide(doc, &meta);
+    check(guide.steps.size() >= 5, "Generate chronological assembly sequence (" + juce::String(guide.steps.size()) + " steps)");
+    bool hasPrep = false, hasBonding = false, hasTesting = false;
+    for (const auto& s : guide.steps)
+    {
+        if (s.phase == "Preparation") hasPrep = true;
+        if (s.phase == "Bonding") hasBonding = true;
+        if (s.phase == "Testing") hasTesting = true;
+    }
+    check(hasPrep && hasBonding && hasTesting, "Assembly sequence covers Preparation, Joint Bonding, and Testing phases");
+
+    // 7. 1:1 Scale SVG Printable Fabrication Templates
+    const auto svg = kit::generateFabricationTemplateSVG(doc, plan);
+    check(svg.contains("xmlns=\"http://www.w3.org/2000/svg\""), "Generate valid XML SVG fabrication template");
+    check(svg.contains("50.0 mm calibration check"), "SVG template includes 50.0 mm calibration verification scale");
+    check(svg.contains("class=\"stock-border\"") && svg.contains("class=\"part-label\""),
+          "SVG template contains dimensioned cut boundaries and part labels");
+
+    // 8. Virtual Structural Mechanics Analysis Integration
+    auto bridgeCase = structural::createTemplateCase(doc, "bridge", deck, 10.0);
+    auto analysisRes = structural::evaluateCase(doc, bridgeCase);
+    check(analysisRes.solved && analysisRes.status == "completed",
+          "Solve bridge static equilibrium to provide FEA predictions for educational kit");
+
+    // 9. Comprehensive Educational Project Documentation
+    const auto eduDoc = kit::generateEducationalProjectReport(doc, meta, &analysisRes, nullptr);
+    check(eduDoc.contains("# Warren Truss Craft Bridge Kit"), "Educational document includes title and metadata header");
+    check(eduDoc.contains("## 1. Project Overview & Educational Objectives"), "Educational document includes learning objectives");
+    check(eduDoc.contains("## 2. Bill of Materials & Stock Inventory"), "Educational document includes BOM section");
+    check(eduDoc.contains("## 3. Stock Cutting & Fabrication Guide"), "Educational document includes cutting guide");
+    check(eduDoc.contains("## 4. Construction & Assembly Protocol"), "Educational document includes assembly protocol");
+    check(eduDoc.contains("## 5. Structural Mechanics & Theoretical Assumptions"), "Educational document includes theoretical assumptions");
+    check(eduDoc.contains("## 6. Virtual Structural Analysis Predictions"), "Educational document includes virtual FEA predictions");
+    check(eduDoc.contains("## 7. Hands-On Physical Testing Protocol"), "Educational document includes physical testing protocol");
+    check(eduDoc.contains("## 8. Virtual Simulation vs. Physical Measurement Comparison Worksheet"),
+          "Educational document includes virtual vs. physical comparison worksheet");
+
+    // 10. Complete Project Kit Package Export
+    const auto kitFolder = folder.getChildFile("BridgeKitPackage");
+    check(kit::exportCompleteProjectKit(doc, meta, kitFolder, err, &analysisRes, nullptr),
+          "Export complete project kit package to directory", err);
+
+    check(kitFolder.getChildFile("kit-manifest.json").existsAsFile(), "Kit package contains kit-manifest.json");
+    check(kitFolder.getChildFile("Project-Report.md").existsAsFile(), "Kit package contains Project-Report.md");
+    check(kitFolder.getChildFile("Bill-of-Materials.csv").existsAsFile(), "Kit package contains Bill-of-Materials.csv");
+    check(kitFolder.getChildFile("Cutting-List.csv").existsAsFile(), "Kit package contains Cutting-List.csv");
+    check(kitFolder.getChildFile("Fabrication-Templates.svg").existsAsFile(), "Kit package contains Fabrication-Templates.svg");
+    check(kitFolder.getChildFile("Project-Model.djo").existsAsFile(), "Kit package contains native Project-Model.djo");
+
+    // 11. Native .djo Persistence and Reload of Project Kit
+    const auto nativeKitFile = folder.getChildFile("bridge-kit.djo");
+    check(doc.save(nativeKitFile, err), "Save project with kit configuration to native .djo", err);
+
+    CadDocument reopened;
+    check(reopened.load(nativeKitFile, err), "Reopen project with kit configuration from native .djo", err);
+    check(reopened.kitData().has_value(), "Reopened document preserves kit metadata container");
+    if (reopened.kitData().has_value())
+    {
+        check(reopened.kitData()->name == "Warren Truss Craft Bridge Kit", "Reopen preserves kit name");
+        check(reopened.kitData()->author == "DjehutiCAD Engineering Curriculum", "Reopen preserves kit author");
+        check(reopened.kitData()->revision == "1.0", "Reopen preserves kit revision");
+    }
+
+    // Re-verify BOM from reopened document
+    const auto reopenedBom = kit::generateBOM(reopened);
+    check(reopenedBom.totalFabricatedParts == bom.totalFabricatedParts &&
+          reopenedBom.totalAdhesiveJoints == bom.totalAdhesiveJoints,
+          "Reopened document generates identical BOM quantities");
 
     return passed;
 }

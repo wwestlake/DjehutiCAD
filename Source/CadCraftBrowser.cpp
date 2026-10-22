@@ -132,6 +132,22 @@ CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : se
     compareButton.onClick = [this]{ compareSelectedExperiments(); };
     exportReportButton.onClick = [this]{ showLaboratoryReport(); };
 
+    // Phase 6: Project Kits, Fabrication Outputs, and Educational Documentation
+    kitHeading.setText("Project Kits & Fabrication", juce::dontSendNotification);
+    kitHeading.setColour(juce::Label::textColourId, juce::Colour(0xff88ddff));
+    kitHeading.setFont(juce::Font(14.0f, juce::Font::bold));
+
+    kitName.setText("Balsa Truss Bridge Kit", juce::dontSendNotification);
+    kitAuthor.setText("STEM Engineering Workshop", juce::dontSendNotification);
+    kitRevision.setText("Rev 1.0", juce::dontSendNotification);
+
+    generateBomButton.onClick = [this]{ showConsolidatedBOM(); };
+    optimizeCutsButton.onClick = [this]{ showCuttingOptimization(); };
+    assemblyGuideButton.onClick = [this]{ showAssemblyGuide(); };
+    exportTemplatesButton.onClick = [this]{ exportFabricationTemplates(); };
+    educationalReportButton.onClick = [this]{ showEducationalProjectReport(); };
+    exportCompleteKitButton.onClick = [this]{ exportCompleteKit(); };
+
     content.addAndMakeVisible(analysisHeading);
     content.addAndMakeVisible(analysisCaseSelect);
     content.addAndMakeVisible(createCaseButton);
@@ -161,6 +177,17 @@ CadCraftBrowser::CadCraftBrowser(std::shared_ptr<CadCommandService> shared) : se
     content.addAndMakeVisible(compareButton);
     content.addAndMakeVisible(exportReportButton);
 
+    content.addAndMakeVisible(kitHeading);
+    content.addAndMakeVisible(kitName);
+    content.addAndMakeVisible(kitAuthor);
+    content.addAndMakeVisible(kitRevision);
+    content.addAndMakeVisible(generateBomButton);
+    content.addAndMakeVisible(optimizeCutsButton);
+    content.addAndMakeVisible(assemblyGuideButton);
+    content.addAndMakeVisible(exportTemplatesButton);
+    content.addAndMakeVisible(educationalReportButton);
+    content.addAndMakeVisible(exportCompleteKitButton);
+
     reload();startTimerHz(3);
 }
 CadCraftBrowser::~CadCraftBrowser(){stopTimer();scroll.setViewedComponent(nullptr,false);}
@@ -168,7 +195,7 @@ void CadCraftBrowser::paint(juce::Graphics& g){g.fillAll(juce::Colour(0xff1d222b
 void CadCraftBrowser::resized()
 {
     auto a=getLocalBounds();workspaceMenu.setBounds(a.removeFromTop(28));scroll.setBounds(a);
-    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 2480);
+    content.setSize(juce::jmax(350,scroll.getMaximumVisibleWidth()), 2850);
     auto r=content.getLocalBounds().reduced(8);heading.setBounds(r.removeFromTop(32));category.setBounds(r.removeFromTop(30).reduced(0,2));search.setBounds(r.removeFromTop(30).reduced(0,2));
     list.setBounds(r.removeFromTop(145));auto row=r.removeFromTop(32);editPiece.setBounds(row.removeFromLeft(row.getWidth()*2/3).reduced(1));templatesButton.setBounds(row.reduced(1));
     mode.setBounds(r.removeFromTop(30));details.setBounds(r.removeFromTop(105));
@@ -269,6 +296,22 @@ void CadCraftBrowser::resized()
     row = r.removeFromTop(32);
     compareButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
     exportReportButton.setBounds(row.reduced(1));
+
+    // Phase 6: Project Kits, Fabrication Outputs, and Educational Documentation rows
+    kitHeading.setBounds(r.removeFromTop(26));
+    row = r.removeFromTop(30);
+    kitName.setBounds(row.removeFromLeft(row.getWidth()*3/5).reduced(1));
+    kitRevision.setBounds(row.reduced(1));
+    kitAuthor.setBounds(r.removeFromTop(30).reduced(1));
+    row = r.removeFromTop(32);
+    generateBomButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    optimizeCutsButton.setBounds(row.reduced(1));
+    row = r.removeFromTop(32);
+    assemblyGuideButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    exportTemplatesButton.setBounds(row.reduced(1));
+    row = r.removeFromTop(32);
+    educationalReportButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));
+    exportCompleteKitButton.setBounds(row.reduced(1));
 
     row=r.removeFromTop(32);saveDefaults.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));duplicate.setBounds(row.reduced(1));
     row=r.removeFromTop(32);materialsButton.setBounds(row.removeFromLeft(row.getWidth()/2).reduced(1));reloadButton.setBounds(row.reduced(1));status.setBounds(r);
@@ -1069,9 +1112,143 @@ void CadCraftBrowser::showLaboratoryReport()
     details.setText(report);
     message("Laboratory Report generated (" + juce::String(report.length()) + " characters)");
 }
+void CadCraftBrowser::syncKitMetadataFromUI()
+{
+    kit::CadCraftKitMetadata meta;
+    if (service->document().kitData().has_value())
+        meta = *service->document().kitData();
+
+    meta.name = kitName.getText();
+    meta.author = kitAuthor.getText();
+    meta.revision = kitRevision.getText();
+    juce::String err;
+    service->document().setKitMetadata(meta, err);
+}
+void CadCraftBrowser::syncKitMetadataToUI()
+{
+    if (service->document().kitData().has_value())
+    {
+        const auto& meta = *service->document().kitData();
+        kitName.setText(meta.name, juce::dontSendNotification);
+        kitAuthor.setText(meta.author, juce::dontSendNotification);
+        kitRevision.setText(meta.revision, juce::dontSendNotification);
+    }
+}
+void CadCraftBrowser::showConsolidatedBOM()
+{
+    const auto bom = kit::generateBOM(service->document());
+    details.setText(bom.toMarkdown());
+    message("Generated BOM: " + juce::String(bom.totalFabricatedParts) + " stock parts, " +
+            juce::String(bom.totalAdhesiveJoints) + " joints");
+}
+void CadCraftBrowser::showCuttingOptimization()
+{
+    const auto plan = kit::generateCuttingOptimization(service->document(), 1.0);
+    details.setText(plan.toMarkdown());
+    message("Optimized cut nesting: " + juce::String(plan.totalRawPiecesRequired) +
+            " raw pieces required (" + juce::String(plan.overallUtilizationPercent, 1) + "% yield)");
+}
+void CadCraftBrowser::showAssemblyGuide()
+{
+    syncKitMetadataFromUI();
+    const auto* meta = service->document().kitData().has_value() ? &*service->document().kitData() : nullptr;
+    const auto guide = kit::generateAssemblyGuide(service->document(), meta);
+    details.setText(guide.toMarkdown());
+    message("Generated assembly guide: " + juce::String(guide.totalSteps) + " steps");
+}
+void CadCraftBrowser::exportFabricationTemplates()
+{
+    const auto plan = kit::generateCuttingOptimization(service->document(), 1.0);
+    const auto svg = kit::generateFabricationTemplateSVG(service->document(), plan);
+    details.setText("=== 1:1 Scale Fabrication Template (SVG) ===\n\n" + svg);
+
+    auto outFolder = service->document().file().existsAsFile() ?
+                     service->document().file().getParentDirectory() :
+                     juce::File::getCurrentWorkingDirectory().getChildFile("build");
+    outFolder.createDirectory();
+    auto svgFile = outFolder.getChildFile("Fabrication-Templates.svg");
+    if (svgFile.replaceWithText(svg))
+        message("Exported 1:1 fabrication templates: " + svgFile.getFileName());
+    else
+        message("Generated SVG template (" + juce::String(svg.length()) + " characters)");
+}
+void CadCraftBrowser::showEducationalProjectReport()
+{
+    syncKitMetadataFromUI();
+    kit::CadCraftKitMetadata meta;
+    if (service->document().kitData().has_value())
+        meta = *service->document().kitData();
+    else
+    {
+        meta.name = kitName.getText();
+        meta.author = kitAuthor.getText();
+        meta.revision = kitRevision.getText();
+    }
+
+    structural::StructuralResult res;
+    const structural::StructuralResult* resPtr = nullptr;
+    if (!service->document().analysisData().cases.empty())
+    {
+        const int idx = analysisCaseSelect.getSelectedItemIndex();
+        const auto& c = (idx >= 0 && idx < (int)service->document().analysisData().cases.size()) ?
+                        service->document().analysisData().cases[(size_t)idx] :
+                        service->document().analysisData().cases.front();
+        res = structural::evaluateCase(service->document(), c);
+        resPtr = &res;
+    }
+
+    const auto report = kit::generateEducationalProjectReport(service->document(), meta, resPtr, nullptr);
+    details.setText(report);
+    message("Generated Educational Project Report (" + juce::String(report.length()) + " chars)");
+}
+void CadCraftBrowser::exportCompleteKit()
+{
+    syncKitMetadataFromUI();
+    kit::CadCraftKitMetadata meta;
+    if (service->document().kitData().has_value())
+        meta = *service->document().kitData();
+    else
+    {
+        meta.name = kitName.getText();
+        meta.author = kitAuthor.getText();
+        meta.revision = kitRevision.getText();
+    }
+
+    auto outFolder = service->document().file().existsAsFile() ?
+                     service->document().file().getParentDirectory().getChildFile("ProjectKit") :
+                     juce::File::getCurrentWorkingDirectory().getChildFile("build/ProjectKit");
+    outFolder.createDirectory();
+
+    structural::StructuralResult res;
+    const structural::StructuralResult* resPtr = nullptr;
+    if (!service->document().analysisData().cases.empty())
+    {
+        const int idx = analysisCaseSelect.getSelectedItemIndex();
+        const auto& c = (idx >= 0 && idx < (int)service->document().analysisData().cases.size()) ?
+                        service->document().analysisData().cases[(size_t)idx] :
+                        service->document().analysisData().cases.front();
+        res = structural::evaluateCase(service->document(), c);
+        resPtr = &res;
+    }
+
+    juce::String err;
+    if (kit::exportCompleteProjectKit(service->document(), meta, outFolder, err, resPtr, nullptr))
+    {
+        details.setText("Successfully exported complete Project Kit to:\n" + outFolder.getFullPathName() +
+                        "\n\nFiles included:\n"
+                        "- kit-manifest.json\n"
+                        "- Project-Report.md\n"
+                        "- Bill-of-Materials.csv\n"
+                        "- Cutting-List.csv\n"
+                        "- Fabrication-Templates.svg\n"
+                        "- Project-Model.djo");
+        message("Exported Complete Kit to " + outFolder.getFileName());
+    }
+    else message(err, true);
+}
 void CadCraftBrowser::timerCallback()
 {
-    if(documentInstance!=service->document().documentInstance()){reload();refreshAnalysisCases();return;}
+    if(documentInstance!=service->document().documentInstance()){reload();refreshAnalysisCases();syncKitMetadataToUI();return;}
     if(materialRevision!=service->document().revision())
     {
         materialRevision=service->document().revision();const auto previous=selectedMaterial()["id"].toString();loadMaterials(previous);
@@ -1082,6 +1259,7 @@ void CadCraftBrowser::timerCallback()
             if(juce::JSON::toString((*current)["geometry"])!=juce::JSON::toString(draft["geometry"]))editSelected();
         }
         refreshAnalysisCases();
+        syncKitMetadataToUI();
     }
 }
 bool CadCraftBrowser::craftCheck(juce::var& report, const juce::File& folder)
@@ -1585,6 +1763,148 @@ bool CadCraftBrowser::craftPhase5Check(juce::var& report, const juce::File& fold
     put(report, "folder", folder.getFullPathName());
     return passed;
 }
+bool CadCraftBrowser::craftPhase6Check(juce::var& report, const juce::File& folder)
+{
+    juce::Array<juce::var> checks; bool passed = true;
+    const auto check = [&](bool ok, const juce::String& name, const juce::String& detail = {})
+    {
+        auto v = object(); put(v, "check", name); put(v, "passed", ok);
+        if (detail.isNotEmpty()) put(v, "detail", detail);
+        checks.add(v); passed &= ok;
+    };
+
+    // 1. Select wood strip template in library
+    category.setSelectedId(2); // Wood
+    search.setText("strip");
+    filter();
+    check(shown.size() == 1, "Select wood strip template in library");
+    if (material.getSelectedId() <= 0 && material.getNumItems() > 0)
+        material.setSelectedId(1, juce::sendNotificationSync);
+
+    // 2. Insert two wooden craft sticks and align them
+    juce::String currentSelected;
+    selectedOccurrence = [&]{ return currentSelected; };
+    onInserted = [&](const juce::String& id){ currentSelected = id; };
+
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto firstId = currentSelected;
+    check(firstId.isNotEmpty(), "Insert first wooden craft stick: " + firstId);
+
+    placements[0]->setText("0"); placements[1]->setText("0"); placements[2]->setText("0");
+    insertPiece();
+    const auto secondId = currentSelected;
+    check(secondId.isNotEmpty() && secondId != firstId, "Insert second wooden craft stick: " + secondId);
+
+    // Align second stick to end of first stick
+    currentSelected = secondId;
+    editSelected();
+    refreshAlignTargets();
+    alignTarget.setSelectedId(1);
+    alignType.setSelectedId(1); // butt joint
+    applyAlign();
+    check(service->document().mechanicsData().findInstance(secondId)->placement.x > 50.0,
+          "Align second stick to end of first stick");
+
+    // 3. Create valid adhesive joint between them
+    refreshBondTargets();
+    bondTarget.setSelectedId(1);
+    bondType.setSelectedId(1); // surface bond
+    bondAdhesive.setSelectedId(1); // PVA wood glue
+    applyBond();
+    check(!service->document().mechanicsData().bondedJoints.empty() &&
+          service->document().mechanicsData().bondedJoints.back().status == "valid",
+          "Create valid adhesive joint between sticks");
+
+    // 4. Configure Project Kit Metadata via UI
+    kitName.setText("Balsa Bridge STEM Kit");
+    kitAuthor.setText("Westlake Engineering Lab");
+    kitRevision.setText("Rev 2.0");
+    syncKitMetadataFromUI();
+
+    check(service->document().kitData().has_value() &&
+          service->document().kitData()->name == "Balsa Bridge STEM Kit" &&
+          service->document().kitData()->revision == "Rev 2.0",
+          "Configure and persist project kit metadata in CadDocument via UI");
+
+    // 5. Generate Consolidated Bill of Materials via UI
+    showConsolidatedBOM();
+    const juce::String bomText = details.getText();
+    check(bomText.contains("Consolidated Bill of Materials") &&
+          bomText.contains("fabricatedStock") &&
+          bomText.contains("consumableAdhesive"),
+          "Generate and display consolidated BOM with stock parts and consumables via UI");
+
+    // 6. Generate Stock Cutting Optimization & Nesting via UI
+    showCuttingOptimization();
+    const juce::String cutText = details.getText();
+    check(cutText.contains("Stock Cutting Optimization") &&
+          cutText.contains("Piece #") &&
+          cutText.contains("Yield"),
+          "Generate and display stock cutting nesting plan and material yield via UI");
+
+    // 7. Generate Step-by-Step Assembly Guide via UI
+    showAssemblyGuide();
+    const juce::String guideText = details.getText();
+    check(guideText.contains("Step-by-Step Construction") &&
+          guideText.contains("Preparation") &&
+          guideText.contains("Bonding"),
+          "Generate and display logical assembly guide and safety protocol via UI");
+
+    // 8. Generate 1:1 Scale Printable SVG Fabrication Templates via UI
+    exportFabricationTemplates();
+    const juce::String svgText = details.getText();
+    check(svgText.contains("<svg") &&
+          svgText.contains("50.0 mm calibration check") &&
+          svgText.contains("class=\"part-label\""),
+          "Generate 1:1 scale printable SVG fabrication template with calibration check via UI");
+
+    // 9. Configure Cantilever test and run solver to populate structural prediction
+    currentSelected = firstId;
+    editSelected();
+    experimentTemplateSelect.setSelectedId(1); // Cantilever
+    applySelectedTemplate();
+    runStructuralSolver();
+    check(!lastSolveResult.isVoid() && (double)lastSolveResult["maxDeflectionMm"] > 0.0,
+          "Execute structural FEA simulation to generate predicted mechanics data");
+
+    // 10. Generate Comprehensive Educational Project Documentation via UI
+    showEducationalProjectReport();
+    const juce::String reportText = details.getText();
+    check(reportText.contains("Balsa Bridge STEM Kit") &&
+          reportText.contains("## 1. Project Overview") &&
+          reportText.contains("## 2. Bill of Materials") &&
+          reportText.contains("## 5. Structural Mechanics") &&
+          reportText.contains("## 6. Virtual Structural Analysis") &&
+          reportText.contains("## 7. Hands-On Physical Testing Protocol") &&
+          reportText.contains("## 8. Virtual Simulation vs. Physical Measurement Comparison Worksheet"),
+          "Generate comprehensive educational project guide with physical testing protocol and worksheet via UI");
+
+    // 11. Export Complete Project Kit via UI
+    const auto kitFolder = folder.getChildFile("ExportedKit");
+    juce::String kitErr;
+    const bool exportOk = kit::exportCompleteProjectKit(service->document(), *service->document().kitData(), kitFolder, kitErr);
+    check(exportOk &&
+          kitFolder.getChildFile("kit-manifest.json").existsAsFile() &&
+          kitFolder.getChildFile("Project-Report.md").existsAsFile() &&
+          kitFolder.getChildFile("Bill-of-Materials.csv").existsAsFile() &&
+          kitFolder.getChildFile("Cutting-List.csv").existsAsFile() &&
+          kitFolder.getChildFile("Fabrication-Templates.svg").existsAsFile() &&
+          kitFolder.getChildFile("Project-Model.djo").existsAsFile(),
+          "Export complete project kit package (manifest, report, BOM CSV, cut CSV, SVG template, native DJO model)");
+
+    // 12. Save UI snapshot
+    juce::FileOutputStream stream(folder.getChildFile("craft-browser-phase6.png"));
+    check(stream.openedOk() && juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()), stream),
+          "Craft Designer Phase 6 browser snapshot saved");
+
+    report = object();
+    put(report, "passed", passed);
+    put(report, "checks", checks);
+    put(report, "verification", "Craft Designer Phase 6 UI: Project Kits, Consolidated BOM, Cutting Optimization, Assembly Guide, 1:1 SVG Templates, and Educational Project Documentation");
+    put(report, "folder", folder.getFullPathName());
+    return passed;
+}
 namespace djehuti::cad
 {
 bool runCadCraftUiCheck(juce::var& report, const juce::File& folder, bool interactive)
@@ -1704,6 +2024,30 @@ bool runCadCraftPhase5UiCheck(juce::var& report, const juce::File& folder, bool 
         return true;
     }
     const auto ok = browser->craftPhase5Check(report, folder);
+    dialog->exitModalState(0);
+    return ok;
+}
+bool runCadCraftPhase6UiCheck(juce::var& report, const juce::File& folder, bool interactive)
+{
+    folder.createDirectory();
+    auto service = std::make_shared<CadCommandService>();
+    service->setComponentLibraryFile(folder.getChildFile("library.json"));
+    service->setCatalogFile(folder.getChildFile("materials.json"));
+    auto* browser = new CadCraftBrowser(service);
+    browser->setSize(400, 1500);
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(browser);
+    options.dialogTitle = "Craft Designer Phase 6 UI check";
+    options.useNativeTitleBar = true;
+    auto* dialog = options.launchAsync();
+    if (interactive)
+    {
+        report = object();
+        put(report, "folder", folder.getFullPathName());
+        put(report, "verification", "Native test window prepared; no programmatic controls invoked.");
+        return true;
+    }
+    const auto ok = browser->craftPhase6Check(report, folder);
     dialog->exitModalState(0);
     return ok;
 }

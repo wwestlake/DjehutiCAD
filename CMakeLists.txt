@@ -149,6 +149,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadCraftBrowser.cpp
     Source/CadCraftBrowser.h
     Source/CadCraftChecks.cpp
+    Source/CadCraftKit.h
+    Source/CadCraftKit.cpp
     Source/CadMaterials.cpp
     Source/CadEngineeringUnits.h
     Source/CadEngineeringUnits.cpp
