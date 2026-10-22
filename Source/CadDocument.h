@@ -211,6 +211,8 @@ public:
     bool createRevolve(const juce::String& sketchId, const CadRevolveParameters&, juce::String& id, juce::String& error);
     bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters&, juce::String& error);
     juce::var latheCommand(const juce::var& args);
+    juce::var chamferCommand(const juce::var& args);
+    std::shared_ptr<const CadRenderSnapshot> chamferPreview(const juce::var& args, juce::var& result, juce::String& error) const;
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
@@ -420,6 +422,7 @@ public:
     bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters& p, juce::String& error) { return model.updateRevolve(id, sketchId, p, error); }
     juce::var revolveCommand(const juce::var& args);
     juce::var latheCommand(const juce::var& args) { return model.latheCommand(args); }
+    juce::var chamferCommand(const juce::var& args) { return model.chamferCommand(args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);

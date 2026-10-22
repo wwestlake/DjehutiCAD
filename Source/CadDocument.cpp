@@ -36,6 +36,9 @@
 #include <GProp_GProps.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepFilletAPI_MakeChamfer.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <Geom_BezierCurve.hxx>
 #include <GeomAPI_ProjectPointOnCurve.hxx>
@@ -245,6 +248,25 @@ bool resolveEdgeFromToken(const TopoDS_Shape& shape, const juce::String& token, 
         return true;
     }
     return false;
+}
+
+bool resolveChamferEdge(const TopoDS_Shape& shape,const juce::String& token,const CadFaceOrigins& origins,TopoDS_Edge& edge)
+{
+    if(!resolveEdgeFromToken(shape,token,&origins,edge))return false;
+    const auto pieces=juce::StringArray::fromTokens(token,"|",{});
+    if(pieces.size()<2||!pieces[1].startsWith("faces:"))return true;
+    const auto wanted=juce::StringArray::fromTokens(pieces[1].substring(6),",",{});if(wanted.size()<2)return true;
+    TopTools_IndexedMapOfShape all;TopExp::MapShapes(shape,TopAbs_EDGE,all);int matches=0;
+    for(int i=1;i<=all.Extent();++i)
+    {
+        const auto candidate=juce::StringArray::fromTokens(encodeEdgeToken(shape,all(i),&origins),"|",{});
+        if(candidate.size()<2)continue;const auto faces=juce::StringArray::fromTokens(candidate[1].substring(6),",",{});
+        bool complete=true;for(const auto& f:wanted)if(!faces.contains(f)){complete=false;break;}if(complete)++matches;
+    }
+    if(matches<=1)return true;
+    // A split face pair no longer uniquely identifies an edge. Only retain an exact geometric match.
+    const auto current=juce::StringArray::fromTokens(encodeEdgeToken(shape,edge,&origins),"|",{});
+    return !current.isEmpty()&&current[0]==pieces[0];
 }
 
 void collectFilletHistory(BRepFilletAPI_MakeFillet& operation, const CadFeature& feature, const TopoDS_Shape& source, std::vector<CadDocument::CadTopologyEvolution>& history)
@@ -585,6 +607,91 @@ bool CadDocument::smoothSketchJoint(const juce::String& sketchId,const juce::Str
 
 bool CadDocument::createExtrude(const juce::String& sketchId,double depth,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);if(sketch==nullptr){e="Unknown sketch id: "+sketchId;return false;}if(depth<=0||!std::isfinite(depth)){e="Extrusion depth must be finite and greater than zero.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("extrude",nextNumber++);f.name="Extrude "+juce::String(nextNumber-1);f.type="extrude";f.sketchId=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.firstOperand=sketchId;for(auto& source:items)if(source.id==sketchId)source.visible=false;items.push_back(f);id=f.id;return true;},error); }
 bool CadDocument::createCut(const juce::String& sketchId,const juce::String& target,double depth,bool throughAll,bool reverse,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){const auto* sketch=findSketch(sketchId);const auto* targetFeature=find(target);if(sketch==nullptr||targetFeature==nullptr||targetFeature->shape.IsNull()){e="Cut requires an existing sketch and solid target feature.";return false;}if(depth<=0&&!throughAll){e="Cut depth must be greater than zero unless through-all is selected.";return false;}if(!validateSketch(*sketch,e))return false;CadFeature f;f.id=newId("cut",nextNumber++);f.name="Cut "+juce::String(nextNumber-1);f.type="cut";f.sketchId=sketchId;f.targetFeatureId=target;f.firstOperand=target;f.secondOperand=sketchId;f.height=depth;f.depth=depth;f.reverse=reverse;f.throughAll=throughAll;for(auto& source:items)if(source.id==target||source.id==sketchId)source.visible=false;items.push_back(f);id=f.id;return true;},error); }
+std::shared_ptr<const CadRenderSnapshot> CadDocument::chamferPreview(const juce::var& args,juce::var& result,juce::String& error) const
+{
+    CadDocument draft;draft.geometryCache=geometryCache;
+    if(!draft.deserialize(serialize(),error))return {};
+    auto request=juce::JSON::parse(juce::JSON::toString(args,false,17));
+    const bool editing=request.getProperty("id","").toString().isNotEmpty();
+    request.getDynamicObject()->setProperty("action",editing?"update":"create");
+    result=draft.chamferCommand(request);
+    if(!(bool)result["ok"]){error=result["error"].toString();return {};}
+    const auto candidate=result["id"].toString();GProp_GProps props;BRepGProp::VolumeProperties(draft.find(candidate)->shape,props);
+    result.getDynamicObject()->setProperty("preview",true);result.getDynamicObject()->setProperty("committed",false);result.getDynamicObject()->setProperty("volume_mm3",props.Mass());
+    if(!editing)result.getDynamicObject()->removeProperty("id");
+    auto snapshot=std::make_shared<CadRenderSnapshot>(*draft.snapshot());
+    static std::atomic<std::uint64_t> previewRevision{0};snapshot->revision=(std::uint64_t(1)<<63)|++previewRevision;snapshot->documentInstance=instanceId;
+    return snapshot;
+}
+
+juce::var CadDocument::chamferCommand(const juce::var& args)
+{
+    auto* reply=new juce::DynamicObject();juce::var result(reply);juce::String error;
+    const auto fail=[&](const char* code,const juce::String& text){reply->setProperty("ok",false);reply->setProperty("code",code);reply->setProperty("error",text);return result;};
+    if(!args.isObject())return fail("invalid_arguments","Chamfer arguments must be an object.");
+    const auto action=args.getProperty("action","get").toString();auto id=args.getProperty("id","").toString();
+    if(!juce::StringArray{"create","get","update","delete","preview","edges"}.contains(action))return fail("invalid_arguments","Unknown Chamfer action.");
+    if(action=="preview")
+    {juce::var details;if(chamferPreview(args,details,error)==nullptr)return fail("modeling_failed",error);return details;}
+    if(action=="edges")
+    {
+        const auto* target=find(args.getProperty("target","").toString());
+        if(target==nullptr||target->shape.IsNull())return fail("not_found","Choose an existing solid target.");
+        TopTools_IndexedMapOfShape edges;TopExp::MapShapes(target->shape,TopAbs_EDGE,edges);juce::Array<juce::var> list;
+        for(int i=1;i<=edges.Extent();++i)
+        {
+            const auto edge=TopoDS::Edge(edges(i));auto* item=new juce::DynamicObject();GProp_GProps props;BRepGProp::LinearProperties(edge,props);BRepAdaptor_Curve curve(edge);
+            item->setProperty("index",i-1);item->setProperty("reference",encodeEdgeToken(target->shape,edge,&target->faceOrigins));item->setProperty("length_mm",props.Mass());item->setProperty("curve",curve.GetType()==GeomAbs_Line?"line":curve.GetType()==GeomAbs_Circle?"circle":"curve");
+            gp_Pnt a,b;if(endpoints(edge,a,b)){item->setProperty("start",juce::Array<juce::var>{a.X(),a.Y(),a.Z()});item->setProperty("end",juce::Array<juce::var>{b.X(),b.Y(),b.Z()});}list.add(item);
+        }
+        reply->setProperty("ok",true);reply->setProperty("edges",list);return result;
+    }
+    const auto* feature=find(id);
+    if(action!="create"&&(feature==nullptr||feature->type!="chamfer"))return fail("not_found","Unknown Chamfer feature: "+id);
+    if(action=="delete")
+    {if(!remove(id,error))return fail("dependency_error",error);reply->setProperty("ok",true);reply->setProperty("id",id);reply->setProperty("deleted",true);return result;}
+    if(action=="create"||action=="update")
+    {
+        const auto params=args.getProperty("parameters",juce::var());if(!params.isObject())return fail("invalid_arguments","Chamfer parameters must be an object.");
+        for(const auto& prop:params.getDynamicObject()->getProperties())if(!juce::StringArray{"target","distance","edges"}.contains(prop.name.toString()))return fail("invalid_arguments","Unknown Chamfer parameter: "+prop.name.toString());
+        const auto targetId=params.getProperty("target",action=="update"?feature->targetFeatureId:juce::String()).toString();
+        const auto* target=find(targetId);
+        if(target==nullptr||target->shape.IsNull()||!TopExp_Explorer(target->shape,TopAbs_SOLID).More())return fail("invalid_arguments","Chamfer requires a solid target body.");
+        if(targetId==id)return fail("invalid_arguments","A Chamfer cannot use itself as its target.");
+        const auto value=params.getProperty("distance",action=="update"?feature->width:1.0);
+        if(!(value.isDouble()||value.isInt()||value.isInt64())||!std::isfinite((double)value)||(double)value<=0)return fail("invalid_arguments","Chamfer distance must be finite and greater than zero in millimetres.");
+        juce::StringArray tokens=action=="update"?feature->edges:juce::StringArray();
+        if(action=="update"&&targetId!=feature->targetFeatureId&&!params.hasProperty("edges"))return fail("invalid_arguments","Select edges again when changing the Chamfer target.");
+        if(params.hasProperty("edges"))
+        {
+            const auto* indices=params["edges"].getArray();if(indices==nullptr||indices->isEmpty())return fail("invalid_arguments","Select at least one edge.");
+            TopTools_IndexedMapOfShape edges;TopExp::MapShapes(target->shape,TopAbs_EDGE,edges);tokens.clear();
+            for(const auto& index:*indices)
+            {
+                if(!(index.isInt()||index.isInt64()||index.isDouble())||!std::isfinite((double)index)||(double)index!=std::floor((double)index)||(double)index<0||(double)index>=edges.Extent())return fail("invalid_arguments","Chamfer edge index is invalid for this target.");
+                const auto token=encodeEdgeToken(target->shape,edges((int)index+1),&target->faceOrigins);if(token.isEmpty())return fail("invalid_arguments","This edge cannot be referenced.");tokens.addIfNotAlreadyThere(token);
+            }
+        }
+        if(tokens.isEmpty())return fail("invalid_arguments","Select at least one edge.");
+        auto created=id;
+        const bool ok=mutate([&](juce::String&)
+        {
+            if(action=="create")
+            {CadFeature f;f.id=newId("chamfer",nextNumber++);f.name="Chamfer "+juce::String(nextNumber-1);f.type="chamfer";items.push_back(f);created=f.id;}
+            for(auto& f:items)if(f.id==created){f.targetFeatureId=targetId;f.firstOperand=targetId;f.width=(double)value;f.edges=tokens;}
+            for(auto& f:items)if(f.id==targetId)f.visible=false;
+            return true;
+        },error);
+        if(!ok)return fail("modeling_failed",error);id=created;feature=find(id);
+    }
+    auto* params=new juce::DynamicObject();params->setProperty("target",feature->targetFeatureId);params->setProperty("distance",feature->width);
+    juce::Array<juce::var> indices,refs;const auto* target=find(feature->targetFeatureId);TopTools_IndexedMapOfShape map;
+    if(target)TopExp::MapShapes(target->shape,TopAbs_EDGE,map);
+    for(const auto& token:feature->edges)
+    {refs.add(token);TopoDS_Edge edge;if(target&&resolveEdgeFromToken(target->shape,token,&target->faceOrigins,edge))indices.add(map.FindIndex(edge)-1);}
+    params->setProperty("edges",indices);reply->setProperty("ok",true);reply->setProperty("id",id);reply->setProperty("type","chamfer");reply->setProperty("parameters",params);reply->setProperty("edgeReferences",refs);return result;
+}
+
 bool CadDocument::createFillet(const juce::String& target,const std::vector<int>& edgeIndices,double radius,juce::String& id,juce::String& error)
 {
     return mutate([&](juce::String& e)
@@ -1414,7 +1521,7 @@ juce::String CadDocument::geometrySignature(const juce::String& id,juce::StringA
     else if(f->type=="revolve"){sig<<"|revolve:"<<f->revolve.axisType<<"|"<<exact(f->revolve.angleDegrees)<<"|"<<(f->revolve.reverse?"reverse":"forward");for(const auto v:f->revolve.origin)sig<<"|"<<exact(v);for(const auto v:f->revolve.direction)sig<<"|"<<exact(v);sig<<"|("<<sketchSignature(f->sketchId,visiting)<<")";}
     else if(f->type=="extrude")sig<<"|("<<sketchSignature(f->sketchId.isEmpty()?f->firstOperand:f->sketchId,visiting)<<")";
     else if(f->type=="cut")sig<<"|("<<geometrySignature(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,visiting)<<")("<<sketchSignature(f->sketchId.isEmpty()?f->secondOperand:f->sketchId,visiting)<<")";
-    else if(f->type=="fillet")sig<<"|("<<geometrySignature(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,visiting)<<")|edges:"<<f->edges.joinIntoString(";");
+    else if(f->type=="fillet"||f->type=="chamfer")sig<<"|("<<geometrySignature(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,visiting)<<")|edges:"<<f->edges.joinIntoString(";");
     else if(f->type=="union"||f->type=="subtract"||f->type=="intersect")sig<<"|("<<geometrySignature(f->firstOperand,visiting)<<")("<<geometrySignature(f->secondOperand,visiting)<<")";
     visiting.removeString(id);
     if(signaturePass!=nullptr)(*signaturePass)[id]=sig;
@@ -1500,6 +1607,34 @@ TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,ju
             if(!operation.IsDone()||operation.HasErrors()){error=f->name+": OCCT Boolean operation failed.";return{};}
             result=operation.Shape();collectBooleanHistory(operation,*f,target,tool,operationHistory);
             if(trace!=nullptr){for(const auto& o:toolOrigins)addFaceOrigin(targetOrigins,o.first,o.second);local=mapFaceOrigins(operation,targetOrigins,result);}
+        }
+        else if(f->type=="chamfer")
+        {
+            CadFaceOrigins sourceOrigins;const auto source=evaluate(f->targetFeatureId,error,active,&sourceOrigins);if(source.IsNull())return{};
+            if(!std::isfinite(f->width)||f->width<=0||f->edges.isEmpty()){error=f->name+": Select edges and a positive chamfer distance.";return{};}
+            BRepBuilderAPI_Copy copy(source,true,false);const auto target=copy.Shape();CadFaceOrigins copiedOrigins;
+            for(const auto& origin:sourceOrigins)copiedOrigins.push_back({copy.ModifiedShape(origin.first),origin.second});
+            BRepFilletAPI_MakeChamfer operation(target);std::vector<TopoDS_Edge> selected;
+            for(const auto& token:f->edges)
+            {
+                TopoDS_Edge edge;if(!resolveChamferEdge(target,token,copiedOrigins,edge)){error=f->name+": A selected edge is missing or ambiguous after the source edit; reselect it.";return{};}
+                operation.Add(f->width,edge);selected.push_back(edge);
+            }
+            operation.Build();
+            if(!operation.IsDone()||operation.Shape().IsNull()){error=f->name+": OCCT could not chamfer these edges at this distance. Reduce the distance or change the selection.";return{};}
+            result=operation.Shape();if(!BRepCheck_Analyzer(result,true).IsValid()||!TopExp_Explorer(result,TopAbs_SOLID).More()){error=f->name+": Chamfer did not produce a valid solid.";return{};}
+            for(TopExp_Explorer ex(result,TopAbs_SOLID);ex.More();ex.Next()){GProp_GProps props;BRepGProp::VolumeProperties(ex.Current(),props);if(!std::isfinite(props.Mass())||props.Mass()<=1e-12){error=f->name+": Chamfer produced a zero-volume or inverted solid.";return{};}}
+            local=mapFaceOrigins(operation,copiedOrigins,result);
+            for(size_t i=0;i<selected.size();++i)for(TopTools_ListIteratorOfListOfShape it(operation.Generated(selected[i]));it.More();it.Next())if(it.Value().ShapeType()==TopAbs_FACE)addFaceOrigin(local,it.Value(),f->id+"/bevel:"+juce::String((int)i));
+            CadTopologyEvolution history;history.featureId=f->id;
+            for(const auto kind:{TopAbs_FACE,TopAbs_EDGE})for(TopExp_Explorer ex(source,kind);ex.More();ex.Next())
+            {
+                const auto copied=copy.ModifiedShape(ex.Current());
+                for(TopTools_ListIteratorOfListOfShape it(operation.Modified(copied));it.More();it.Next())history.modified.push_back({ex.Current(),it.Value()});
+                for(TopTools_ListIteratorOfListOfShape it(operation.Generated(copied));it.More();it.Next())history.generated.push_back({ex.Current(),it.Value()});
+                if(operation.IsDeleted(copied))history.deleted.push_back(ex.Current());
+            }
+            operationHistory.push_back(std::move(history));
         }
         else if(f->type=="fillet")
         {

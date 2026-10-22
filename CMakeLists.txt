@@ -102,6 +102,7 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadRevolve.cpp
     Source/CadLathe.cpp
     Source/CadLatheChecks.cpp
+    Source/CadChamferChecks.cpp
     Source/CadRevolveChecks.cpp
     Source/CadMechanics.h
     Source/CadMechanics.cpp

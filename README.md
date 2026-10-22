@@ -13,6 +13,9 @@ editable NURBS surfaces remain future work.
 [Virtual Lathe](docs/VIRTUAL_LATHE.md) adds outside/bore station editing for turned
 parts, shoulders and grooves using the same parametric Revolve implementation.
 
+[Chamfer](docs/CHAMFER.md) adds editable equal-distance, multi-edge bevels and
+read-only previews through the GUI and shared command/API system.
+
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 
