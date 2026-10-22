@@ -7,6 +7,9 @@ The GUI, `cad_revolve` agent/HTTP tool, FRust host function and CAD Revolve node
 the same document commands. The focused Debug build and 38 service/kernel checks
 plus 7 GUI task-control checks passed. See `docs/PARAMETRIC_REVOLVE.md` for current
 behavior and limits. Older scope statements below describe earlier milestones.
+The running application also passed 16 live HTTP/GUI-command checks, including
+STEP volume verification and rebuilding a downstream Boolean. Native window
+capture timed out twice; pointer/visual verification remains unperformed.
 
 The live CAD document is OCAF-backed. Djehuti owns stable public feature IDs,
 feature semantics, dimensions, units, visibility, and relationships; OCCT

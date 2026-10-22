@@ -97,4 +97,13 @@ parameter edits, rollback, native/JSON roundtrips, API CRUD, the FRust host call
 and node-to-host source generation. The UI diagnostic drives the real task-form
 callbacks for creation, editing, axis controls, Undo/Redo and invalid-angle feedback.
 
+The running application also passed 16 live HTTP/GUI-command checks: tool discovery,
+GUI creation/editing, API CRUD, source edits, native reopen, Undo/Redo, controlled
+axis failure, dependent-deletion refusal and a downstream Boolean rebuild. STEP
+exports verified the live full/partial and dependent-solid volumes. Evidence is in
+`build/revolve-live/result.json`; `build/revolve-live/live-revolve.djo` is a saved,
+editable partial Revolve example. Native screenshot capture timed out on both the
+initial attempt and recovery, so pointer interaction and visual layout were not
+verified; GUI control execution was verified through the application's own API.
+
 Sweep, Loft, general surface modeling and other expansion phases are outside this change.
