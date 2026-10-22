@@ -56,6 +56,8 @@ struct CadRevolveParameters
 };
 juce::var revolveParametersToJson(const CadRevolveParameters&);
 bool readRevolveParameters(const juce::var&, CadRevolveParameters&, juce::String& error);
+juce::var latheProfileFromText(const juce::String& outer, const juce::String& inner, juce::String& error);
+juce::String latheStationsText(const juce::var& stations);
 
 struct CadFeature
 {
@@ -68,6 +70,7 @@ struct CadFeature
     bool visible = true;
     juce::StringArray edges;  // for fillet: persistent edge reference tokens
     CadRevolveParameters revolve;
+    bool lathe = false; // Lathe workflow; the editable source sketch remains the profile authority.
     TopoDS_Shape shape;
     CadFaceOrigins faceOrigins;   // derived with shape
 };
@@ -207,6 +210,7 @@ public:
     bool createExtrude(const juce::String& sketchId, double depth, bool reverse, juce::String& id, juce::String& error);
     bool createRevolve(const juce::String& sketchId, const CadRevolveParameters&, juce::String& id, juce::String& error);
     bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters&, juce::String& error);
+    juce::var latheCommand(const juce::var& args);
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
@@ -415,6 +419,7 @@ public:
     bool createRevolve(const juce::String& sketchId, const CadRevolveParameters& p, juce::String& id, juce::String& error) { return model.createRevolve(sketchId, p, id, error); }
     bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters& p, juce::String& error) { return model.updateRevolve(id, sketchId, p, error); }
     juce::var revolveCommand(const juce::var& args);
+    juce::var latheCommand(const juce::var& args) { return model.latheCommand(args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);

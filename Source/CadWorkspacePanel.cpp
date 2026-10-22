@@ -78,6 +78,10 @@ public:
         editor->onTextChange = [this] { if (onChange) onChange(); };
         auto& result = *editor; row.control = std::move(editor); addAndMakeVisible(*row.control); return result;
     }
+    juce::TextEditor& addMultiline(const juce::String& key, const juce::String& caption, const juce::String& value, const juce::String& tip)
+    {
+        auto& editor=addText(key,caption,value,tip);editor.setMultiLine(true);editor.setReturnKeyStartsNewLine(true);rows.back().height=116;return editor;
+    }
     juce::ToggleButton& addToggle(const juce::String& key, const juce::String& caption, bool state, const juce::String& tip)
     {
         auto& row = add(key, 26);
@@ -668,7 +672,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
-            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
@@ -680,6 +684,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
+        else if (id == 38) executeUiCommand("lathe");
         else if (id == 37) executeUiCommand("revolve");
         else if (id == 34) executeUiCommand("fillet");
         else if (id == 35) executeUiCommand("curve");
@@ -720,6 +725,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     cylinderButton.onClick = [this] { startTask(Task::newCylinder); };
     extrudeButton.onClick = [this] { startTask(Task::extrude); };
     cutButton.onClick = [this] { startTask(Task::cut); };
+    latheButton.onClick = [this] { startTask(Task::lathe); };
     revolveButton.onClick = [this] { startTask(Task::revolve); };
     filletButton.onClick = [this] { startTask(Task::fillet); };
     subtractButton.onClick = [this] { startTask(Task::boolean, "subtract"); };
@@ -880,7 +886,7 @@ bool CadWorkspacePanel::keyPressed(const juce::KeyPress& key)
     if (handleHistoryKey(key)) return true;
     if (key != juce::KeyPress::escapeKey) return false;
     if (editingSketchId.isNotEmpty()) return sketchCanvas->escape();
-    if (task == Task::createSketch || task == Task::newBox || task == Task::newCylinder || isCommandTask()) { cancelTask(); return true; }
+    if (task == Task::createSketch || task == Task::newBox || task == Task::newCylinder || task == Task::lathe || isCommandTask()) { cancelTask(); return true; }
     return false;
 }
 
@@ -1224,6 +1230,7 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
     if (editingSketchId.isNotEmpty() && next != Task::sketchEdit) finishSketch();
     const auto* selected = service->document().find(selectedId);
     task = next; booleanKind = kind;
+    if(next==Task::lathe)editingLatheId=selected!=nullptr&&selected->lathe?selectedId:juce::String();
     commandMessage.clear(); validationMessage.clear();
     profileId.clear(); targetId.clear(); toolId.clear(); activeRole = 0; sketchPlane.clear();
     filletEdges.clear();
@@ -1259,6 +1266,34 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
 
 void CadWorkspacePanel::requestRebuild(bool keepValues) { pendingKeepValues = pendingKeepValues && keepValues; triggerAsyncUpdate(); }
 void CadWorkspacePanel::handleAsyncUpdate() { const auto keep = pendingKeepValues; pendingKeepValues = true; rebuildTaskPanel(keep); }
+
+void CadWorkspacePanel::addLatheFields()
+{
+    juce::var data;bool editable=true;double angle=360;bool reverse=false;
+    if(editingLatheId.isNotEmpty())
+    {
+        auto* a=new juce::DynamicObject();a->setProperty("action","get");a->setProperty("id",editingLatheId);data=service->latheCommand(a);
+        editable=(bool)data["profileEditable"];angle=(double)data["parameters"]["angleDegrees"];reverse=(bool)data["parameters"]["reverse"];
+    }
+    if(editable)
+    {
+        form->addMultiline("latheOuter","Outside profile",editingLatheId.isEmpty()?"0, 20\n30, 20":djehuti::cad::latheStationsText(data["parameters"]["outer"]),"One axial position, outside diameter per line, in mm. Repeat a position for a shoulder.");
+        form->addMultiline("latheInner","Bore profile",editingLatheId.isEmpty()?"0, 0\n30, 0":djehuti::cad::latheStationsText(data["parameters"]["inner"]),"One axial position, bore diameter per line, in mm. Zero diameter gives solid material down to the axis.");
+    }
+    else form->addNote({},"This profile has custom sketch edits or constraints. Edit the source sketch to preserve them; the turning angle remains editable here.",3);
+    form->addNumber("latheAngle","Angle",angle,"deg","360 for a complete turned part; partial angles remain supported.");
+    form->addToggle("latheReverse","Reverse rotation",reverse,"Reverse the Revolve direction.");
+    form->addNote({},"Axial positions run along sketch V (world Z for new profiles); diameters are converted to radial X. Outside and bore ends must match. Station edits and turning are one Undo step.",4);
+    if(editingLatheId.isNotEmpty())form->addButton("latheSketch","Edit 2D profile",[this,sketch=data["sketch"].toString()]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr)safe->enterSketch(sketch);});},"Use the normal sketch editor for freeform profile edits.");
+}
+
+juce::var CadWorkspacePanel::readLatheForm(juce::String& error) const
+{
+    auto p=form->control("latheOuter")!=nullptr?djehuti::cad::latheProfileFromText(form->text("latheOuter"),form->text("latheInner"),error):juce::var(new juce::DynamicObject());
+    if(!p.isObject())return {};
+    if(!form->numberValid("latheAngle")||form->number("latheAngle")<=0||form->number("latheAngle")>360){error="Lathe angle must be greater than 0 and no greater than 360 degrees.";return {};}
+    p.getDynamicObject()->setProperty("angleDegrees",form->number("latheAngle"));p.getDynamicObject()->setProperty("reverse",form->toggle("latheReverse"));return p;
+}
 
 void CadWorkspacePanel::addRevolveFields(const djehuti::cad::CadRevolveParameters& p, const juce::String& sketchId)
 {
@@ -1375,6 +1410,8 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             {
                 form->addHeader("Revolve");
                 addRevolveFields(f->revolve, f->sketchId);
+                if(f->lathe)form->addButton("latheProfile","Lathe profile...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::lathe);});},"Edit outside and bore stations.");
+                form->addButton("revolveSketch","Edit source sketch",[this,sketch=f->sketchId]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr)safe->enterSketch(sketch);});},"Edit the authoritative 2D profile.");
             }
             else if (f->type == "fillet")
             {
@@ -1564,6 +1601,9 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("distance", "Distance", extrudeDistance, "mm", "Extrusion distance from the sketch plane.");
             form->addToggle("reverse", "Reverse direction", false, "Extrude to the opposite side of the sketch plane.");
             break;
+        case Task::lathe:
+            title = "Virtual Lathe"; instruction = "Enter axial positions and outside/bore diameters in mm. Repeated positions make shoulders and grooves."; accept = editingLatheId.isEmpty()?"Turn part":"Update turned part";
+            addLatheFields(); break;
         case Task::revolve:
             title = "Revolve"; instruction = "Choose a closed sketch and an axis in its plane. Set the rotation angle."; accept = "Revolve";
             addRevolveFields(revolveSettings, profileId);
@@ -1739,6 +1779,7 @@ void CadWorkspacePanel::validateTask()
             break;
         case Task::newBox: requirePositive("width", "Width"); requirePositive("depth", "Depth"); requirePositive("height", "Height"); break;
         case Task::newCylinder: requirePositive("radius", "Radius"); requirePositive("height", "Height"); break;
+        case Task::lathe: { juce::String e; readLatheForm(e); if(e.isNotEmpty()){problem=e;severity=2;} break; }
         case Task::revolve: break;
         case Task::extrude:
             if (profileId.isEmpty()) problem = "Select a sketch with a closed profile in the model tree.";
@@ -1895,6 +1936,13 @@ void CadWorkspacePanel::acceptTask()
             if (!service->createCylinder(cylinderSize[0], cylinderSize[1], id, e)) { showError(e); return; }
             refreshFromDocument(true); selectFeature(id); setMessage(featureName(id) + " created at the origin.", 0);
             return;
+        case Task::lathe:
+        {
+            auto parameters=readLatheForm(e);if(e.isNotEmpty()){showError(e);return;}
+            auto* args=new juce::DynamicObject();args->setProperty("action",editingLatheId.isEmpty()?"create":"update");args->setProperty("id",editingLatheId);args->setProperty("parameters",parameters);
+            const auto reply=service->latheCommand(args);if(!(bool)reply["ok"]){showError(reply["error"].toString());return;}
+            id=reply["id"].toString();refreshFromDocument(true);selectFeature(id);setMessage("Turned part updated from its editable profile.",0);return;
+        }
         case Task::revolve:
             revolveSettings = readRevolveForm();
             if (!service->createRevolve(revolveFormSketch(), revolveSettings, id, e)) { showError(e); return; }
@@ -2035,7 +2083,7 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what)
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
-    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &revolveButton, &cutButton, &filletButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
+    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &revolveButton, &latheButton, &cutButton, &filletButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
     {
         const auto mode = selection != nullptr ? selection->mode() : djehuti::cad::CadSelection::Mode::body;
         bodyModeButton.setToggleState(mode == djehuti::cad::CadSelection::Mode::body, juce::dontSendNotification);
@@ -2060,7 +2108,7 @@ void CadWorkspacePanel::updateToolbar()
     if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + (sketch->onFace() ? "on " + supportText(*sketch) : sketch->plane + " plane"), juce::dontSendNotification);
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
-    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton, &revolveButton,&cutButton,&filletButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
+    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton, &revolveButton,&latheButton,&cutButton,&filletButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
     resized(); repaint();
 }
 
@@ -3074,7 +3122,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
     if (command == "clearInterference") { clearInterference(); return true; }
     const std::pair<const char*,juce::TextButton*> commands[] = {
         {"undo",&undoButton},{"redo",&redoButton},{"sketch",&sketchButton},{"box",&boxButton},{"cylinder",&cylinderButton},
-        {"revolve",&revolveButton},{"extrude",&extrudeButton},{"cut",&cutButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
+        {"lathe",&latheButton},{"revolve",&revolveButton},{"extrude",&extrudeButton},{"cut",&cutButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
         {"sketchSelect",&selectToolButton},{"line",&lineButton},{"rectangle",&rectangleButton},{"circle",&circleButton},{"curve",&curveButton},{"constrain",&constrainButton},
         {"fitSketch",&fitSketchButton},{"finishSketch",&finishSketchButton},{"instance",&instanceButton},{"joint",&jointButton},{"coupling",&couplingButton},
         {"link",&linkButton},{"ik",&ikButton},{"fit",&fitButton},{"reset",&resetViewButton},{"views",&viewsButton},
@@ -3145,7 +3193,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -3155,7 +3203,7 @@ juce::var CadWorkspacePanel::automationState()
         o->setProperty("width", f.width); o->setProperty("depth", f.depth); o->setProperty("height", f.height); o->setProperty("radius", f.radius);
         o->setProperty("x", f.x); o->setProperty("y", f.y); o->setProperty("z", f.z);
         if (f.type == "revolve")
-        { auto p = djehuti::cad::revolveParametersToJson(f.revolve); p.getDynamicObject()->setProperty("sketch", f.sketchId); o->setProperty("parameters", p); }
+        { auto p = djehuti::cad::revolveParametersToJson(f.revolve); p.getDynamicObject()->setProperty("sketch", f.sketchId); o->setProperty("parameters", p); if(f.lathe)o->setProperty("workflow","lathe"); }
         if (const auto* sketch = document.findSketch(f.id))
         {
             o->setProperty("plane", sketch->plane); o->setProperty("offset", sketch->offset);

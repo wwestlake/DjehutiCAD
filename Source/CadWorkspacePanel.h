@@ -56,7 +56,7 @@ public:
 private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, cut, fillet, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -142,7 +142,7 @@ private:
     juce::TooltipWindow tooltipWindow { this, 600 };
     juce::Label modeLabel, statusLabel, unitsLabel, treeHeading;
     juce::TextButton sketchButton { "Create Sketch" }, boxButton { "Box" }, cylinderButton { "Cylinder" }, extrudeButton { "Extrude" }, cutButton { "Cut Sketch" },
-        filletButton { "Fillet" }, revolveButton { "Revolve" },
+        filletButton { "Fillet" }, revolveButton { "Revolve" }, latheButton { "Virtual Lathe" },
         subtractButton { "Subtract" }, unionButton { "Union" }, intersectButton { "Intersect" }, undoButton { "Undo" }, redoButton { "Redo" },
         fitButton { "Fit All" }, resetViewButton { "Reset View" }, viewsButton { "3D Views" },
         selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, curveButton { "Curve" }, constrainButton { "Constrain" },
@@ -169,6 +169,9 @@ private:
     double filletRadius = 2.0;
     djehuti::cad::CadRevolveParameters revolveSettings;
     juce::StringArray revolveProfileIds;
+    juce::String editingLatheId;
+    void addLatheFields();
+    juce::var readLatheForm(juce::String& error) const;
     void addRevolveFields(const djehuti::cad::CadRevolveParameters&, const juce::String& sketchId);
     djehuti::cad::CadRevolveParameters readRevolveForm() const;
     juce::String revolveFormSketch() const;

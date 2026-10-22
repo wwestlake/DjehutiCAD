@@ -243,7 +243,7 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
         || type == "cad_sketch_dimension" || type == "cad_sketch_position" || type == "cad_sketch_constraint" || type == "cad_extrude"
         || type == "cad_cut" || type == "cad_set_dimensions" || type == "cad_set_placement" || type == "cad_boolean"
         || type == "cad_create_instance" || type == "cad_create_joint" || type == "cad_set_joint_mapping" || type == "cad_motion_lifecycle"
-        || type == "cad_set_grounded" || type == "cad_set_instance_placement" || type == "cad_set_joint_role" || type == "cad_create_coupling" || type == "cad_ik" || type == "cad_list_faces" || type == "cad_face_sketch" || (type == "cad_revolve" || type == "cad_export" || type == "cad_workspace")) {
+        || type == "cad_set_grounded" || type == "cad_set_instance_placement" || type == "cad_set_joint_role" || type == "cad_create_coupling" || type == "cad_ik" || type == "cad_list_faces" || type == "cad_face_sketch" || (type == "cad_lathe" || type == "cad_revolve" || type == "cad_export" || type == "cad_workspace")) {
         const auto* obj = n.raw.getDynamicObject();
         const auto function = type == "cad_create_box" ? "djehuti_cad_create_box"
                               : type == "cad_create_cylinder" ? "djehuti_cad_create_cylinder"
@@ -270,10 +270,11 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
                               : type == "cad_list_faces" ? "djehuti_cad_list_faces"
                               : type == "cad_face_sketch" ? "djehuti_cad_create_face_sketch"
                               : type == "cad_workspace" ? "djehuti_cad_workspace"
+                              : type == "cad_lathe" ? "djehuti_cad_lathe"
                               : type == "cad_revolve" ? "djehuti_cad_revolve"
                               : type == "cad_export" ? "djehuti_cad_export"
                               : "djehuti_cad_boolean";
-        const auto returnType = (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_create_sketch" || type == "cad_sketch_line" || type == "cad_sketch_rectangle" || type == "cad_sketch_circle" || type == "cad_sketch_constraint" || type == "cad_extrude" || type == "cad_cut" || type == "cad_boolean" || type == "cad_create_instance" || type == "cad_create_joint" || type == "cad_create_coupling" || type == "cad_ik" || type == "cad_list_faces" || type == "cad_face_sketch" || (type == "cad_revolve" || type == "cad_export" || type == "cad_workspace")) ? "String" : "i64";
+        const auto returnType = (type == "cad_create_box" || type == "cad_create_cylinder" || type == "cad_create_sketch" || type == "cad_sketch_line" || type == "cad_sketch_rectangle" || type == "cad_sketch_circle" || type == "cad_sketch_constraint" || type == "cad_extrude" || type == "cad_cut" || type == "cad_boolean" || type == "cad_create_instance" || type == "cad_create_joint" || type == "cad_create_coupling" || type == "cad_ik" || type == "cad_list_faces" || type == "cad_face_sketch" || (type == "cad_lathe" || type == "cad_revolve" || type == "cad_export" || type == "cad_workspace")) ? "String" : "i64";
         const std::vector<std::string> expected = type == "cad_create_box" ? std::vector<std::string>{"f64", "f64", "f64"}
             : type == "cad_create_cylinder" ? std::vector<std::string>{"f64", "f64"}
             : type == "cad_create_sketch" ? std::vector<std::string>{"String", "f64"}
@@ -298,7 +299,7 @@ bool EmitNode(CodegenState& st, const NodeDef& n) {
             : type == "cad_ik" ? std::vector<std::string>{"String", "String"}
             : type == "cad_list_faces" ? std::vector<std::string>{"String"}
             : type == "cad_face_sketch" ? std::vector<std::string>{"String", "String"}
-            : (type == "cad_revolve" || type == "cad_export" || type == "cad_workspace") ? std::vector<std::string>{"String"}
+            : (type == "cad_lathe" || type == "cad_revolve" || type == "cad_export" || type == "cad_workspace") ? std::vector<std::string>{"String"}
             : std::vector<std::string>{"String", "String", "String"};
         if (n.inputs.size() != expected.size()) { *st.err = "node '" + n.id + "' needs " + std::to_string(expected.size()) + " inputs"; return false; }
         DeclareExtern(st, std::string("extern fn ") + function + "(" + [&] {

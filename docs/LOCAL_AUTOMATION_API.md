@@ -58,6 +58,8 @@ once finished.
 ## Tools
 
 All agent tools are available:
+- Virtual Lathe: `cad_lathe` supports `create`, `get`, `update`, `delete`; see
+  [Virtual Lathe](VIRTUAL_LATHE.md) for outside/bore station profiles and GUI fields.
 - Revolve: `cad_revolve` supports `create`, `get`, `update` and `delete` using stable
   feature IDs and structured parameters. See [Parametric Revolve](PARAMETRIC_REVOLVE.md)
   for axis choices, degree/mm conventions, examples and error responses.

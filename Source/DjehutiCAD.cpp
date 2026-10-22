@@ -153,9 +153,9 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
-        if (name == "cad_revolve")
+        if (name == "cad_revolve" || name == "cad_lathe")
         {
-            auto result = safeThis->cadService->revolveCommand(parsedArgs);
+            auto result = name == "cad_lathe" ? safeThis->cadService->latheCommand(parsedArgs) : safeThis->cadService->revolveCommand(parsedArgs);
             result.getDynamicObject()->setProperty("state", safeThis->cadWorkspace->automationState());
             return juce::JSON::toString(result, false, 17).toStdString();
         }
