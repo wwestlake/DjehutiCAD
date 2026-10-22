@@ -1,7 +1,7 @@
 # Chamfer
 
-Choose a solid and **Modify > Chamfer**. Pick its edges in Edge mode; Shift-click
-selects multiple edges. Enter a positive Distance in millimetres. The same distance
+Choose a solid and **Modify > Chamfer**. Click successive edges in Edge mode to
+add them; **Clear selected edges** starts again. Enter a positive Distance in millimetres. The same distance
 is applied on the two faces adjoining each selected edge.
 
 **Preview** validates and displays the proposed geometry without creating a live
@@ -65,3 +65,6 @@ passed 20/20 checks. Coverage includes analytic volume, parameter/source edits,
 multi-edge references, native/JSON persistence, invalid-geometry rollback, API
 preview isolation from the live document and Undo history, and GUI preview/apply/
 edit/cancel controls. Native pointer and visual inspection were not performed.
+The final diagnostic also verifies successive ordinary edge picks retain both
+edges. The live batch checks verified circular-edge geometry, GUI preview/edit,
+downstream Hole rebuilding after a Lathe profile edit, and native save/reopen.

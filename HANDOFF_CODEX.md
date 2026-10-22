@@ -1,15 +1,31 @@
 # DjehutiCAD Architecture Handoff
 
-Current expansion update (October 22, 2026): parametric Revolve is implemented
-through CadCommandService/OCAF with full/partial angles, sketch/world/custom axes,
-editable parameters, dependent rebuilding and native/engineering JSON persistence.
-The GUI, `cad_revolve` agent/HTTP tool, FRust host function and CAD Revolve node use
-the same document commands. The focused Debug build and 38 service/kernel checks
-plus 7 GUI task-control checks passed. See `docs/PARAMETRIC_REVOLVE.md` for current
-behavior and limits. Older scope statements below describe earlier milestones.
-The running application also passed 16 live HTTP/GUI-command checks, including
-STEP volume verification and rebuilding a downstream Boolean. Native window
-capture timed out twice; pointer/visual verification remains unperformed.
+Current expansion update (October 22, 2026): Order 2 implements Virtual Lathe
+(`95d1cd8`), editable multi-edge Chamfer with isolated previews (`66ae5ce`), and
+Hole / Drill Press (`249188d`). Lathe edits outside/bore station profiles using
+the existing parametric Revolve. Hole supports planar-face U/V positioning,
+blind/through-all cuts, counterbores and countersinks. All use CadCommandService,
+OCAF transactions/dependencies/history, native `.djo` and engineering `.djc` JSON
+(version 11). The GUI, agent/local API (`cad_lathe`, `cad_chamfer`, `cad_hole`),
+FRust hosts and CAD nodes share these commands.
+
+Debug builds passed. Focused checks: Lathe 13/13, Chamfer 20/20, Hole 27/27,
+existing Revolve 38/38 and face attachments 19/19. Eighteen live HTTP/GUI-control
+checks passed, including analytic STEP volumes, a Lathe -> Chamfer -> Hole chain
+rebuilt by station edits, previews, parameter edits, Undo/Redo, native save/reopen,
+structured rollback and deletion. Native/JSON roundtrips also passed for each
+tool in the focused diagnostics. GUI controls and shared selection callbacks
+were exercised programmatically; native pointer/visual inspection remains
+unperformed (the prior capture helper timed out twice).
+
+See `docs/VIRTUAL_LATHE.md`, `docs/CHAMFER.md`, `docs/HOLE_DRILL_PRESS.md` and
+`docs/PARAMETRIC_REVOLVE.md` for behavior and limits. Lathe station replacement
+requires its generated straight profile structure; custom sketches remain
+editable through Sketch/Revolve. Chamfer is equal-distance only. Hole needs a
+named planar support and uses flat blind bottoms. Topology changes that remove
+or split references require reselection and fail atomically. Stop after this
+batch; Sweep, Loft and later tools require the next approved order. Older scope
+statements below describe earlier milestones.
 
 The live CAD document is OCAF-backed. Djehuti owns stable public feature IDs,
 feature semantics, dimensions, units, visibility, and relationships; OCCT

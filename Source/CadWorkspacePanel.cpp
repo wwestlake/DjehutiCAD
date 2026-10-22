@@ -1789,7 +1789,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
         {
             const bool chamfer=task==Task::chamfer;
             title = chamfer?"Chamfer":"Fillet";
-            instruction = chamfer?"Pick edges on one solid body in Edge mode, then enter the distance. Shift-click selects multiple edges.":"Select a solid body and one or more of its edges in Edge mode, then enter the radius.";
+            instruction = chamfer?"Click each edge on one solid body in Edge mode to add it, then enter the distance. Clear selected edges to start again.":"Select a solid body and one or more of its edges in Edge mode, then enter the radius.";
             accept = chamfer?(editingChamferId.isEmpty()?"Chamfer":"Update Chamfer"):"Fillet";
             form->addHeader("Body and Edges");
             form->addSlot("target", "Target body", slotText(targetId, "Select a body in tree or view"), targetColour, targetId.isEmpty(), [this] {

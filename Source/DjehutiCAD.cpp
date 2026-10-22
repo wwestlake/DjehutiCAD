@@ -577,7 +577,7 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "3. Finish Sketch, keep the sketch selected, then Extrude (or Cut Sketch with a Target body).\n\n"
                                                "Turning, bevels and drilling (Modify menu):\n"
                                                "Virtual Lathe edits outside/bore station tables in axial mm and diameter mm; steps and grooves use repeated axial positions. It uses the existing editable parametric Revolve.\n"
-                                               "Chamfer: pick edges in Edge mode (Shift-click for several), enter an equal distance and Preview before Apply. Select the result to edit its distance or edges.\n"
+                                               "Chamfer: click successive edges in Edge mode to add them, enter an equal distance and Preview before Apply. Select the result to edit its distance or edges.\n"
                                                "Drill Press / Hole: pick a planar face, set its local U/V centre and diameter, then blind depth or Through all. Plain, Counterbore and Countersink types are editable from the resulting body's inspector.\n\n"
                                                "Subtract:\n"
                                                "Choose Subtract, pick the Target (body to keep) and the Tool (cutting body) in the tree or model view, then press Subtract. "

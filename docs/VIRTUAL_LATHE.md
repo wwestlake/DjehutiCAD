@@ -68,3 +68,9 @@ Verified October 22, 2026: Debug application build passed; Lathe diagnostic pass
 13/13 checks, including GUI creation and station editing. The existing Revolve
 diagnostic passed 38/38. GUI control callbacks were exercised; native pointer and
 visual inspection were not performed in this phase.
+
+The completed batch also passed 18 live HTTP/GUI-control checks. A grooved hollow
+Lathe -> circular-edge Chamfer -> positioned Hole chain rebuilt correctly after
+outside-profile edits, matched analytic STEP volumes, and survived native
+save/reopen with all three tools editable. See the Chamfer and Hole guides for
+their selection workflows and limitations.

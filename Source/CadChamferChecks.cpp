@@ -47,14 +47,14 @@ bool runCadChamferCheck(juce::var& report)
         check((bool)service->chamferCommand(request("delete",id,{}))["ok"]&&service->undo(error),"Chamfer deletion is undoable");
     }
     auto gui=std::make_shared<CadCommandService>();gui->createBox(20,30,40,box,error);auto panel=std::make_unique<CadWorkspacePanel>(gui);panel->setSize(1400,900);auto selection=std::make_shared<CadSelection>();panel->setSelection(selection);
-    panel->automation(json(R"({"action":"command","command":"chamfer"})"));selection->setSelectedMany({{box,box,-1,0},{box,box,-1,2}});
+    panel->automation(json(R"({"action":"command","command":"chamfer"})"));selection->setSelected({box,box,-1,0});selection->setSelected({box,box,-1,2});
     panel->automation(json(R"({"action":"set","field":"chamferDistance","value":2})"));const auto guiRevision=gui->document().revision();
     auto state=panel->automation(json(R"({"action":"click","button":"chamferPreview"})"));
     check((bool)state["ok"]&&(bool)state["state"]["chamferPreview"]&&gui->document().revision()==guiRevision,"GUI Preview displays a candidate without committing");
     state=panel->automation(json(R"({"action":"set","field":"chamferDistance","value":3})"));
     check(!(bool)state["state"]["chamferPreview"],"Changing GUI parameters clears the old preview");
     state=panel->automation(json(R"({"action":"click","button":"apply"})"));juce::String guiId;for(const auto& f:gui->document().features())if(f.type=="chamfer")guiId=f.id;
-    check((bool)state["ok"]&&guiId.isNotEmpty(),"GUI applies a multi-edge chamfer");
+    check((bool)state["ok"]&&guiId.isNotEmpty()&&gui->document().find(guiId)->edges.size()==2,"GUI successive edge picks apply a multi-edge chamfer");
     if(guiId.isNotEmpty())
     {
         panel->automation(json(R"({"action":"set","field":"chamferDistance","value":4})"));state=panel->automation(json(R"({"action":"click","button":"apply"})"));

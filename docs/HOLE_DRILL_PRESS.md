@@ -91,3 +91,6 @@ The shared support resolver reads orientation from the face in the final solid,
 so drilling follows its inward direction even when a history image is reversed.
 GUI checks exercise controls programmatically; native pointer/visual inspection
 has not been performed.
+The live batch checks also verified a positioned Hole on a chamfered turned part,
+rebuilding through both upstream tools, GUI depth editing, structured failure
+rollback, Undo/Redo, native save/reopen and API deletion.
