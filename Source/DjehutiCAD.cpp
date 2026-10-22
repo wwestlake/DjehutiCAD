@@ -153,6 +153,11 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
+        if(name=="cad_mirror"||name=="cad_linear_pattern"||name=="cad_circular_pattern")
+        {
+            const juce::String type=name=="cad_mirror"?"mirror":name=="cad_linear_pattern"?"linearPattern":"circularPattern";
+            const auto result=safeThis->cadService->replicationCommand(type,parsedArgs);return juce::JSON::toString(result,false,17).toStdString();
+        }
         if (name == "cad_revolve" || name == "cad_lathe" || name == "cad_chamfer" || name == "cad_hole")
         {
             auto result = name == "cad_hole" ? safeThis->cadService->holeCommand(parsedArgs) : name == "cad_chamfer" ? safeThis->cadService->chamferCommand(parsedArgs) : name == "cad_lathe" ? safeThis->cadService->latheCommand(parsedArgs) : safeThis->cadService->revolveCommand(parsedArgs);
@@ -579,6 +584,7 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "Virtual Lathe edits outside/bore station tables in axial mm and diameter mm; steps and grooves use repeated axial positions. It uses the existing editable parametric Revolve.\n"
                                                "Chamfer: click successive edges in Edge mode to add them, enter an equal distance and Preview before Apply. Select the result to edit its distance or edges.\n"
                                                "Drill Press / Hole: pick a planar face, set its local U/V centre and diameter, then blind depth or Through all. Plain, Counterbore and Countersink types are editable from the resulting body's inspector.\n\n"
+                                               "Mirror and patterns: choose sources, Bodies or Modeling feature mode, a plane/direction/axis, and distribution. Hole/Cut/Union/Subtract feature mode modifies the intended target. Preview, then Apply. Select the result and Edit sources and parameters to revise it.\n\n"
                                                "Subtract:\n"
                                                "Choose Subtract, pick the Target (body to keep) and the Tool (cutting body) in the tree or model view, then press Subtract. "
                                                "Both sources stay in the history, hidden; Undo restores them.\n\n"

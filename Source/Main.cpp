@@ -14,7 +14,7 @@
 #include "Viewport3D.h"
 #include "CadMaterialsManager.h"
 #include "CadFixturesPanel.h"
-namespace djehuti::cad { bool runCadStockCheck(juce::var&); bool runCadRevolveCheck(juce::var&); bool runCadLatheCheck(juce::var&); bool runCadChamferCheck(juce::var&); bool runCadHoleCheck(juce::var&); bool runCadRevolveUiCheck(juce::var&); }
+namespace djehuti::cad { bool runCadStockCheck(juce::var&); bool runCadRevolveCheck(juce::var&); bool runCadLatheCheck(juce::var&); bool runCadChamferCheck(juce::var&); bool runCadReplicationCheck(juce::var&); bool runCadHoleCheck(juce::var&); bool runCadRevolveUiCheck(juce::var&); }
 
 #include <BRepBndLib.hxx>
 #include <Poly_Triangulation.hxx>
@@ -1434,6 +1434,10 @@ public:
             const bool ok = runCadAnalysisCheck(report);
             juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-analysis-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
+        }
+        if (commandLine.startsWith("--cad-replication-check"))
+        {
+            juce::MessageManager::callAsync([this]{juce::var report;const bool ok=djehuti::cad::runCadReplicationCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-replication-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
         }
         if (commandLine.startsWith("--cad-hole-check"))
         {

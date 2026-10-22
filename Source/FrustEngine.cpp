@@ -343,6 +343,33 @@ extern "C" const char* djehuti_cad_ik(const char* command, const char* argsJson)
 }
 
 // Same structured command as the agent/API and the document commands used by the GUI.
+extern "C" const char* djehuti_cad_mirror(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->replicationCommand("mirror",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_linear_pattern(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->replicationCommand("linearPattern",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_circular_pattern(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->replicationCommand("circularPattern",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
 extern "C" const char* djehuti_cad_hole(const char* argsJson)
 {
     if(auto service=activeCadService())
@@ -451,6 +478,9 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_sketch_dimension", reinterpret_cast<void*>(&djehuti_cad_sketch_dimension));
         frust_plugin_register_host_function("djehuti_cad_sketch_position", reinterpret_cast<void*>(&djehuti_cad_sketch_position));
         frust_plugin_register_host_function("djehuti_cad_sketch_constraint", reinterpret_cast<void*>(&djehuti_cad_sketch_constraint));
+        frust_plugin_register_host_function("djehuti_cad_mirror", reinterpret_cast<void*>(&djehuti_cad_mirror));
+        frust_plugin_register_host_function("djehuti_cad_linear_pattern", reinterpret_cast<void*>(&djehuti_cad_linear_pattern));
+        frust_plugin_register_host_function("djehuti_cad_circular_pattern", reinterpret_cast<void*>(&djehuti_cad_circular_pattern));
         frust_plugin_register_host_function("djehuti_cad_hole", reinterpret_cast<void*>(&djehuti_cad_hole));
         frust_plugin_register_host_function("djehuti_cad_chamfer", reinterpret_cast<void*>(&djehuti_cad_chamfer));
         frust_plugin_register_host_function("djehuti_cad_lathe", reinterpret_cast<void*>(&djehuti_cad_lathe));
@@ -748,7 +778,10 @@ std::string cadPrelude()
            "extern fn djehuti_cad_sketch_circle(sketch: String, x: f64, y: f64, radius: f64) -> String;\n"
            "extern fn djehuti_cad_sketch_dimension(sketch: String, entity: String, value: f64) -> i64;\n"
            "extern fn djehuti_cad_sketch_position(sketch: String, entity: String, x: f64, y: f64) -> i64;\n"
-           "extern fn djehuti_cad_sketch_constraint(sketch: String, type: String, first: String, second: String, value: f64) -> String;\n"
+           "extern fn djehuti_cad_sketch_constraint(sketch: String, kind: String, first: String, second: String, value: f64) -> String;\n"
+           "extern fn djehuti_cad_mirror(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_linear_pattern(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_circular_pattern(args_json: String) -> String;\n"
            "extern fn djehuti_cad_hole(args_json: String) -> String;\n"
            "extern fn djehuti_cad_chamfer(args_json: String) -> String;\n"
            "extern fn djehuti_cad_lathe(args_json: String) -> String;\n"
@@ -759,7 +792,7 @@ std::string cadPrelude()
            "extern fn djehuti_cad_set_placement(id: String, x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> i64;\n"
            "extern fn djehuti_cad_boolean(operation: String, first: String, second: String) -> String;\n"
            "extern fn djehuti_cad_create_instance(feature: String, name: String) -> String;\n"
-           "extern fn djehuti_cad_create_joint(type: String, parent: String, child: String, ox: f64, oy: f64, oz: f64, ax: f64, ay: f64, az: f64, reference: f64, lower: f64, upper: f64) -> String;\n"
+           "extern fn djehuti_cad_create_joint(kind: String, parent: String, child: String, ox: f64, oy: f64, oz: f64, ax: f64, ay: f64, az: f64, reference: f64, lower: f64, upper: f64) -> String;\n"
            "extern fn djehuti_cad_set_joint_mapping(joint: String, signal: String, quantity: String, unit: String, scale: f64, offset: f64, initial: f64) -> i64;\n"
            "extern fn djehuti_cad_motion_preview(joint: String, value: f64) -> i64;\n"
            "extern fn djehuti_cad_motion_status() -> String;\n"
@@ -772,14 +805,14 @@ std::string cadPrelude()
            "extern fn djehuti_cad_set_grounded(instance: String, grounded: i64) -> i64;\n"
            "extern fn djehuti_cad_set_instance_placement(instance: String, x: f64, y: f64, z: f64, rx: f64, ry: f64, rz: f64) -> i64;\n"
            "extern fn djehuti_cad_set_joint_role(joint: String, role: String, lock_value: f64, enforce_limits: i64) -> i64;\n"
-           "extern fn djehuti_cad_create_coupling(type: String, joint_a: String, joint_b: String, factor: f64, offset: f64) -> String;\n"
+           "extern fn djehuti_cad_create_coupling(kind: String, joint_a: String, joint_b: String, factor: f64, offset: f64) -> String;\n"
            "extern fn djehuti_cad_last_error() -> String;\n";
 }
 
 const std::vector<std::string>& cadHostFunctions()
 {
     static const std::vector<std::string> names {
-        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_hole", "djehuti_cad_chamfer", "djehuti_cad_lathe", "djehuti_cad_revolve", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
+        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_mirror", "djehuti_cad_linear_pattern", "djehuti_cad_circular_pattern", "djehuti_cad_hole", "djehuti_cad_chamfer", "djehuti_cad_lathe", "djehuti_cad_revolve", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
         "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
         "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik", "djehuti_cad_list_faces", "djehuti_cad_create_face_sketch", "djehuti_cad_export", "djehuti_cad_workspace"

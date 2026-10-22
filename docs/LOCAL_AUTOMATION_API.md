@@ -58,6 +58,10 @@ once finished.
 ## Tools
 
 All agent tools are available:
+- Mirror and patterns: `cad_mirror`, `cad_linear_pattern`, `cad_circular_pattern`
+  support structured CRUD, isolated preview and edge-reference inspection; see
+  [Mirror](MIRROR.md), [Linear Pattern](LINEAR_PATTERN.md),
+  [Circular Pattern](CIRCULAR_PATTERN.md) and [shared schema](PATTERN_API_AND_INTERCHANGE.md).
 - Hole/Drill Press: `cad_hole` supports planar-face frame inspection and CRUD;
   see [Hole / Drill Press](HOLE_DRILL_PRESS.md) for U/V positioning, counterbores,
   countersinks and through-all behavior.

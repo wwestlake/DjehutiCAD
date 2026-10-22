@@ -17,7 +17,7 @@ const juce::Colour selectedColour(0xffffb86b), targetColour(0xff63d48a), toolCol
 const juce::Colour interferenceColour(0xffe0303a);           // parts of an interfering pair
 constexpr juce::uint32 interferenceRegionArgb = 0xffffe14d;  // outline of the common volume
 
-bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "revolve" || type == "cut" || type == "union" || type == "subtract" || type == "intersect" || type == "chamfer" || type == "hole" || type == "component" || type == "fillet"; }
+bool isSolidType(const juce::String& type) { return djehuti::cad::isReplicationType(type) || type == "box" || type == "cylinder" || type == "extrude" || type == "revolve" || type == "cut" || type == "union" || type == "subtract" || type == "intersect" || type == "chamfer" || type == "hole" || type == "component" || type == "fillet"; }
 bool isPrimitiveType(const juce::String& type) { return type == "box" || type == "cylinder"; }
 // Joint coordinates are radians/metres everywhere except the UI, which shows degrees/millimetres.
 double toUi(const juce::String& jointType, double value) { return jointType == "revolute" ? value * 180.0 / juce::MathConstants<double>::pi : value * 1000.0; }
@@ -672,7 +672,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
-            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
@@ -684,6 +684,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
+        else if (id >= 41 && id <= 43) executeUiCommand(juce::StringArray{"mirror","linearPattern","circularPattern"}[id-41]);
         else if (id == 40) executeUiCommand("hole");
         else if (id == 39) executeUiCommand("chamfer");
         else if (id == 38) executeUiCommand("lathe");
@@ -924,7 +925,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
         force = true;
     }
     if (!force && document.revision() == shownRevision) return;
-    chamferPreviewActive=false;chamferSourceActive=false;holeSourceActive=false;
+    replicationPreviewActive=false;replicationSourcesActive=false;chamferPreviewActive=false;chamferSourceActive=false;holeSourceActive=false;
     shownRevision = document.revision();
     if (interferenceActive && (document.revision() != interferenceReport.documentRevision || document.documentInstance() != interferenceReport.documentInstance)) markInterferenceStale();
     modelView.setSnapshot(service->snapshot());
@@ -1026,7 +1027,7 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
     selectFeature(id);
 }
 
-bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::hole || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isCommandTask() const { return task == Task::replication || task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::hole || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
 // "face <token> of <body>" for a face-attached sketch.
 juce::String CadWorkspacePanel::supportText(const djehuti::cad::CadSketch& sketch) const { return "face " + sketch.supportFace + " of " + featureName(sketch.supportFeature); }
 bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
@@ -1045,6 +1046,11 @@ void CadWorkspacePanel::setSelection(std::shared_ptr<djehuti::cad::CadSelection>
 // A face or edge picked in any view opens its inspector; clearing it returns to the model.
 void CadWorkspacePanel::selectionChanged()
 {
+    if(replicationPreviewActive){clearReplicationView();showReplicationSources();return;}
+    if(task==Task::replication)
+    {
+        if(selection!=nullptr){if(replicationPick=="sources"){const auto pickedItems=selection->items();for(const auto& item:pickedItems)pickReplication(item);}else pickReplication(selection->selected());}return;
+    }
     if(chamferPreviewActive){clearChamferPreview(true);return;}
     updateToolbar();
     updateHighlights();
@@ -1178,6 +1184,7 @@ void CadWorkspacePanel::linkChanged()
 void CadWorkspacePanel::selectFeature(const juce::String& id)
 {
     if (editingSketchId.isNotEmpty() && id != editingSketchId) finishSketch();
+    clearReplicationView();
     selectedId = id;
     commandMessage.clear(); validationMessage.clear();
     const auto* f = service->document().find(id);
@@ -1237,9 +1244,21 @@ void CadWorkspacePanel::selectSketchEntity(const juce::String& id, bool second)
 void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
 {
     if (editingSketchId.isNotEmpty() && next != Task::sketchEdit) finishSketch();
-    clearHoleSource();clearChamferPreview(false);
+    clearReplicationView();clearHoleSource();clearChamferPreview(false);
     const auto* selected = service->document().find(selectedId);
     task = next; booleanKind = kind;
+    if(next==Task::replication)
+    {
+        replicationKind=kind;editingReplicationId=selected!=nullptr&&selected->type==kind?selectedId:juce::String();
+        replicationSettings=editingReplicationId.isEmpty()?djehuti::cad::replicationDefaults(kind):juce::JSON::parse(juce::JSON::toString(selected->replication,false,17));
+        replicationRevision=service->document().revision();replicationPick="sources";
+        if(editingReplicationId.isEmpty()&&selected!=nullptr&&isSolid(selectedId))
+        {
+            replicationSettings.getDynamicObject()->setProperty("sources",juce::Array<juce::var>{selectedId});
+            if(juce::StringArray{"hole","cut","subtract","union"}.contains(selected->type)){replicationSettings.getDynamicObject()->setProperty("operation","feature");}
+        }
+        if(selection!=nullptr)selection->setMode(djehuti::cad::CadSelection::Mode::body);
+    }
     if(next==Task::lathe)editingLatheId=selected!=nullptr&&selected->lathe?selectedId:juce::String();
     commandMessage.clear(); validationMessage.clear();
     profileId.clear(); targetId.clear(); toolId.clear(); activeRole = 0; sketchPlane.clear();
@@ -1290,6 +1309,7 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
     if (next == Task::newCoupling) { activeRole = 0; if (isJoint(selectedId)) { couplingJointA = selectedId; activeRole = 1; } }
     syncTreeSelection(); updateHighlights(); updateToolbar();
     rebuildTaskPanel(false);
+    if(next==Task::replication)showReplicationSources();
 }
 
 void CadWorkspacePanel::requestRebuild(bool keepValues) { pendingKeepValues = pendingKeepValues && keepValues; triggerAsyncUpdate(); }
@@ -1368,6 +1388,116 @@ void CadWorkspacePanel::chooseHoleFace(const djehuti::cad::CadPick& pick)
     }
     p.face=face.token;p.u=(double)info["centreUV"][0];p.v=(double)info["centreUV"][1];targetId=pick.featureId;holeSettings=p;
     if(editingHoleId.isNotEmpty())showHoleSource();rebuildTaskPanel(false);
+}
+
+void CadWorkspacePanel::clearReplicationView()
+{
+    if(!replicationPreviewActive&&!replicationSourcesActive)return;
+    replicationPreviewActive=false;replicationSourcesActive=false;modelView.setSnapshot(service->snapshot());wakeFrames();
+}
+
+void CadWorkspacePanel::showReplicationSources()
+{
+    if(task!=Task::replication)return;
+    const auto ids=djehuti::cad::replicationDependencies(replicationSettings);
+    const auto all=service->document().snapshot(true);auto view=std::make_shared<djehuti::cad::CadRenderSnapshot>(*service->snapshot());
+    std::erase_if(view->meshes,[&](const auto& m){return m.featureId==editingReplicationId||ids.contains(m.featureId);});
+    std::erase_if(view->edges,[&](const auto& e){return e.featureId==editingReplicationId||ids.contains(e.featureId);});
+    for(const auto& m:all->meshes)if(ids.contains(m.featureId))view->meshes.push_back(m);
+    for(const auto& e:all->edges)if(ids.contains(e.featureId))view->edges.push_back(e);
+    view->revision|=(std::uint64_t(1)<<62);modelView.setSnapshot(view);replicationSourcesActive=true;wakeFrames();
+}
+
+juce::var CadWorkspacePanel::readReplicationForm(juce::String& error) const
+{
+    auto p=juce::JSON::parse(juce::JSON::toString(replicationSettings,false,17));if(form==nullptr||form->control("repOperation")==nullptr)return p;
+    const juce::StringArray modes{"bodies","feature","add","remove"};const int index=form->choice("repOperation");
+    p.getDynamicObject()->setProperty("operation",modes[juce::jlimit(0,3,index)]);p.getDynamicObject()->setProperty("includeSource",form->toggle("repInclude"));
+    const auto defaults=djehuti::cad::replicationDefaults(replicationKind);
+    for(const auto& prop:defaults.getDynamicObject()->getProperties())
+    {
+        const auto key=prop.name.toString();if(form->control("rep_"+key)==nullptr)continue;
+        if(prop.value.isBool())p.getDynamicObject()->setProperty(key,form->toggle("rep_"+key));
+        else if(prop.value.isInt()||prop.value.isDouble())
+        {if(!form->numberValid("rep_"+key)){error=key+" must be numeric.";return {};}p.getDynamicObject()->setProperty(key,form->number("rep_"+key));}
+    }
+    for(const auto& key:juce::StringArray{"plane","direction1","direction2","axis"})if(form->control(key+"Type")!=nullptr)
+    {
+        const juce::StringArray kinds=key=="plane"?juce::StringArray{"XY","XZ","YZ","custom","face"}:juce::StringArray{"X","Y","Z","custom","edge","face"};
+        const auto kind=kinds[form->choice(key+"Type")];auto old=p.getProperty(key,juce::var());auto r=juce::var(new juce::DynamicObject());r.getDynamicObject()->setProperty("type",kind);
+        if(kind=="custom")
+        {
+            juce::Array<juce::var> origin,vector;
+            for(const auto* component:{"X","Y","Z"})
+            {if(!form->numberValid(key+"O"+component)||!form->numberValid(key+"D"+component)){error="Reference coordinates must be finite numbers.";return {};}origin.add(form->number(key+"O"+component));vector.add(form->number(key+"D"+component));}
+            r.getDynamicObject()->setProperty("origin",origin);r.getDynamicObject()->setProperty("vector",vector);
+        }
+        if(kind=="edge"||kind=="face")for(const auto* field:{"feature","face","reference"})if(old.hasProperty(field))r.getDynamicObject()->setProperty(field,old[field]);
+        p.getDynamicObject()->setProperty(key,r);
+    }
+    djehuti::cad::validateReplication(replicationKind,p,error);return p;
+}
+
+void CadWorkspacePanel::addReplicationFields()
+{
+    const auto p=replicationSettings;
+    const auto beginPick=[this](const juce::String& role,djehuti::cad::CadSelection::Mode mode)
+    {
+        juce::String ignored;const auto current=readReplicationForm(ignored);if(current.isObject())replicationSettings=current;
+        clearReplicationView();replicationPick=role;if(selection!=nullptr)selection->setMode(mode);showReplicationSources();
+        setMessage(role=="sources"?"Click source bodies in the tree or view to add them.":"Pick the "+role+" reference in the view.",0);
+    };
+    juce::StringArray names;if(const auto* sources=p["sources"].getArray())for(const auto& id:*sources)names.add(featureName(id.toString()));
+    form->addSlot("repSources","Sources",names.isEmpty()?"Pick source bodies":names.joinIntoString(", "),accentColour,names.isEmpty(),[beginPick]{beginPick("sources",djehuti::cad::CadSelection::Mode::body);},"Click to pick and add source bodies.");
+    form->addButton("repClearSources","Clear sources",[this]{juce::String ignored;const auto current=readReplicationForm(ignored);if(current.isObject())replicationSettings=current;replicationSettings.getDynamicObject()->setProperty("sources",juce::Array<juce::var>());replicationPick="sources";rebuildTaskPanel(false);},"Replace the source selection.");
+    const juce::StringArray modes{"bodies","feature","add","remove"};form->addChoice("repOperation","Operation",{"Bodies","Modeling feature","Add solids to target","Cut solids from target"},modes.indexOf(p["operation"].toString()),"Feature repeats Hole, Cut, Subtract or Union on its base target; add/remove uses source solids as tools.");
+    form->addSlot("repTarget","Target",p["target"].toString().isEmpty()?"Pick target (feature mode defaults to base)":featureName(p["target"].toString()),targetColour,false,[beginPick]{beginPick("target",djehuti::cad::CadSelection::Mode::body);},"Choose the target for feature, add or cut mode.");
+    form->addButton("repAutoTarget","Follow source target",[this]{juce::String ignored;const auto current=readReplicationForm(ignored);if(current.isObject())replicationSettings=current;replicationSettings.getDynamicObject()->setProperty("target","");rebuildTaskPanel(false);},"In Modeling feature mode, follow the source operation's target, including later target changes.");
+    form->addToggle("repInclude",replicationKind=="mirror"?"Retain original":"Include source position",(bool)p["includeSource"],"Position zero counts toward the requested count. Disabling it excludes that position.");
+    const auto defaults=djehuti::cad::replicationDefaults(replicationKind);
+    for(const auto& key:juce::StringArray{"plane","direction1","direction2","axis"})if(defaults.hasProperty(key))
+    {
+        form->addHeader(key=="plane"?"Mirror plane":key=="axis"?"Rotation axis":key=="direction1"?"First direction":"Second direction");
+        const auto r=p.getProperty(key,juce::var());const juce::StringArray kinds=key=="plane"?juce::StringArray{"XY","XZ","YZ","custom","face"}:juce::StringArray{"X","Y","Z","custom","edge","face"};
+        form->addChoice(key+"Type","Reference",kinds,kinds.indexOf(r["type"].toString()),"Principal datum, numeric custom reference, or a picked persistent reference.");
+        form->addButton(key+"Pick","Pick face / edge...",[this,key,beginPick]{const int selected=form->choice(key+"Type");const bool edge=key!="plane"&&selected==4;beginPick(key,edge?djehuti::cad::CadSelection::Mode::edge:djehuti::cad::CadSelection::Mode::face);},"Choose face or edge in Reference first, then pick it in the view.");
+        form->addNote(key+"Picked",r["face"].toString().isNotEmpty()?r["face"].toString():r["reference"].toString().isNotEmpty()?featureName(r["feature"].toString())+" edge":"No picked reference",1);
+        const auto o=r.getProperty("origin",juce::Array<juce::var>{0,0,0}),d=r.getProperty("vector",juce::Array<juce::var>{0,0,1});
+        for(int i=0;i<3;++i){const auto letter=juce::String::charToString("XYZ"[i]);form->addNumber(key+"O"+letter,"Origin "+letter,(double)o[i],"mm","Custom plane/axis origin in world coordinates.",12);form->addNumber(key+"D"+letter,"Vector "+letter,(double)d[i],{},"Custom plane normal or direction; any nonzero length.",12);}
+    }
+    for(const auto& field:std::vector<std::pair<juce::String,juce::String>>{{"count1","First count"},{"count2","Second count"},{"spacing1","First spacing"},{"spacing2","Second spacing"},{"count","Instance count"},{"angleDegrees","Total angle"}})
+    {const auto& key=field.first;if(defaults.hasProperty(key))form->addNumber("rep_"+key,field.second,(double)p.getProperty(key,juce::var()),key.startsWith("spacing")?"mm":key=="angleDegrees"?"deg":"","Counts include position zero; spacing is per step. Full circles omit a duplicated endpoint.",12);}
+    for(const auto& field:std::vector<std::pair<juce::String,juce::String>>{{"reverse1","Reverse first direction"},{"reverse2","Reverse second direction"},{"reverse","Reverse rotation"}})
+    {const auto& key=field.first;if(defaults.hasProperty(key))form->addToggle("rep_"+key,field.second,(bool)p.getProperty(key,juce::var()),"Reverse this distribution direction.");}
+    form->addButton("repPreview","Preview",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->previewReplication();});},"Validate and preview without changing the live document or Undo history.");
+    form->addButton("repClearPreview","Clear preview",[this]{clearReplicationView();showReplicationSources();validateTask();},"Restore sources for picking.");
+}
+
+void CadWorkspacePanel::pickReplication(const djehuti::cad::CadPick& pick)
+{
+    if(!pick.valid()||pick.featureId==editingReplicationId)return;
+    juce::String ignored;const auto current=readReplicationForm(ignored);if(current.isObject())replicationSettings=current;auto* o=replicationSettings.getDynamicObject();
+    if(replicationPick=="sources")
+    {if(!isSolid(pick.featureId)){showError("Choose a solid source.");return;}auto sources=replicationSettings["sources"];bool present=false;for(const auto& id:*sources.getArray())if(id.toString()==pick.featureId)present=true;if(!present)sources.append(pick.featureId);o->setProperty("sources",sources);}
+    else if(replicationPick=="target"){if(!isSolid(pick.featureId)){showError("Choose a solid target.");return;}o->setProperty("target",pick.featureId);}
+    else
+    {
+        auto r=juce::var(new juce::DynamicObject());r.getDynamicObject()->setProperty("feature",pick.featureId);
+        if(pick.face>=0)
+        {djehuti::cad::CadFaceInfo f;juce::String error;if(!service->document().describeFace(pick.featureId,pick.face,f,error)||!f.planar||f.token.isEmpty()){showError("Choose a persistently named planar face.");return;}r.getDynamicObject()->setProperty("type","face");r.getDynamicObject()->setProperty("face",f.token);}
+        else if(pick.edge>=0&&replicationPick!="plane")
+        {auto* a=new juce::DynamicObject();a->setProperty("action","edges");a->setProperty("target",pick.featureId);const auto list=service->chamferCommand(a);if(!(bool)list["ok"]||pick.edge>=list["edges"].size())return;r.getDynamicObject()->setProperty("type","edge");r.getDynamicObject()->setProperty("reference",list["edges"][pick.edge]["reference"]);}
+        else return;o->setProperty(replicationPick,r);
+    }
+    clearReplicationView();rebuildTaskPanel(false);showReplicationSources();
+}
+
+void CadWorkspacePanel::previewReplication()
+{
+    juce::String error;const auto p=readReplicationForm(error);if(error.isNotEmpty()){showError(error);return;}
+    auto* a=new juce::DynamicObject();a->setProperty("action","preview");a->setProperty("id",editingReplicationId);a->setProperty("parameters",p);juce::var details;
+    const auto view=service->document().replicationPreview(replicationKind,a,details,error);if(view==nullptr){showError(error);return;}
+    modelView.setSnapshot(view);replicationPreviewActive=true;wakeFrames();setMessage("Preview. Apply commits; changing inputs or Cancel restores the model.",0);
 }
 
 void CadWorkspacePanel::addHoleFields(const djehuti::cad::CadHoleParameters& p,const juce::String& target)
@@ -1480,7 +1610,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     formContext = context;
     taskViewport.setViewedComponent(nullptr, false);
     form = std::make_unique<TaskForm>();
-    form->onChange = [this] { clearChamferPreview(true); validateTask(); };
+    form->onChange = [this] { if(replicationPreviewActive){clearReplicationView();showReplicationSources();} clearChamferPreview(true); validateTask(); };
     const auto& document = service->document();
     const auto* f = document.find(selectedId);
     if ((task == Task::body || task == Task::sketch) && f == nullptr) task = Task::none;
@@ -1545,6 +1675,11 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
                 addRevolveFields(f->revolve, f->sketchId);
                 if(f->lathe)form->addButton("latheProfile","Lathe profile...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::lathe);});},"Edit outside and bore stations.");
                 form->addButton("revolveSketch","Edit source sketch",[this,sketch=f->sketchId]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr)safe->enterSketch(sketch);});},"Edit the authoritative 2D profile.");
+            }
+            else if(djehuti::cad::isReplicationType(f->type))
+            {
+                form->addHeader(f->type=="mirror"?"Mirror":f->type=="linearPattern"?"Linear Pattern":"Circular Pattern");form->addNote({},"Parametric sources, references and distribution",1);
+                form->addButton("repEdit","Edit sources and parameters...",[this,type=f->type]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),type]{if(safe!=nullptr)safe->startTask(Task::replication,type);});},"Edit the parametric definition, preview and apply.");
             }
             else if(f->type=="hole")
             {
@@ -1747,6 +1882,8 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("distance", "Distance", extrudeDistance, "mm", "Extrusion distance from the sketch plane.");
             form->addToggle("reverse", "Reverse direction", false, "Extrude to the opposite side of the sketch plane.");
             break;
+        case Task::replication:
+            title=replicationKind=="mirror"?"Mirror":replicationKind=="linearPattern"?"Linear Pattern":"Circular Pattern";instruction="Choose source bodies or a modeling feature, then references and distribution. Preview before applying.";accept=editingReplicationId.isEmpty()?"Create":"Update";addReplicationFields();break;
         case Task::hole:
             title="Drill Press / Hole";instruction="Pick a planar face, then set its U/V position, diameter and drilling depth.";accept=editingHoleId.isEmpty()?"Drill hole":"Update hole";
             form->addSlot("holeTarget","Support face",targetId.isEmpty()?juce::String("Pick a planar face"):featureName(targetId),targetColour,true,[this]{if(selection!=nullptr)selection->setMode(djehuti::cad::CadSelection::Mode::face);setMessage("Pick a planar face on the target body.",0);},"Select the planar entry face in Face mode.");
@@ -1855,6 +1992,7 @@ juce::String CadWorkspacePanel::applicableConstraintTypes() const
 
 void CadWorkspacePanel::assignRole(const juce::String& id)
 {
+    if(task==Task::replication){pickReplication({id,id,-1,-1});return;}
     if (task == Task::newCoupling)
     {
         if (!isJoint(id)) { setMessage(featureName(id) + " is not a joint. Pick the two joints to couple in the Assembly group of the tree.", 1); return; }
@@ -1937,6 +2075,7 @@ void CadWorkspacePanel::validateTask()
             break;
         case Task::newBox: requirePositive("width", "Width"); requirePositive("depth", "Depth"); requirePositive("height", "Height"); break;
         case Task::newCylinder: requirePositive("radius", "Radius"); requirePositive("height", "Height"); break;
+        case Task::replication: { juce::String e;readReplicationForm(e);if(e.isNotEmpty())problem=e;if(replicationRevision!=service->document().revision())problem="The model changed. Reopen this tool to refresh its references.";break; }
         case Task::hole: break;
         case Task::lathe: { juce::String e; readLatheForm(e); if(e.isNotEmpty()){problem=e;severity=2;} break; }
         case Task::revolve: break;
@@ -1988,6 +2127,15 @@ void CadWorkspacePanel::validateTask()
         if(parameters.isObject()){const auto target=parameters["target"].toString();parameters.getDynamicObject()->removeProperty("target");if(!isSolid(target))e="Choose a solid target and a planar face.";else if(e.isEmpty())djehuti::cad::readHoleParameters(parameters,p,e);}
         if(e.isNotEmpty()){problem=e;severity=2;}
         if(task==Task::hole&&holeSelectionRevision!=service->document().revision()){problem="The model changed. Reopen Drill Press and choose its face again.";severity=2;}
+    }
+    if(task==Task::replication)
+    {
+        for(const auto& key:juce::StringArray{"plane","direction1","direction2","axis"})if(form->control(key+"Type")!=nullptr)
+        {
+            const auto index=form->choice(key+"Type");const bool custom=index==3;for(const auto* letter:{"X","Y","Z"}){form->setRowVisible(key+"O"+letter,custom);form->setRowVisible(key+"D"+letter,custom);}
+            form->setRowVisible(key+"Pick",index>=4);form->setRowVisible(key+"Picked",index>=4);
+        }
+        if(auto* button=form->control("repPreview"))button->setEnabled(problem.isEmpty());
     }
     if(form->control("chamferDistance")!=nullptr)requirePositive("chamferDistance","Chamfer distance");
     if(auto* button=form->control("chamferPreview"))button->setEnabled(problem.isEmpty());
@@ -2118,6 +2266,11 @@ void CadWorkspacePanel::acceptTask()
             if (!service->createCylinder(cylinderSize[0], cylinderSize[1], id, e)) { showError(e); return; }
             refreshFromDocument(true); selectFeature(id); setMessage(featureName(id) + " created at the origin.", 0);
             return;
+        case Task::replication:
+        {
+            auto p=readReplicationForm(e);if(e.isNotEmpty()){showError(e);return;}auto* a=new juce::DynamicObject();a->setProperty("action",editingReplicationId.isEmpty()?"create":"update");a->setProperty("id",editingReplicationId);a->setProperty("parameters",p);clearReplicationView();const auto r=service->replicationCommand(replicationKind,a);
+            if(!(bool)r["ok"]){showReplicationSources();showError(r["error"].toString());return;}id=r["id"].toString();refreshFromDocument(true);selectFeature(id);setMessage("Parametric "+replicationKind+" applied.",0);return;
+        }
         case Task::hole:
         {
             auto parameters=readHoleForm(e);if(e.isNotEmpty()){showError(e);return;}auto* args=new juce::DynamicObject();args->setProperty("action",editingHoleId.isEmpty()?"create":"update");args->setProperty("id",editingHoleId);args->setProperty("parameters",parameters);clearHoleSource();
@@ -2191,7 +2344,7 @@ void CadWorkspacePanel::acceptTask()
 
 void CadWorkspacePanel::cancelTask()
 {
-    clearHoleSource();clearChamferPreview(false);
+    clearReplicationView();clearHoleSource();clearChamferPreview(false);
     switch (task)
     {
         case Task::body: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;
@@ -3311,6 +3464,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
         if (selection != nullptr) selection->setTool(command == "pointer" ? djehuti::cad::CadSelection::Tool::pointer : command == "boxSelect" ? djehuti::cad::CadSelection::Tool::box : djehuti::cad::CadSelection::Tool::circle);
         return true;
     }
+    if(djehuti::cad::isReplicationType(command)){startTask(Task::replication,command);return true;}
     if (command == "materials") { showMaterialsManager(); return true; }
     if (command == "export") { showExportDialog(); return true; }
     if (command == "interference") { checkInterference(false); return true; }
@@ -3329,6 +3483,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
 bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
 {
     const bool sketch = editingSketchId.isNotEmpty();
+    if(djehuti::cad::isReplicationType(command))return !sketch;
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
     if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","interference","materials"}.contains(command)) return !sketch;
     if (command == "clearInterference") return interferenceActive;
@@ -3336,6 +3491,7 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
 }
 bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
 {
+    if(djehuti::cad::isReplicationType(command))return task==Task::replication&&replicationKind==command;
     if (editingSketchId.isNotEmpty()) return command == (sketchCanvas->tool() == "select" ? juce::String("sketchSelect") : sketchCanvas->tool());
     if (selection == nullptr) return false;
     using Sel = djehuti::cad::CadSelection;
@@ -3350,6 +3506,7 @@ bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
 
 void CadWorkspacePanel::viewContextCommand(const juce::String& command,const djehuti::cad::CadPick& pick)
 {
+    if(task==Task::replication&&(command=="inspect"||command=="inspectRegion")){pickReplication(pick);return;}
     if (command == "inspectRegion" && !pick.valid()) { selectFeature({}); return; }
     if (pick.valid())
     {
@@ -3369,6 +3526,7 @@ juce::var CadWorkspacePanel::automationState()
     refreshFromDocument(); handleUpdateNowIfNeeded();
     const auto& document = service->document();
     auto* state = new juce::DynamicObject();
+    state->setProperty("replicationPreview",replicationPreviewActive);
     state->setProperty("chamferPreview",chamferPreviewActive);
     state->setProperty("documentRevision", (juce::int64)document.revision());
     state->setProperty("documentInstance", (juce::int64)document.documentInstance());
@@ -3389,7 +3547,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -3398,6 +3556,7 @@ juce::var CadWorkspacePanel::automationState()
         auto* o = new juce::DynamicObject(); o->setProperty("id", f.id); o->setProperty("name", f.name); o->setProperty("type", f.type); o->setProperty("visible", f.visible);
         o->setProperty("width", f.width); o->setProperty("depth", f.depth); o->setProperty("height", f.height); o->setProperty("radius", f.radius);
         o->setProperty("x", f.x); o->setProperty("y", f.y); o->setProperty("z", f.z);
+        if(djehuti::cad::isReplicationType(f.type))o->setProperty("parameters",f.replication);
         if(f.type=="hole"){auto p=djehuti::cad::holeParametersToJson(f.hole);p.getDynamicObject()->setProperty("target",f.targetFeatureId);o->setProperty("parameters",p);}
         if(f.type=="chamfer"){auto* a=new juce::DynamicObject();a->setProperty("action","get");a->setProperty("id",f.id);o->setProperty("parameters",service->chamferCommand(a)["parameters"]);}
         if (f.type == "revolve")

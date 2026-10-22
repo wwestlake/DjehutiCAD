@@ -1,4 +1,4 @@
-#include "CadDocument.h"
+#include "CadHoleGeometry.h"
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepAdaptor_Surface.hxx>
@@ -83,13 +83,9 @@ bool CadDocument::holeSupport(const juce::String& targetId,const juce::String& f
     return resolveSketchFrame(reference,frame,error,active);
 }
 
-TopoDS_Shape CadDocument::drillShape(const CadFeature& feature,const TopoDS_Shape& source,const CadFaceOrigins& sourceNames,CadFaceOrigins& origins,juce::String& error,juce::StringArray& active)
+TopoDS_Shape makeHoleCutter(const CadHoleParameters& p,const CadSketchFrame& frame,const TopoDS_Shape& source,const juce::String& owner,CadFaceOrigins& names,juce::String& error)
 {
-    CadHoleParameters p=feature.hole;if(!readHoleParameters(holeParametersToJson(p),p,error))return {};
-    CadSketchFrame frame;TopoDS_Face face;if(!holeSupport(feature.targetFeatureId,p.face,frame,face,error,active))return {};
     const auto centre=frame.origin.Translated(gp_Vec(frame.u)*p.u+gp_Vec(frame.v)*p.v);
-    BRepClass_FaceClassifier classifier(face,centre,1e-7);
-    if(classifier.State()!=TopAbs_IN){error="Hole centre is outside the selected face or lies on an edge/existing opening. Adjust U/V positioning.";return {};}
     const auto inward=frame.normal.Reversed();Bnd_Box box;BRepBndLib::AddOptimal(source,box,false,false);
     double x0,y0,z0,x1,y1,z1;box.Get(x0,y0,z0,x1,y1,z1);
     const double scale=std::hypot(x1-x0,y1-y0,z1-z0),epsilon=std::max(1e-6,scale*1e-9);double depth=p.depth;
@@ -101,7 +97,7 @@ TopoDS_Shape CadDocument::drillShape(const CadFeature& feature,const TopoDS_Shap
     if(!std::isfinite(depth)||depth<=epsilon){error="Hole depth is too small for the target geometry.";return {};}
     const gp_Ax2 axis(centre.Translated(gp_Vec(frame.normal)*epsilon),inward,frame.u);
     TopoDS_Shape tool=BRepPrimAPI_MakeCylinder(axis,p.diameter*0.5,depth+epsilon).Shape();
-    auto names=toolNames(tool,feature.id,"wall","bottom");
+    names=toolNames(tool,owner,"wall","bottom");
     if(p.style!="plain")
     {
         double headDepth=p.headDepth;TopoDS_Shape head;CadFaceOrigins headNames;
@@ -110,17 +106,28 @@ TopoDS_Shape CadDocument::drillShape(const CadFeature& feature,const TopoDS_Shap
             const double slope=std::tan(p.countersinkAngleDegrees*juce::MathConstants<double>::pi/360.0);
             headDepth=(p.headDiameter-p.diameter)*0.5/slope;
             if(!std::isfinite(headDepth)||headDepth<=epsilon||headDepth>=depth-epsilon){error="Countersink is deeper than the hole. Increase depth, reduce head diameter or change its included angle.";return {};}
-            head=BRepPrimAPI_MakeCone(axis,p.headDiameter*0.5+epsilon*slope,p.diameter*0.5,headDepth+epsilon).Shape();headNames=toolNames(head,feature.id,"countersink","head-end");
+            head=BRepPrimAPI_MakeCone(axis,p.headDiameter*0.5+epsilon*slope,p.diameter*0.5,headDepth+epsilon).Shape();headNames=toolNames(head,owner,"countersink","head-end");
         }
         else
         {
             if(headDepth>=depth-epsilon){error="Counterbore depth must be less than the hole depth/through-all extent.";return {};}
-            head=BRepPrimAPI_MakeCylinder(axis,p.headDiameter*0.5,headDepth+epsilon).Shape();headNames=toolNames(head,feature.id,"counterbore-wall","counterbore-shoulder");
+            head=BRepPrimAPI_MakeCylinder(axis,p.headDiameter*0.5,headDepth+epsilon).Shape();headNames=toolNames(head,owner,"counterbore-wall","counterbore-shoulder");
         }
         names.insert(names.end(),headNames.begin(),headNames.end());BRepAlgoAPI_Fuse join(tool,head);join.Build();
         if(!join.IsDone()||join.HasErrors()){error="Unable to construct the hole head geometry.";return {};}
         tool=join.Shape();names=carryFaces(join,names,tool);
     }
+    return tool;
+}
+
+TopoDS_Shape CadDocument::drillShape(const CadFeature& feature,const TopoDS_Shape& source,const CadFaceOrigins& sourceNames,CadFaceOrigins& origins,juce::String& error,juce::StringArray& active)
+{
+    CadHoleParameters p=feature.hole;if(!readHoleParameters(holeParametersToJson(p),p,error))return {};
+    CadSketchFrame frame;TopoDS_Face face;if(!holeSupport(feature.targetFeatureId,p.face,frame,face,error,active))return {};
+    const auto centre=frame.origin.Translated(gp_Vec(frame.u)*p.u+gp_Vec(frame.v)*p.v);
+    BRepClass_FaceClassifier classifier(face,centre,1e-7);
+    if(classifier.State()!=TopAbs_IN){error="Hole centre is outside the selected face or lies on an edge/existing opening. Adjust U/V positioning.";return {};}
+    CadFaceOrigins names;const auto tool=makeHoleCutter(p,frame,source,feature.id,names,error);if(tool.IsNull())return {};
     BRepBuilderAPI_Copy copy(source,true,false);const auto target=copy.Shape();CadFaceOrigins targetNames;
     for(const auto& entry:sourceNames)targetNames.push_back({copy.ModifiedShape(entry.first),entry.second});
     BRepAlgoAPI_Cut operation(target,tool);operation.Build();

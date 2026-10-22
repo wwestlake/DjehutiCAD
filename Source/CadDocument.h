@@ -68,6 +68,10 @@ struct CadHoleParameters
 };
 juce::var holeParametersToJson(const CadHoleParameters&);
 bool readHoleParameters(const juce::var&, CadHoleParameters&, juce::String& error);
+inline bool isReplicationType(const juce::String& type) { return type=="mirror"||type=="linearPattern"||type=="circularPattern"; }
+juce::var replicationDefaults(const juce::String& type);
+bool validateReplication(const juce::String& type, const juce::var&, juce::String& error);
+juce::StringArray replicationDependencies(const juce::var&);
 
 struct CadFeature
 {
@@ -82,6 +86,7 @@ struct CadFeature
     CadRevolveParameters revolve;
     bool lathe = false; // Lathe workflow; the editable source sketch remains the profile authority.
     CadHoleParameters hole;
+    juce::var replication; // Structured, versioned Mirror/Pattern definition; OCAF is authoritative.
     TopoDS_Shape shape;
     CadFaceOrigins faceOrigins;   // derived with shape
 };
@@ -224,6 +229,8 @@ public:
     juce::var latheCommand(const juce::var& args);
     juce::var chamferCommand(const juce::var& args);
     juce::var holeCommand(const juce::var& args);
+    juce::var replicationCommand(const juce::String& type, const juce::var& args);
+    std::shared_ptr<const CadRenderSnapshot> replicationPreview(const juce::String& type, const juce::var&, juce::var& result, juce::String& error) const;
     std::shared_ptr<const CadRenderSnapshot> chamferPreview(const juce::var& args, juce::var& result, juce::String& error) const;
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
@@ -359,6 +366,8 @@ private:
     TopoDS_Shape revolveSketch(const CadFeature&, const CadSketch&, const CadSketchFrame&, CadFaceOrigins&, juce::String& error);
     bool holeSupport(const juce::String& target, const juce::String& face, CadSketchFrame&, TopoDS_Face&, juce::String& error, juce::StringArray& active);
     TopoDS_Shape drillShape(const CadFeature&, const TopoDS_Shape& target, const CadFaceOrigins&, CadFaceOrigins&, juce::String& error, juce::StringArray& active);
+    TopoDS_Shape replicateShape(const CadFeature&, CadFaceOrigins&, juce::String& error, juce::StringArray& active);
+    bool replicationEdge(const CadFeature&, const juce::String& reference, gp_Pnt& origin, gp_Dir& direction, bool axis, juce::String& error) const;
     static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);
@@ -438,6 +447,7 @@ public:
     juce::var latheCommand(const juce::var& args) { return model.latheCommand(args); }
     juce::var chamferCommand(const juce::var& args) { return model.chamferCommand(args); }
     juce::var holeCommand(const juce::var& args) { return model.holeCommand(args); }
+    juce::var replicationCommand(const juce::String& type, const juce::var& args) { return model.replicationCommand(type,args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);

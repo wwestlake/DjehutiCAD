@@ -19,6 +19,12 @@ read-only previews through the GUI and shared command/API system.
 [Hole / Drill Press](docs/HOLE_DRILL_PRESS.md) provides face-based blind/through-all
 holes, counterbores, countersinks and editable numeric positioning.
 
+[Mirror](docs/MIRROR.md), [Linear Pattern](docs/LINEAR_PATTERN.md) and
+[Circular Pattern](docs/CIRCULAR_PATTERN.md) provide editable body repetition and
+supported additive/subtractive feature repetition, with shared previews, GUI,
+structured APIs, FRust hosts and CAD nodes. See the
+[version 12 interchange conventions](docs/PATTERN_API_AND_INTERCHANGE.md).
+
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 

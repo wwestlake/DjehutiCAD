@@ -56,7 +56,7 @@ public:
 private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -167,6 +167,16 @@ private:
     juce::String profileId, targetId, toolId;
     std::vector<int> filletEdges;
     double filletRadius = 2.0;
+    juce::String replicationKind, editingReplicationId, replicationPick="sources";
+    juce::var replicationSettings;
+    bool replicationPreviewActive=false, replicationSourcesActive=false;
+    std::uint64_t replicationRevision=0;
+    void addReplicationFields();
+    juce::var readReplicationForm(juce::String& error) const;
+    void pickReplication(const djehuti::cad::CadPick&);
+    void previewReplication();
+    void clearReplicationView();
+    void showReplicationSources();
     djehuti::cad::CadHoleParameters holeSettings;
     juce::String editingHoleId;
     bool holeSourceActive = false;

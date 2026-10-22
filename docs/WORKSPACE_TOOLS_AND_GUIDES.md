@@ -8,6 +8,13 @@ CreationDock owns panel content. Dock positions, floating windows and the Toolbo
 
 The old permanent command rows are removed. Apply/Cancel remain in the task inspector, and Finish Sketch remains visible during sketch editing. FRust source now saves under DjehutiCAD's own application-data directory. If that file does not yet exist, the prior shared autosave is read as a migration fallback; CAD never writes to DEWB's autosave.
 
+Mirror, Linear Pattern and Circular Pattern also appear under **Modify**. Their
+source/target slots use the existing tree and view selection, reference controls
+support principal/custom definitions and picked faces/edges, and Preview runs an
+isolated draft. Select a result and **Edit sources and parameters** to reopen it.
+See [Mirror](MIRROR.md), [Linear Pattern](LINEAR_PATTERN.md), and
+[Circular Pattern](CIRCULAR_PATTERN.md).
+
 ## Toolbox and selection
 
 The CAD **Modify** menu includes [Virtual Lathe](VIRTUAL_LATHE.md),
