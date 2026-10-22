@@ -1,6 +1,23 @@
 # DjehutiCAD Architecture Handoff
 
-Current expansion update (October 22, 2026): Order 2 implements Virtual Lathe
+Latest expansion update (October 22, 2026): **Order 3 is complete**. Commit
+`2f7d1aa` implements parametric Mirror, Linear Pattern and Circular Pattern through
+the shared GUI/structured API/FRust/CAD-node commands. See
+`docs/PROFESSIONAL_MODELING_ORDER3.md` for the consolidated report and limits.
+OCAF stores definitions in feature child 27; engineering JSON is now version 12.
+Automatic feature targets follow source target reassignment. Hole/Cut patterns
+reuse the actual source cutter, including through-all at each repeated position;
+Boolean Subtract/Union patterns use their removed/added material.
+
+Debug delivery build passed; new focused checks 74/74, existing Hole 27/27,
+Chamfer 20/20, Revolve 38/38, Lathe 13/13 and face attachments 19/19 passed.
+All 22 live HTTP/GUI-control checks passed. FRust hosts and compiled CAD nodes
+were actually executed; the existing FRust prelude's reserved `type` parameter
+names were corrected. Native pointer/visual interaction remains unverified.
+The owned test application was closed after confirming its generated document
+was saved. No further CAD group is authorized by this order.
+
+Previous expansion update (October 22, 2026): Order 2 implements Virtual Lathe
 (`95d1cd8`), editable multi-edge Chamfer with isolated previews (`66ae5ce`), and
 Hole / Drill Press (`249188d`). Lathe edits outside/bore station profiles using
 the existing parametric Revolve. Hole supports planar-face U/V positioning,

@@ -64,3 +64,10 @@ through-all across differing thicknesses, references, Undo/Redo, native/JSON,
 invalid input rollback, actual GUI controls, FRust execution and compiled CAD-node
 execution. Programmatic controls are distinct from native pointer/visual testing;
 verification results are recorded after running the diagnostic.
+
+Verified October 22, 2026: Debug build; 74/74 replication checks; 117/117 existing
+modeling/face-attachment checks; 22/22 live HTTP/GUI-control checks passed. The
+replication diagnostic executes real FRust and compiled CAD-node programs.
+GUI forms and shared selection callbacks were exercised programmatically;
+native pointer/visual interaction was not verified. See the
+[completion report](PROFESSIONAL_MODELING_ORDER3.md).

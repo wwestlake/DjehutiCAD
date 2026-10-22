@@ -23,7 +23,9 @@ holes, counterbores, countersinks and editable numeric positioning.
 [Circular Pattern](docs/CIRCULAR_PATTERN.md) provide editable body repetition and
 supported additive/subtractive feature repetition, with shared previews, GUI,
 structured APIs, FRust hosts and CAD nodes. See the
-[version 12 interchange conventions](docs/PATTERN_API_AND_INTERCHANGE.md).
+[version 12 interchange conventions](docs/PATTERN_API_AND_INTERCHANGE.md). The
+[Order 3 completion report](docs/PROFESSIONAL_MODELING_ORDER3.md) records validation
+and current limitations.
 
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
