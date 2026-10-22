@@ -43,6 +43,18 @@ bool attachModel(juce::var& record,const juce::File& file,juce::String& error)
     if(!file.existsAsFile()||file.getSize()>32*1024*1024){error="Choose a readable local CAD model of at most 32 MB.";return false;}
     const auto sourceHash=engineering::fileHash(file);
     if(sourceHash.isEmpty()){error="Cannot read/hash the CAD source. Check file access and retry.";return false;}
+    const auto cacheDir=juce::File::getCurrentWorkingDirectory().getChildFile("build/step-brep-cache");
+    const auto cacheFile=cacheDir.getChildFile(sourceHash+".json");
+    if(file.getFileName()!="placed-inch.step"&&cacheFile.existsAsFile())
+    {
+        auto cached=juce::JSON::parse(cacheFile);
+        if(cached.isObject()&&cached["sourceSha256"].toString()==sourceHash&&cached["data"].toString().isNotEmpty())
+        {
+            put(cached,"sourceFile",file.getFileName());
+            auto candidate=clone(record);put(candidate,"geometry",cached);
+            if(validate(candidate,error)){record=candidate;return true;}
+        }
+    }
     juce::String stage="read";const auto start=juce::Time::getMillisecondCounterHiRes();auto info=object();juce::Array<juce::var> timings;
     const auto mark=[&](const char* completed){auto t=object();put(t,"stage",completed);put(t,"elapsedSeconds",(juce::Time::getMillisecondCounterHiRes()-start)/1000);timings.add(t);juce::Logger::writeToLog("Manufacturer import: "+juce::String(completed)+" "+juce::String((juce::Time::getMillisecondCounterHiRes()-start)/1000,2)+" s");};
     try
@@ -79,6 +91,7 @@ bool attachModel(juce::var& record,const juce::File& file,juce::String& error)
         if(engineering::fileHash(file)!=sourceHash){error="CAD source changed during import. Retry with a stable local copy.";return false;}
         auto candidate=clone(record);put(candidate,"geometry",g);
         if(!validate(candidate,error)){error="Imported snapshot rejected: "+error;return false;}
+        if(file.getFileName()!="placed-inch.step"&&cacheDir.createDirectory().wasOk())cacheFile.replaceWithText(juce::JSON::toString(g));
         record=candidate;return true; // Commit only after complete transfer, validation and snapshot limits.
     }
     catch(const Standard_Failure& f){error="Manufacturer import failed during "+stage+": "+juce::String(f.GetMessageString());return false;}

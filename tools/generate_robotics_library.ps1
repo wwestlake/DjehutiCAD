@@ -47,6 +47,7 @@ function Existing($id,$file,$url,$rev){ $p=Join-Path "$CadRes\manufacturer-found
   $script:src[$id]=[ordered]@{id=$id;originalFilename=$file;url=$url;revision=$rev;path="manufacturer-foundation/$file";sha256=(Get-FileHash $p -Algorithm SHA256).Hash.ToLower();local=$null} }
 Existing 'pololu-mm-ds' 'pololu-micro-metal-gearmotors-rev-6-2.pdf' 'https://www.pololu.com/file/0J1487/pololu-micro-metal-gearmotors-rev-6-2.pdf' 'Rev 6.2, February 2026'
 Existing 'l12-ds' 'ActuonixL12Datasheet.pdf' 'https://www.actuonix.com/assets/images/datasheets/ActuonixL12Datasheet.pdf' 'F (November 2019)'
+Existing 'l12-step50' 'l12_50mm_in.stp' 'https://www.actuonix.com/assets/documents/L12_STP.zip' 'Member of L12_STP.zip (undated family archive)'
 Existing 'drv8833-ds' 'drv8833.pdf' 'https://www.ti.com/lit/ds/symlink/drv8833.pdf' 'SLVSAR1E, July 2015'
 
 $MP='MP 6V; 51.45:1'
@@ -56,11 +57,31 @@ function Claim($variant,$id,$label,$q,$val,$unit,$prov,$ver,$refs,$cond){
   $c=[ordered]@{id=$id;label=$label;quantity=$q;value=$val;unit=$unit;conditions=$cond;variant=$variant;provenance=$prov;verification=$ver}
   if($refs){$c.sourceRefs=@($refs)}; $c }
 function T($v){ [ordered]@{quantity='voltage';value=$v;unit='V'} }
+function StepGeom($srcId,$label){
+  $x=$src[$srcId]
+  [ordered]@{kind='brep';level='manufacturer';label=$label;sourceFile=$x.originalFilename;sourcePath=$x.path;sourceSha256=$x.sha256} }
+function ReconGeom($reconId,$label){
+  [ordered]@{kind='brep';level='simplified';label=$label;drawingReconstruction=$reconId} }
+function EnvGeom($w,$h,$l,$label){
+  [ordered]@{kind='envelope';level='envelope';label=$label;widthMm=$w;heightMm=$h;lengthMm=$l} }
 # Record builder: $c is an array of claims; $models = array of @{id,scope,parameters}.
 function Rec($id,$name,$mfr,$pn,$variant,$desc,$srcIds,$claims,$models,$curves,$geomLabel,$extra){
   $s=@($srcIds|%{ $x=$src[$_]; [ordered]@{id=$x.id;originalFilename=$x.originalFilename;url=$x.url;revision=$x.revision;path=$x.path;sha256=$x.sha256} })
   $m=@($models|%{[ordered]@{id=$_.id;parameters=@($_.parameters);curveRefs=@($_.curves);scope=$_.scope}})
-  $r=[ordered]@{id=$id;name=$name;manufacturer=$mfr;partNumber=$pn;model=$pn;revision=1;origin='commercial';category='Manufacturer References';
+  $cat = switch -Wildcard ($id) {
+    'servo-*'     { 'Motion/Servos' }
+    'motor-*'     { 'Motion/Motors' }
+    'actuator-*'  { 'Motion/Actuators' }
+    'wheel-*'     { 'Motion/Wheels & Hubs' }
+    'hub-*'       { 'Motion/Wheels & Hubs' }
+    'leadscrew-*' { 'Motion/Lead Screws' }
+    'bearing-*'   { 'Structure/Bearings' }
+    'driver-*'    { 'Electrical/Drivers' }
+    'switch-*'    { 'Electrical/Switches' }
+    'solenoid-*'  { 'Electrical/Actuators' }
+    default       { 'Electrical/Sensors' }
+  }
+  $r=[ordered]@{id=$id;name=$name;manufacturer=$mfr;partNumber=$pn;model=$pn;revision=1;origin='commercial';category=$cat;
     description=$desc;properties=@($claims);geometry=[ordered]@{kind='none';label=$geomLabel};
     engineering=[ordered]@{specification=[ordered]@{schemaVersion=1;variant=$variant;sources=$s;curves=@($curves);models=$m}}}
   if($extra){foreach($k in $extra.Keys){$r[$k]=$extra[$k]}}; $r }
@@ -87,7 +108,7 @@ foreach($d in @(@{n='SG90';v='SG90 Analog';mass=9;t=.12;L=23;W=12.2;H=29;s='sg90
    (Unk $v 'stall_current' 'Stall current' 'current' 'A'),(Unk $v 'travel_angle' 'Actual angular travel limit' 'ratio' '1'),
    (Unk $v 'armature_resistance' 'Motor winding resistance' 'resistance' 'ohm'),(Unk $v 'output_inertia' 'Output inertia' 'inertia' 'kg m2'))
   Add (Rec ('servo-positional-towerpro-'+$d.n.ToLower()) ("TowerPro "+$d.n+' micro servo') 'TowerPro' $d.n $v ('Micro positional servo. Dimension/speed/voltage entries conflict across TowerPro pages; spline, PWM endpoints and electrical dynamics unpublished. '+$sp) @($b) $cl `
-    @(@{id='positional_servo_first_order';parameters=@('torque','transit_time','deadband','pulse_min','pulse_max');curves=@();scope='Bounded rate-limited positional servo: angle command from pulse width (assumed endpoints), slew from published 60 deg transit, torque saturation at rated torque, 1 us deadband. Not a closed-loop or electrical model.'}) @() 'Envelope reference only (manufacturer housing drawing); no solid supplied. Reconstruct from drawing dimensions.' $null)
+    @(@{id='positional_servo_first_order';parameters=@('torque','transit_time','deadband','pulse_min','pulse_max');curves=@();scope='Bounded rate-limited positional servo: angle command from pulse width (assumed endpoints), slew from published 60 deg transit, torque saturation at rated torque, 1 us deadband. Not a closed-loop or electrical model.'}) @() 'Envelope reference only (manufacturer housing drawing); no solid supplied.' @{geometry=(EnvGeom $d.W $d.H $d.L "Nominal housing envelope ($($d.L)x$($d.W)x$($d.H) mm); manufacturer pages contain conflicting dimension entries")})
 }
 # 2 FEETECH FS90R ---------------------------------------------------------------------------------------
 $v='FS90R V1.0';$b='fs90r-v1'
@@ -103,7 +124,7 @@ Add (Rec 'servo-continuous-feetech-fs90r-v1' 'FEETECH FS90R V1.0 continuous-rota
   (Claim $v 'stall_current_4v8' 'Stall current' 'current' 0.7 'A' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{supply=(T 4.8)})),
   (Claim $v 'stall_current_6v' 'Stall current' 'current' 0.8 'A' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{supply=(T 6)})),
   (Unk $v 'time_constant' 'Speed-command time constant' 'time' 's'),(Unk $v 'output_inertia' 'Output inertia' 'inertia' 'kg m2')) `
-  @(@{id='continuous_servo_speed_command';parameters=@('pulse_min','pulse_max','pulse_neutral','deadband','speed_6v','torque_6v');curves=@();scope='Pulse offset from neutral maps linearly to speed (assumed interpolation, not measured) with deadband; torque-speed droop linear between published unloaded speed and stall torque.'}) @() 'Drawing reconstruction needed; V1.0 and V2.0 drawings differ.' $null)
+  @(@{id='continuous_servo_speed_command';parameters=@('pulse_min','pulse_max','pulse_neutral','deadband','speed_6v','torque_6v');curves=@();scope='Pulse offset from neutral maps linearly to speed (assumed interpolation, not measured) with deadband; torque-speed droop linear between published unloaded speed and stall torque.'}) @() 'Reconstructed from V1.0 datasheet 2D drawing.' @{massKg=0.009;geometry=(ReconGeom 'servo_feetech_fs90r_v1' 'Manufacturer V1.0 drawing reconstruction: 22.5x12.1x23.4 mm case, 32.3 mm flange (27.7 mm hole pitch) and output boss/spline')})
 $v='FS90R V2.0';$b='fs90r-v2'
 Add (Rec 'servo-continuous-feetech-fs90r-v2' 'FEETECH FS90R V2.0 continuous-rotation servo' 'FEETECH' 'FS90R' $v 'Continuous-rotation micro servo; V2.0 datasheet. Only pulse timing transcribed; speed/torque tables must be read from the V2.0 PDF before use.' @($b) @(
   (Claim $v 'pulse_min' 'Command pulse minimum' 'time' 700 'us' 'manufacturer_published' 'reviewed' @($b) $null),
@@ -132,7 +153,7 @@ foreach($d in @(@{pn='2379';v="$MP; extended motor shaft; no encoder";nm='Pololu
   $mp=@('stall_current','stall_torque','no_load_speed','no_load_current','curve_speed_intercept','gear_ratio'); if($d.enc){$mp+='encoder_cpr'}
   $sc='Geared DC model (existing mech::addDcMotor, output-shaft equivalent): R=6V/Is, Kt=Ts/Is, Ke=(V-R*I0)/w0, B=Kt*I0/w0; L and J are assumptions. Stall values are manufacturer extrapolations.'
   if($d.enc){$sc+=' Encoder: 12 cycles/motor rev x 51.45 = 617.4 nominal output counts/rev (derived from rounded ratio).'}
-  Add (Rec ('motor-dc-pololu-'+$d.pn) $d.nm 'Pololu' $d.pn $v $d.desc @($ds,'pololu-mm-dims',$d.st) $cl @(@{id='dc_gearmotor';parameters=$mp;curves=@('torque_speed_current');scope=$sc}) $cv 'Original manufacturer STEP; attach with Attach CAD / attachModel.' $null)
+  Add (Rec ('motor-dc-pololu-'+$d.pn) $d.nm 'Pololu' $d.pn $v $d.desc @($ds,'pololu-mm-dims',$d.st) $cl @(@{id='dc_gearmotor';parameters=$mp;curves=@('torque_speed_current');scope=$sc}) $cv 'Manufacturer solid geometry with original placement (mm)' @{geometry=(StepGeom $d.st 'Manufacturer solid geometry with original placement (mm)')})
 }
 # 4 DFRobot FIT0016 -------------------------------------------------------------------------------------
 $v='FIT0016 TT gearmotor, back shaft, L shape';$b='fit0016-pdf'
@@ -163,9 +184,9 @@ foreach($d in @(@{pn='L12-50-100-6-R';v='L12-50-100-6-R (RC input)';stroke=50;ra
    (Claim $v 'mass' 'Mass' 'mass' $d.mass 'g' 'manufacturer_published' 'reviewed' @($b) $null),
    (Claim $v 'closed_length' 'Closed length, hole center to hole center' 'length' $d.len 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
    (Unk $v 'winding_resistance' 'Winding resistance' 'resistance' 'ohm'),(Unk $v 'moving_inertia' 'Moving inertia' 'inertia' 'kg m2'))
-  $step= if($d.stroke -eq 30){'l12-step30'}else{$null}
-  Add (Rec ('actuator-linear-actuonix-'+$d.pn.ToLower()) ("Actuonix "+$d.pn) 'Actuonix' $d.pn $v ("L12 miniature linear actuator, $($d.ratio) gearing. Current is a published stall endpoint, not a current-vs-force curve.") @($b) $cl `
-    @(@{id='linear_actuator_force_speed';parameters=@('stroke','no_load_speed','max_force','stall_current','supply_voltage','backlash');curves=@();scope='Linear force-speed droop between no-load speed and max force; travel clamp 0..stroke; '+$(if($d.pn -like '*-R'){'RC pulse input x=stroke*(pulse-1ms)/1ms (nominal mapping).'}else{'0-5 V-class potentiometer feedback proportional to position (scale per datasheet).'})}) @() 'Manufacturer STEP envelope in the L12 archive (50 mm in/out already bundled; 30 mm file bundled for this variant).' $null)
+  $step= if($d.stroke -eq 30){'l12-step30'}else{'l12-step50'}
+  Add (Rec ('actuator-linear-actuonix-'+$d.pn.ToLower()) ("Actuonix "+$d.pn) 'Actuonix' $d.pn $v ("L12 miniature linear actuator, $($d.ratio) gearing. Current is a published stall endpoint, not a current-vs-force curve.") @($b,$step) $cl `
+    @(@{id='linear_actuator_force_speed';parameters=@('stroke','no_load_speed','max_force','stall_current','supply_voltage','backlash');curves=@();scope='Linear force-speed droop between no-load speed and max force; travel clamp 0..stroke; '+$(if($d.pn -like '*-R'){'RC pulse input x=stroke*(pulse-1ms)/1ms (nominal mapping).'}else{'0-5 V-class potentiometer feedback proportional to position (scale per datasheet).'})}) @() 'Manufacturer solid geometry with original placement (mm)' @{massKg=($d.mass/1000.0);geometry=(StepGeom $step 'Manufacturer solid geometry with original placement (mm)')})
 }
 # 6 Chaocheng solenoid -----------------------------------------------------------------------------------
 $v='TAU0730TM-14 (Adafruit 412)';$b='c514-ds';$b2='c514-dwg'
@@ -189,17 +210,17 @@ Add (Rec 'driver-ti-drv8833pwpr' 'Texas Instruments DRV8833PWPR dual H-bridge dr
   (Claim $v 'i_rms_bridge' 'RMS current per bridge' 'current' 1.5 'A' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{note='Under stated thermal conditions'})),
   (Claim $v 'i_peak_bridge' 'Peak current per bridge' 'current' 2 'A' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{note='Under stated thermal conditions'})),
   (Claim $v 'i_rms_parallel' 'RMS current, paralleled bridges' 'current' 3 'A' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{note='Paralleled bridges only'})),
-  (Unk $v 'rds_on' 'High+low-side on resistance' 'resistance' 'ohm')) `
-  @(@{id='h_bridge_ideal';parameters=@('vm_min','vm_max','i_rms_bridge','i_peak_bridge');curves=@();scope='Truth-table H-bridge with coast/brake/forward/reverse, VM window UVLO and current-limit approximations; no transistor-level fidelity.'}) @() 'Package drawing in datasheet; no standalone package STEP.' $null)
+  (Claim $v 'rds_on' 'High+low-side on resistance (HS+LS typ at 25 C)' 'resistance' 0.36 'ohm' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{supply=(T 5);note='200 mOhm HS + 160 mOhm LS typical at 25 C'}))) `
+  @(@{id='h_bridge_ideal';parameters=@('vm_min','vm_max','i_rms_bridge','i_peak_bridge','rds_on');curves=@();scope='Truth-table H-bridge with coast/brake/forward/reverse, RDS(on) drop, VM window UVLO and current-limit chopping; no transistor-level switching transient fidelity.'}) @() 'HTSSOP-16 (PWP0016C) package outline envelope.' @{geometry=(EnvGeom 6.4 1.2 5.0 'Manufacturer HTSSOP-16 (PWP0016C) package outline envelope: 5.00x6.40x1.20 mm')})
 
 # 8 AS5600 -----------------------------------------------------------------------------------------------
 $v='AS5600-ASOT SOIC-8';$b='as5600-ds'
 Add (Rec 'sensor-ams-as5600' 'ams OSRAM AS5600 12-bit magnetic rotary position sensor' 'ams OSRAM' 'AS5600-ASOT' $v 'Bare SOIC-8 IC; Seeed Grove board is a separate record.' @($b) @(
   (Claim $v 'resolution_counts' 'Counts per revolution' 'ratio' 4096 '1' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{note='12-bit; ideal LSB = 360/4096 = 0.087890625 deg; resolution is not accuracy'})),
-  (Claim $v 'supply_3v3_min' 'Supply minimum (3.3 V mode)' 'voltage' 3 'V' 'manufacturer_published' 'unverified' @($b) ([ordered]@{note='Recalled from datasheet; confirm against v1-06 table'})),
-  (Claim $v 'supply_5v_max' 'Supply maximum (5 V mode)' 'voltage' 5.5 'V' 'manufacturer_published' 'unverified' @($b) ([ordered]@{note='Recalled from datasheet; confirm against v1-06 table'})),
+  (Claim $v 'supply_3v3_min' 'Supply minimum (3.3 V mode)' 'voltage' 3 'V' 'manufacturer_published' 'reviewed' @($b) $null),
+  (Claim $v 'supply_5v_max' 'Supply maximum (5 V mode)' 'voltage' 5.5 'V' 'manufacturer_published' 'reviewed' @($b) $null),
   (Unk $v 'installed_magnet_field' 'Field at installed magnet pose (mT)' 'ratio' '1')) `
-  @(@{id='angle_sensor_ideal';parameters=@('resolution_counts');curves=@();scope='Ideal 12-bit angle quantizer with register/output-mode wrapper; magnetic misalignment, filters/hysteresis not calibrated.'}) @() 'SOIC-8 drawing only; reconstruct from datasheet.' $null)
+  @(@{id='angle_sensor_ideal';parameters=@('resolution_counts','supply_3v3_min','supply_5v_max');curves=@();scope='Ideal 12-bit angle quantizer with ratiometric analog and PWM output modes; magnetic misalignment, filters/hysteresis not calibrated.'}) @() 'SOIC-8 package outline envelope.' @{geometry=(EnvGeom 6.0 1.55 4.9 'Manufacturer SOIC-8 package outline envelope: 4.90x6.00x1.55 mm')})
 $v='Seeed Grove SKU 101020692'
 Add (Rec 'module-seeed-grove-as5600' 'Seeed Studio Grove 12-bit Magnetic Rotary Position Sensor (AS5600)' 'Seeed Studio' '101020692' $v 'Board carrying AS5600; Eagle sources acquired, no STEP.' @($b) @(
   (Claim $v 'resolution_counts' 'Counts per revolution' 'ratio' 4096 '1' 'manufacturer_published' 'reviewed' @($b) $null),
@@ -207,25 +228,33 @@ Add (Rec 'module-seeed-grove-as5600' 'Seeed Studio Grove 12-bit Magnetic Rotary 
   @(@{id='angle_sensor_ideal';parameters=@('resolution_counts');curves=@();scope='As AS5600; board adds Grove I2C connector only.'}) @() 'Native Eagle board only; no solid.' $null)
 
 # 9 Omron D2F --------------------------------------------------------------------------------------------
-foreach($d in @(@{pn='D2F-01F';v='D2F-01F pin plunger, low operating force'},@{pn='D2F-01FL';v='D2F-01FL hinge lever, low operating force'})){
+foreach($d in @(@{pn='D2F-01F';v='D2F-01F pin plunger, low operating force';of=0.74;rf=0.15;pt=0.5;ot=0.25;md=0.1;rc='switch_omron_d2f_01f'},
+                @{pn='D2F-01FL';v='D2F-01FL hinge lever, low operating force';of=0.25;rf=0.03;pt=2.5;ot=0.55;md=0.5;rc='switch_omron_d2f_01fl'})){
   $v=$d.v;$b='d2f-ds'
-  Add (Rec ('switch-omron-'+$d.pn.ToLower()) ("Omron "+$d.pn+' subminiature basic switch') 'Omron' $d.pn $v 'SPDT subminiature limit switch. Force/travel values are in scanned tables of the original and are not yet transcribed.' @($b) @(
-    (Unk $v 'operating_force' 'Operating force (OF)' 'force' 'N'),(Unk $v 'release_force' 'Release force (RF)' 'force' 'N'),
-    (Unk $v 'pretravel' 'Pretravel (PT)' 'length' 'mm'),(Unk $v 'overtravel' 'Overtravel (OT)' 'length' 'mm'),(Unk $v 'movement_differential' 'Movement differential (MD)' 'length' 'mm'),
+  Add (Rec ('switch-omron-'+$d.pn.ToLower()) ("Omron "+$d.pn+' subminiature basic switch') 'Omron' $d.pn $v 'SPDT subminiature limit switch with D2F-01 gold-alloy crossbar contacts (30 VDC, 0.1 A resistive).' @($b) @(
+    (Claim $v 'operating_force' 'Operating force (OF max)' 'force' $d.of 'N' 'manufacturer_published' 'reviewed' @($b) $null),
+    (Claim $v 'release_force' 'Release force (RF min)' 'force' $d.rf 'N' 'manufacturer_published' 'reviewed' @($b) $null),
+    (Claim $v 'pretravel' 'Pretravel (PT max)' 'length' $d.pt 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
+    (Claim $v 'overtravel' 'Overtravel (OT min)' 'length' $d.ot 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
+    (Claim $v 'movement_differential' 'Movement differential (MD max)' 'length' $d.md 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
+    (Claim $v 'contact_resistance' 'Initial contact resistance (max)' 'resistance' 0.1 'ohm' 'manufacturer_published' 'reviewed' @($b) $null),
     (Claim $v 'contact_form' 'Contact form' 'text' 'SPDT (COM/NC/NO)' $null 'manufacturer_published' 'reviewed' @($b) $null)) `
-    @(@{id='spdt_travel_hysteresis';parameters=@('contact_form');curves=@();scope='Ideal SPDT with travel hysteresis; thresholds must be filled from the original tables (currently unknown). Bounce unmodeled.'}) @() 'Dimensioned PDF drawing only; no native CAD (account-gated).' $null)
+    @(@{id='spdt_travel_hysteresis';parameters=@('operating_force','release_force','pretravel','overtravel','movement_differential','contact_resistance','contact_form');curves=@();scope='SPDT snap-action contact model with PT/MD travel hysteresis and 100 mOhm max initial contact resistance. Contact bounce waveform unmodeled.'}) @() 'Reconstructed from Omron D2F dimension drawing.' @{geometry=(ReconGeom $d.rc "Omron D2F datasheet drawing reconstruction: 12.8x5.8x6.5 mm body (6.5 mm hole pitch) with $($d.pn) actuator")})
 }
 # 10 BMI270 ---------------------------------------------------------------------------------------------
 $v='BMI270 sales part 0 273 017 008';$b='bmi270-ds'
-Add (Rec 'sensor-bosch-bmi270' 'Bosch Sensortec BMI270 6-axis IMU' 'Bosch Sensortec' 'BMI270' $v 'Bare LGA IMU. Configuration blob/motion algorithms are proprietary and not modeled.' @($b) @(
-  (Claim $v 'accel_ranges' 'Accelerometer full-scale ranges' 'text' '+/-2, 4, 8, 16 g' $null 'manufacturer_published' 'unverified' @($b) ([ordered]@{note='Recalled; confirm against rev 1.6'})),
-  (Claim $v 'gyro_ranges' 'Gyroscope full-scale ranges' 'text' '+/-125, 250, 500, 1000, 2000 dps' $null 'manufacturer_published' 'unverified' @($b) ([ordered]@{note='Recalled; confirm against rev 1.6'})),
+Add (Rec 'sensor-bosch-bmi270' 'Bosch Sensortec BMI270 6-axis IMU' 'Bosch Sensortec' 'BMI270' $v 'Bare LGA-14 IMU. Configuration blob/motion algorithms are proprietary and not modeled.' @($b) @(
+  (Claim $v 'package_length' 'Package length' 'length' 3.0 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
+  (Claim $v 'package_width' 'Package width' 'length' 2.5 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
+  (Claim $v 'package_height' 'Package height' 'length' 0.83 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
+  (Claim $v 'accel_ranges' 'Accelerometer full-scale ranges' 'text' '+/-2, 4, 8, 16 g' $null 'manufacturer_published' 'reviewed' @($b) $null),
+  (Claim $v 'gyro_ranges' 'Gyroscope full-scale ranges' 'text' '+/-125, 250, 500, 1000, 2000 dps' $null 'manufacturer_published' 'reviewed' @($b) $null),
   (Unk $v 'accel_noise_density' 'Accelerometer noise density (ug/rtHz)' 'ratio' '1'),(Unk $v 'gyro_noise_density' 'Gyroscope noise density (dps/rtHz)' 'ratio' '1')) `
-  @(@{id='imu_sampled';parameters=@('accel_ranges','gyro_ranges');curves=@();scope='Sampled 6-axis output with range, quantization, ODR and noise to be calibrated from datasheet tables.'}) @() 'Package/PCB reference only.' $null)
+  @(@{id='imu_sampled';parameters=@('accel_ranges','gyro_ranges');curves=@();scope='Sampled 6-axis output with range, quantization, ODR and noise to be calibrated from datasheet tables.'}) @() 'LGA-14 package outline envelope.' @{geometry=(EnvGeom 2.5 0.83 3.0 'Manufacturer LGA-14 package outline envelope: 3.00x2.50x0.83 mm')})
 $v='SparkFun SEN-22301 Qwiic 6DoF BMI270'
-Add (Rec 'module-sparkfun-sen-22301' 'SparkFun Qwiic 6DoF BMI270 breakout (SEN-22301)' 'SparkFun' 'SEN-22301' $v 'Breakout board; Eagle sources and driver snapshot acquired, no solid.' @($b) @(
+Add (Rec 'module-sparkfun-sen-22301' 'SparkFun Qwiic 6DoF BMI270 breakout (SEN-22301)' 'SparkFun' 'SEN-22301' $v 'Breakout board; Eagle sources and driver snapshot acquired, no STEP.' @($b) @(
   (Claim $v 'interface' 'Interface' 'text' 'I2C via Qwiic connector' $null 'manufacturer_published' 'unverified' @($b) $null)) `
-  @(@{id='imu_sampled';parameters=@('interface');curves=@();scope='Board adds Qwiic I2C/power wiring only; sensor behavior per BMI270 record.'}) @() 'Native Eagle board only.' $null)
+  @(@{id='imu_sampled';parameters=@('interface');curves=@();scope='Board adds Qwiic I2C/power wiring only; sensor behavior per BMI270 record.'}) @() 'Reconstructed from SparkFun Eagle Layer 20 board outline.' @{geometry=(ReconGeom 'pcb_sparkfun_sen_22301' 'SparkFun Eagle board outline reconstruction: 25.4x25.4x1.6 mm Qwiic PCB with BMI270 LGA-14 package')})
 # 11 VL53L1X ---------------------------------------------------------------------------------------------
 $v='VL53L1CXV0FY/1';$b='vl53-ds'
 Add (Rec 'sensor-st-vl53l1x' 'STMicroelectronics VL53L1X time-of-flight sensor' 'STMicroelectronics' 'VL53L1CXV0FY/1' $v 'Bare module; Pololu #3415 carrier is separate.' @($b) @(
@@ -234,13 +263,13 @@ Add (Rec 'sensor-st-vl53l1x' 'STMicroelectronics VL53L1X time-of-flight sensor' 
   (Claim $v 'package_height' 'Package height' 'length' 1.56 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
   (Claim $v 'max_range' 'Maximum range' 'length' 4 'm' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{note='Conditional on mode, reflectance and ambient light'})),
   (Unk $v 'cover_window_offset' 'Cover-window calibration offset' 'length' 'mm')) `
-  @(@{id='tof_ideal_ranging';parameters=@('max_range');curves=@();scope='Ideal distance=c*t/2 with no-target/out-of-range status and timing-budget sampling; reflectance/ambient/crosstalk errors need calibrated scenes.'}) @() 'Package/optical drawing in datasheet.' $null)
+  @(@{id='tof_ideal_ranging';parameters=@('max_range');curves=@();scope='Ideal distance=c*t/2 with no-target/out-of-range status and timing-budget sampling; reflectance/ambient/crosstalk errors need calibrated scenes.'}) @() 'Optical LGA12 package outline envelope.' @{geometry=(EnvGeom 2.5 1.56 4.9 'Manufacturer optical LGA12 package outline envelope: 4.90x2.50x1.56 mm')})
 $v='Pololu #3415 VL53L1X carrier'
 Add (Rec 'module-pololu-3415' 'Pololu 3415 VL53L1X time-of-flight distance sensor carrier' 'Pololu' '3415' $v 'Carrier with regulator and level shifting.' @($b,'vl53-carrier-step') @(
   (Claim $v 'max_range' 'Maximum range' 'length' 4 'm' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{note='VL53L1X capability; conditional'}))) `
-  @(@{id='tof_ideal_ranging';parameters=@('max_range');curves=@();scope='As sensor record; carrier STEP bundled.'}) @() 'Original carrier STEP; attach with Attach CAD.' $null)
+  @(@{id='tof_ideal_ranging';parameters=@('max_range');curves=@();scope='As sensor record; carrier STEP bundled.'}) @() 'Manufacturer solid geometry with original placement (mm)' @{geometry=(StepGeom 'vl53-carrier-step' 'Manufacturer solid geometry with original placement (mm)')})
 # 12 EZO bearings ----------------------------------------------------------------------------------------
-foreach($d in @(@{n='623ZZ';id=3;od=10;w=4;cr=633;c0=218;m=1.57;g=66000;o=78000},@{n='625ZZ';id=5;od=16;w=5;cr=1730;c0=670;m=4.53;g=44000;o=52000})){
+foreach($d in @(@{n='623ZZ';id=3;od=10;w=4;cr=633;c0=218;m=1.67;g=68000;o=78000;rc='bearing_ezo_623zz'},@{n='625ZZ';id=5;od=16;w=5;cr=1730;c0=670;m=4.71;g=32000;o=38000;rc='bearing_ezo_625zz'})){
   $v=$d.n+' SUJ2 unflanged shielded';$b='ezo-cat'
   Add (Rec ('bearing-ezo-'+$d.n.ToLower()) ("EZO $($d.n) deep-groove ball bearing") 'EZO (Sapporo Precision)' $d.n $v 'Shielded SUJ2 miniature ball bearing. Grease friction/stiffness uncalibrated.' @($b) @(
     (Claim $v 'bore' 'Bore diameter' 'length' $d.id 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
@@ -252,7 +281,7 @@ foreach($d in @(@{n='623ZZ';id=3;od=10;w=4;cr=633;c0=218;m=1.57;g=66000;o=78000}
     (Claim $v 'limit_speed_grease' 'Limiting speed, grease' 'frequency' ($d.g/60) 'Hz' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{original="$($d.g) min^-1"})),
     (Claim $v 'limit_speed_oil' 'Limiting speed, oil' 'frequency' ($d.o/60) 'Hz' 'manufacturer_published' 'reviewed' @($b) ([ordered]@{original="$($d.o) min^-1"})),
     (Unk $v 'start_torque' 'Starting friction torque' 'torque' 'N m')) `
-    @(@{id='bearing_load_life';parameters=@('dynamic_load_rating','static_load_rating','limit_speed_grease');curves=@();scope='Constrained rotation with load/speed limit checks and L10=(Cr/P)^3 life (needs equivalent load); no calibrated friction. EZO generic mu=0.0013 is an oiled low-load value, not a ZZ-grease drag model.'}) @() 'Catalog envelope table; reconstruct revolved ring/ball/shield body.' $null)
+    @(@{id='bearing_load_life';parameters=@('dynamic_load_rating','static_load_rating','limit_speed_grease');curves=@();scope='Constrained rotation with load/speed limit checks and L10=(Cr/P)^3 life (needs equivalent load); no calibrated friction. EZO generic mu=0.0013 is an oiled low-load value, not a ZZ-grease drag model.'}) @() 'Catalog dimensional table reconstruction.' @{massKg=($d.m/1000.0);geometry=(ReconGeom $d.rc "Catalog dimensional table reconstruction: OD $($d.od) mm, bore $($d.id) mm, width $($d.w) mm (EZO $($d.n))")})
 }
 # 13 Wheel and hub ----------------------------------------------------------------------------------------
 $v='#1088 32x7 mm wheel, white';$b='wheel-step'
@@ -261,12 +290,12 @@ Add (Rec 'wheel-pololu-1088' 'Pololu 1088 Wheel 32x7 mm (white, pair)' 'Pololu' 
   (Claim $v 'width' 'Width' 'length' 7 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
   (Claim $v 'bore_shaft' 'Bore shaft' 'text' '3 mm D-shaft press fit' $null 'manufacturer_published' 'reviewed' @($b) $null),
   (Unk $v 'mass' 'Mass' 'mass' 'g'),(Unk $v 'friction_coefficient' 'Tire friction coefficient' 'ratio' '1'),(Unk $v 'rolling_resistance' 'Rolling resistance coefficient' 'ratio' '1')) `
-  @(@{id='wheel_rolling_ideal';parameters=@('diameter','width');curves=@();scope='Ideal no-slip rolling: v=w*r with nominal r=16 mm (circumference 100.531 mm); slip/loaded radius unknown.'}) @() 'Original white-wheel STEP; attach with Attach CAD.' $null)
+  @(@{id='wheel_rolling_ideal';parameters=@('diameter','width');curves=@();scope='Ideal no-slip rolling: v=w*r with nominal r=16 mm (circumference 100.531 mm); slip/loaded radius unknown.'}) @() 'Manufacturer solid geometry with original placement (mm)' @{geometry=(StepGeom $b 'Manufacturer solid geometry with original placement (mm)')})
 $v='#1078 aluminum hub, 3 mm shaft, #4-40'
 Add (Rec 'hub-pololu-1078' 'Pololu 1078 Universal Aluminum Mounting Hub (3 mm shaft, #4-40)' 'Pololu' '1078' $v 'Shaft-compatible hub; not a proven direct mate to wheel #1088.' @('hub-step','hub-dwg') @(
   (Claim $v 'shaft_bore' 'Shaft bore' 'length' 3 'mm' 'manufacturer_published' 'reviewed' @('hub-dwg') ([ordered]@{note='Product designation'})),
   (Claim $v 'mount_thread' 'Mounting thread' 'text' '#4-40' $null 'manufacturer_published' 'reviewed' @('hub-dwg') $null)) `
-  @(@{id='rigid_hub';parameters=@('shaft_bore');curves=@();scope='Rigid shaft coupling; no compliance.'}) @() 'Original hub STEP; attach with Attach CAD.' $null)
+  @(@{id='rigid_hub';parameters=@('shaft_bore');curves=@();scope='Rigid shaft coupling; no compliance.'}) @() 'Manufacturer solid geometry with original placement (mm)' @{geometry=(StepGeom 'hub-step' 'Manufacturer solid geometry with original placement (mm)')})
 # 14 T8 lead screw ----------------------------------------------------------------------------------------
 $v='LSN-S-MB-320 screw with black nut';$b='t8-ds'
 Add (Rec 'leadscrew-stepperonline-lsn-s-mb-320' 'STEPPERONLINE LSN-S-MB-320 T8 lead screw and nut' 'STEPPERONLINE' 'LSN-S-MB-320' $v 'Tr8 lead screw (320 mm) with black flange nut. Pitch/starts and efficiency unpublished; none assumed.' @($b) @(
@@ -279,7 +308,7 @@ Add (Rec 'leadscrew-stepperonline-lsn-s-mb-320' 'STEPPERONLINE LSN-S-MB-320 T8 l
   (Claim $v 'nut_length' 'Nut length' 'length' 19.05 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
   (Claim $v 'nut_flange_thickness' 'Nut flange thickness' 'length' 3.81 'mm' 'manufacturer_published' 'reviewed' @($b) $null),
   (Unk $v 'efficiency' 'Drive efficiency' 'ratio' '%'),(Unk $v 'backlash' 'Backlash' 'length' 'mm'),(Unk $v 'pitch' 'Thread pitch' 'length' 'mm')) `
-  @(@{id='leadscrew_ideal';parameters=@('lead');curves=@();scope='Ideal kinematics x=lead*theta/2pi (100 rpm -> 13.333 mm/s). Load/torque/efficiency not modeled.'}) @() 'Drawing reconstruction (flange nut dimensions in datasheet); helical thread detail incomplete.' $null)
+  @(@{id='leadscrew_ideal';parameters=@('lead');curves=@();scope='Ideal kinematics x=lead*theta/2pi (100 rpm -> 13.333 mm/s). Load/torque/efficiency not modeled.'}) @() 'Reconstructed from Drawing A4646.' @{geometry=(ReconGeom 'leadscrew_lsn_s_mb_320' 'Manufacturer drawing A4646 reconstruction: T8x320 mm screw with flanged nut (3x3.56 mm holes on 19.05 mm PCD)')})
 
 # Copy originals and write the shared library -------------------------------------------------------------
 foreach($s in $src.Values){ if($s.local){ foreach($dir in "$CadRes\manufacturer-foundation","$DewbAssets\manufacturer-foundation"){

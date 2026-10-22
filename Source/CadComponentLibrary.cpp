@@ -36,10 +36,46 @@ bool CadComponentLibrary::ensureLoaded(juce::String& error)
     juce::Array<juce::var> bundled;
     if(!decode(juce::JSON::parse(juce::String::fromUTF8(EngineeringData::componentlibraryseed_json,EngineeringData::componentlibraryseed_jsonSize)),bundled,error))return false;
     for(const auto& stock:craft::templates())bundled.add(stock);
+    for(const auto* libName:{"manufacturer-reference-library.json","robotics-component-library.json"})
+    {
+        juce::File libFile=juce::File::getCurrentWorkingDirectory().getChildFile("Resources").getChildFile(libName);
+        if(!libFile.existsAsFile())libFile=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile(libName);
+        juce::Array<juce::var> extra;juce::String ignore;
+        if(libFile.existsAsFile()&&decode(juce::JSON::parse(libFile),extra,ignore))
+        {
+            for(auto& item:extra)
+            {
+                put(item,"engineeringAssetRoot",libFile.getParentDirectory().getFullPathName());
+                if(item["category"].toString()=="Manufacturer References")
+                {
+                    const auto id=item["id"].toString();
+                    put(item,"category",id.startsWith("motor-")?"Motion/Motors":id.startsWith("actuator-")?"Motion/Actuators":"Electrical/Drivers");
+                }
+                if(item["geometry"]["kind"].toString()=="none"&&!engineering::specification(item).isVoid())
+                    for(const auto& s:*engineering::specification(item)["sources"].getArray())
+                    {
+                        const auto p=s["path"].toString();
+                        if(p.endsWith(".step")||p.endsWith(".stp"))
+                        {
+                            auto g=object();put(g,"kind","brep");put(g,"level","manufacturer");put(g,"label","Manufacturer solid geometry with original placement (mm)");
+                            put(g,"sourceFile",s["originalFilename"]);put(g,"sourcePath",p);put(g,"sourceSha256",s["sha256"]);put(item,"geometry",g);break;
+                        }
+                    }
+                bundled.add(item);
+            }
+        }
+    }
     bool extended=false;
     for(const auto& stock:bundled)
     {
-        bool present=false;for(const auto& entry:next)if(entry["id"]==stock["id"]){present=true;break;}
+        bool present=false;
+        for(auto& entry:next)if(entry["id"]==stock["id"])
+        {
+            present=true;
+            if(!(bool)entry["edited"]&&entry["geometry"]["kind"].toString()=="none"&&stock["geometry"]["kind"].toString()!="none")
+            {if(!validate(stock,error))return false;entry=stock;extended=true;}
+            break;
+        }
         if(!present){if(!validate(stock,error))return false;next.add(stock);extended=true;}
     }
     if((!file.existsAsFile()||extended)&&!save(next,error))return false;entries=std::move(next);loaded=true;return true;

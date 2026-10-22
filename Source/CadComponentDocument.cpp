@@ -50,7 +50,21 @@ bool CadDocument::insertComponent(const juce::var& record,const CadFrame& placem
 {
     if(!validate(record,error))return false;
     for(double value:{placement.x,placement.y,placement.z,placement.qw,placement.qx,placement.qy,placement.qz})if(!std::isfinite(value)){error="Component placement must be finite.";return false;}
-    const auto snapshot=clone(record);const auto stamp=digest(juce::JSON::toString(snapshot));
+    auto snapshot=clone(record);
+    if(snapshot["geometry"]["kind"].toString()=="brep"&&snapshot["geometry"]["data"].toString().isEmpty())
+    {
+        if(snapshot["geometry"]["sourcePath"].toString().isNotEmpty())
+        {
+            const auto asset=components::resolveAssetFile(snapshot,snapshot["geometry"]["sourcePath"].toString());
+            if(!asset.existsAsFile()||!components::attachModel(snapshot,asset,error)){if(error.isEmpty())error="Missing associated manufacturer CAD source.";return false;}
+        }
+        else if(snapshot["geometry"]["drawingReconstruction"].toString().isNotEmpty())
+        {
+            const auto built=components::shape(snapshot,error);if(built.IsNull())return false;
+            auto geom=snapshot["geometry"];put(geom,"data",components::encodeShape(built));
+        }
+    }
+    const auto stamp=digest(juce::JSON::toString(snapshot));
     return mutate([&](juce::String& e)
     {
         juce::String featureId;

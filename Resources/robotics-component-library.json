@@ -10,7 +10,7 @@
                         "model":  "SG90",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Servos",
                         "description":  "Micro positional servo. Dimension/speed/voltage entries conflict across TowerPro pages; spline, PWM endpoints and electrical dynamics unpublished. Resistance/derived values are in the model scope text; only explicitly published numbers are claims.",
                         "properties":  [
                                            {
@@ -229,8 +229,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Envelope reference only (manufacturer housing drawing); no solid supplied. Reconstruct from drawing dimensions."
+                                         "kind":  "envelope",
+                                         "level":  "envelope",
+                                         "label":  "Nominal housing envelope (23x12.2x29 mm); manufacturer pages contain conflicting dimension entries",
+                                         "widthMm":  12.2,
+                                         "heightMm":  29,
+                                         "lengthMm":  23
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -276,7 +280,7 @@
                         "model":  "MG90S",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Servos",
                         "description":  "Micro positional servo. Dimension/speed/voltage entries conflict across TowerPro pages; spline, PWM endpoints and electrical dynamics unpublished. Resistance/derived values are in the model scope text; only explicitly published numbers are claims.",
                         "properties":  [
                                            {
@@ -495,8 +499,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Envelope reference only (manufacturer housing drawing); no solid supplied. Reconstruct from drawing dimensions."
+                                         "kind":  "envelope",
+                                         "level":  "envelope",
+                                         "label":  "Nominal housing envelope (22.8x12.2x28.5 mm); manufacturer pages contain conflicting dimension entries",
+                                         "widthMm":  12.2,
+                                         "heightMm":  28.5,
+                                         "lengthMm":  22.8
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -542,7 +550,7 @@
                         "model":  "FS90R",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Servos",
                         "description":  "Continuous-rotation micro servo; V1.0 datasheet values. V2.0 is a separate record (drawings/spline differ).",
                         "properties":  [
                                            {
@@ -757,8 +765,10 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Drawing reconstruction needed; V1.0 and V2.0 drawings differ."
+                                         "kind":  "brep",
+                                         "level":  "simplified",
+                                         "label":  "Manufacturer V1.0 drawing reconstruction: 22.5x12.1x23.4 mm case, 32.3 mm flange (27.7 mm hole pitch) and output boss/spline",
+                                         "drawingReconstruction":  "servo_feetech_fs90r_v1"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -795,7 +805,8 @@
                                                                                  }
                                                                              ]
                                                               }
-                                        }
+                                        },
+                        "massKg":  0.009
                     },
                     {
                         "id":  "servo-continuous-feetech-fs90r-v2",
@@ -805,7 +816,7 @@
                         "model":  "FS90R",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Servos",
                         "description":  "Continuous-rotation micro servo; V2.0 datasheet. Only pulse timing transcribed; speed/torque tables must be read from the V2.0 PDF before use.",
                         "properties":  [
                                            {
@@ -962,7 +973,7 @@
                         "model":  "2379",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Motors",
                         "description":  "Same motor as #2365 with extended rear shaft for encoder hardware.",
                         "properties":  [
                                            {
@@ -1148,8 +1159,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Original manufacturer STEP; attach with Attach CAD / attachModel."
+                                         "kind":  "brep",
+                                         "level":  "manufacturer",
+                                         "label":  "Manufacturer solid geometry with original placement (mm)",
+                                         "sourceFile":  "mmgm-pm-ext-shaft.step",
+                                         "sourcePath":  "manufacturer-foundation/mmgm-pm-ext-shaft.step",
+                                         "sourceSha256":  "4d772ce3d6a225218d41ceb54c81390809252c771509ca18f93bf5e01161f02f"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -1242,7 +1257,7 @@
                         "model":  "5134",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Motors",
                         "description":  "Same motor as #2365 with integrated 12 CPR (motor-shaft) quadrature encoder, back connector.",
                         "properties":  [
                                            {
@@ -1444,8 +1459,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Original manufacturer STEP; attach with Attach CAD / attachModel."
+                                         "kind":  "brep",
+                                         "level":  "manufacturer",
+                                         "label":  "Manufacturer solid geometry with original placement (mm)",
+                                         "sourceFile":  "mmgm-pm-enc-back-con.step",
+                                         "sourcePath":  "manufacturer-foundation/mmgm-pm-enc-back-con.step",
+                                         "sourceSha256":  "a010728f958a5e4d67dd6c7a8ac9892e4c47f0d0583b9a318f128276c7794cc1"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -1539,7 +1558,7 @@
                         "model":  "FIT0016",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Motors",
                         "description":  "DFRobot-branded TT gearmotor; underlying factory undisclosed. Documentation reports 160 and 180 rpm no-load at 6 V; 160 rpm (current product page) is used. Stall data is catalog-level, not measured.",
                         "properties":  [
                                            {
@@ -1763,7 +1782,7 @@
                         "model":  "L12-50-100-6-R",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Actuators",
                         "description":  "L12 miniature linear actuator, 100:1 gearing. Current is a published stall endpoint, not a current-vs-force curve.",
                         "properties":  [
                                            {
@@ -1950,8 +1969,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Manufacturer STEP envelope in the L12 archive (50 mm in/out already bundled; 30 mm file bundled for this variant)."
+                                         "kind":  "brep",
+                                         "level":  "manufacturer",
+                                         "label":  "Manufacturer solid geometry with original placement (mm)",
+                                         "sourceFile":  "l12_50mm_in.stp",
+                                         "sourcePath":  "manufacturer-foundation/l12_50mm_in.stp",
+                                         "sourceSha256":  "31bb03591aef6acff562b1dc832e9df23ddb3ca56f12438d3cc323e6a5a2825f"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -1965,6 +1988,14 @@
                                                                                       "revision":  "F (November 2019)",
                                                                                       "path":  "manufacturer-foundation/ActuonixL12Datasheet.pdf",
                                                                                       "sha256":  "461dc22b85db497409182ac3cc02a5171fa0ea7817ed0f419b2c37708bcfeee3"
+                                                                                  },
+                                                                                  {
+                                                                                      "id":  "l12-step50",
+                                                                                      "originalFilename":  "l12_50mm_in.stp",
+                                                                                      "url":  "https://www.actuonix.com/assets/documents/L12_STP.zip",
+                                                                                      "revision":  "Member of L12_STP.zip (undated family archive)",
+                                                                                      "path":  "manufacturer-foundation/l12_50mm_in.stp",
+                                                                                      "sha256":  "31bb03591aef6acff562b1dc832e9df23ddb3ca56f12438d3cc323e6a5a2825f"
                                                                                   }
                                                                               ],
                                                                   "curves":  [
@@ -1988,7 +2019,8 @@
                                                                                  }
                                                                              ]
                                                               }
-                                        }
+                                        },
+                        "massKg":  0.04
                     },
                     {
                         "id":  "actuator-linear-actuonix-l12-30-210-12-p",
@@ -1998,7 +2030,7 @@
                         "model":  "L12-30-210-12-P",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Actuators",
                         "description":  "L12 miniature linear actuator, 210:1 gearing. Current is a published stall endpoint, not a current-vs-force curve.",
                         "properties":  [
                                            {
@@ -2185,8 +2217,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Manufacturer STEP envelope in the L12 archive (50 mm in/out already bundled; 30 mm file bundled for this variant)."
+                                         "kind":  "brep",
+                                         "level":  "manufacturer",
+                                         "label":  "Manufacturer solid geometry with original placement (mm)",
+                                         "sourceFile":  "l12_30mm_in.stp",
+                                         "sourcePath":  "manufacturer-foundation/l12_30mm_in.stp",
+                                         "sourceSha256":  "40cb33c57bf0f2b667d7a2ed8dafb0e4b168ff38c2e0f8266760ecfac2f58a20"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -2200,6 +2236,14 @@
                                                                                       "revision":  "F (November 2019)",
                                                                                       "path":  "manufacturer-foundation/ActuonixL12Datasheet.pdf",
                                                                                       "sha256":  "461dc22b85db497409182ac3cc02a5171fa0ea7817ed0f419b2c37708bcfeee3"
+                                                                                  },
+                                                                                  {
+                                                                                      "id":  "l12-step30",
+                                                                                      "originalFilename":  "l12_30mm_in.stp",
+                                                                                      "url":  "https://www.actuonix.com/assets/images/datasheets/L12_STP.zip",
+                                                                                      "revision":  "Member of L12_STP.zip (undated family archive)",
+                                                                                      "path":  "manufacturer-foundation/l12_30mm_in.stp",
+                                                                                      "sha256":  "40cb33c57bf0f2b667d7a2ed8dafb0e4b168ff38c2e0f8266760ecfac2f58a20"
                                                                                   }
                                                                               ],
                                                                   "curves":  [
@@ -2223,7 +2267,8 @@
                                                                                  }
                                                                              ]
                                                               }
-                                        }
+                                        },
+                        "massKg":  0.034
                     },
                     {
                         "id":  "solenoid-chaocheng-tau0730tm-14",
@@ -2233,7 +2278,7 @@
                         "model":  "TAU0730TM-14",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Electrical/Actuators",
                         "description":  "Push-pull open-frame solenoid sold as Adafruit #412. OEM drawing travel 4.9 mm; retail page lists 5.5 mm (unresolved).",
                         "properties":  [
                                            {
@@ -2457,7 +2502,7 @@
                         "model":  "DRV8833PWPR",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Electrical/Drivers",
                         "description":  "Bare IC (PWP HTSSOP-16). Pololu #2130 carrier is the separate record driver-pololu-2130.",
                         "properties":  [
                                            {
@@ -2542,21 +2587,33 @@
                                            },
                                            {
                                                "id":  "rds_on",
-                                               "label":  "High+low-side on resistance",
+                                               "label":  "High+low-side on resistance (HS+LS typ at 25 C)",
                                                "quantity":  "resistance",
-                                               "value":  null,
+                                               "value":  0.36,
                                                "unit":  "ohm",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+                                                                  "supply":  {
+                                                                                 "quantity":  "voltage",
+                                                                                 "value":  5,
+                                                                                 "unit":  "V"
+                                                                             },
+                                                                  "note":  "200 mOhm HS + 160 mOhm LS typical at 25 C"
                                                               },
                                                "variant":  "DRV8833PWPR (HTSSOP-16 PWP)",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "drv8833-ds"
+                                                              ]
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Package drawing in datasheet; no standalone package STEP."
+                                         "kind":  "envelope",
+                                         "level":  "envelope",
+                                         "label":  "Manufacturer HTSSOP-16 (PWP0016C) package outline envelope: 5.00x6.40x1.20 mm",
+                                         "widthMm":  6.4,
+                                         "heightMm":  1.2,
+                                         "lengthMm":  5
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -2582,12 +2639,13 @@
                                                                                                         "vm_min",
                                                                                                         "vm_max",
                                                                                                         "i_rms_bridge",
-                                                                                                        "i_peak_bridge"
+                                                                                                        "i_peak_bridge",
+                                                                                                        "rds_on"
                                                                                                     ],
                                                                                      "curveRefs":  [
 
                                                                                                    ],
-                                                                                     "scope":  "Truth-table H-bridge with coast/brake/forward/reverse, VM window UVLO and current-limit approximations; no transistor-level fidelity."
+                                                                                     "scope":  "Truth-table H-bridge with coast/brake/forward/reverse, RDS(on) drop, VM window UVLO and current-limit chopping; no transistor-level switching transient fidelity."
                                                                                  }
                                                                              ]
                                                               }
@@ -2601,7 +2659,7 @@
                         "model":  "AS5600-ASOT",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Electrical/Sensors",
                         "description":  "Bare SOIC-8 IC; Seeed Grove board is a separate record.",
                         "properties":  [
                                            {
@@ -2627,11 +2685,11 @@
                                                "value":  3,
                                                "unit":  "V",
                                                "conditions":  {
-                                                                  "note":  "Recalled from datasheet; confirm against v1-06 table"
+
                                                               },
                                                "variant":  "AS5600-ASOT SOIC-8",
                                                "provenance":  "manufacturer_published",
-                                               "verification":  "unverified",
+                                               "verification":  "reviewed",
                                                "sourceRefs":  [
                                                                   "as5600-ds"
                                                               ]
@@ -2643,11 +2701,11 @@
                                                "value":  5.5,
                                                "unit":  "V",
                                                "conditions":  {
-                                                                  "note":  "Recalled from datasheet; confirm against v1-06 table"
+
                                                               },
                                                "variant":  "AS5600-ASOT SOIC-8",
                                                "provenance":  "manufacturer_published",
-                                               "verification":  "unverified",
+                                               "verification":  "reviewed",
                                                "sourceRefs":  [
                                                                   "as5600-ds"
                                                               ]
@@ -2667,8 +2725,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "SOIC-8 drawing only; reconstruct from datasheet."
+                                         "kind":  "envelope",
+                                         "level":  "envelope",
+                                         "label":  "Manufacturer SOIC-8 package outline envelope: 4.90x6.00x1.55 mm",
+                                         "widthMm":  6,
+                                         "heightMm":  1.55,
+                                         "lengthMm":  4.9
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -2691,12 +2753,14 @@
                                                                                  {
                                                                                      "id":  "angle_sensor_ideal",
                                                                                      "parameters":  [
-                                                                                                        "resolution_counts"
+                                                                                                        "resolution_counts",
+                                                                                                        "supply_3v3_min",
+                                                                                                        "supply_5v_max"
                                                                                                     ],
                                                                                      "curveRefs":  [
 
                                                                                                    ],
-                                                                                     "scope":  "Ideal 12-bit angle quantizer with register/output-mode wrapper; magnetic misalignment, filters/hysteresis not calibrated."
+                                                                                     "scope":  "Ideal 12-bit angle quantizer with ratiometric analog and PWM output modes; magnetic misalignment, filters/hysteresis not calibrated."
                                                                                  }
                                                                              ]
                                                               }
@@ -2710,7 +2774,7 @@
                         "model":  "101020692",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Electrical/Sensors",
                         "description":  "Board carrying AS5600; Eagle sources acquired, no STEP.",
                         "properties":  [
                                            {
@@ -2787,73 +2851,104 @@
                         "model":  "D2F-01F",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
-                        "description":  "SPDT subminiature limit switch. Force/travel values are in scanned tables of the original and are not yet transcribed.",
+                        "category":  "Electrical/Switches",
+                        "description":  "SPDT subminiature limit switch with D2F-01 gold-alloy crossbar contacts (30 VDC, 0.1 A resistive).",
                         "properties":  [
                                            {
                                                "id":  "operating_force",
-                                               "label":  "Operating force (OF)",
+                                               "label":  "Operating force (OF max)",
                                                "quantity":  "force",
-                                               "value":  null,
+                                               "value":  0.74,
                                                "unit":  "N",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01F pin plunger, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "release_force",
-                                               "label":  "Release force (RF)",
+                                               "label":  "Release force (RF min)",
                                                "quantity":  "force",
-                                               "value":  null,
+                                               "value":  0.15,
                                                "unit":  "N",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01F pin plunger, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "pretravel",
-                                               "label":  "Pretravel (PT)",
+                                               "label":  "Pretravel (PT max)",
                                                "quantity":  "length",
-                                               "value":  null,
+                                               "value":  0.5,
                                                "unit":  "mm",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01F pin plunger, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "overtravel",
-                                               "label":  "Overtravel (OT)",
+                                               "label":  "Overtravel (OT min)",
                                                "quantity":  "length",
-                                               "value":  null,
+                                               "value":  0.25,
                                                "unit":  "mm",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01F pin plunger, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "movement_differential",
-                                               "label":  "Movement differential (MD)",
+                                               "label":  "Movement differential (MD max)",
                                                "quantity":  "length",
-                                               "value":  null,
+                                               "value":  0.1,
                                                "unit":  "mm",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01F pin plunger, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
+                                           },
+                                           {
+                                               "id":  "contact_resistance",
+                                               "label":  "Initial contact resistance (max)",
+                                               "quantity":  "resistance",
+                                               "value":  0.1,
+                                               "unit":  "ohm",
+                                               "conditions":  {
+
+                                                              },
+                                               "variant":  "D2F-01F pin plunger, low operating force",
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "contact_form",
@@ -2873,8 +2968,10 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Dimensioned PDF drawing only; no native CAD (account-gated)."
+                                         "kind":  "brep",
+                                         "level":  "simplified",
+                                         "label":  "Omron D2F datasheet drawing reconstruction: 12.8x5.8x6.5 mm body (6.5 mm hole pitch) with D2F-01F actuator",
+                                         "drawingReconstruction":  "switch_omron_d2f_01f"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -2897,12 +2994,18 @@
                                                                                  {
                                                                                      "id":  "spdt_travel_hysteresis",
                                                                                      "parameters":  [
+                                                                                                        "operating_force",
+                                                                                                        "release_force",
+                                                                                                        "pretravel",
+                                                                                                        "overtravel",
+                                                                                                        "movement_differential",
+                                                                                                        "contact_resistance",
                                                                                                         "contact_form"
                                                                                                     ],
                                                                                      "curveRefs":  [
 
                                                                                                    ],
-                                                                                     "scope":  "Ideal SPDT with travel hysteresis; thresholds must be filled from the original tables (currently unknown). Bounce unmodeled."
+                                                                                     "scope":  "SPDT snap-action contact model with PT/MD travel hysteresis and 100 mOhm max initial contact resistance. Contact bounce waveform unmodeled."
                                                                                  }
                                                                              ]
                                                               }
@@ -2916,73 +3019,104 @@
                         "model":  "D2F-01FL",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
-                        "description":  "SPDT subminiature limit switch. Force/travel values are in scanned tables of the original and are not yet transcribed.",
+                        "category":  "Electrical/Switches",
+                        "description":  "SPDT subminiature limit switch with D2F-01 gold-alloy crossbar contacts (30 VDC, 0.1 A resistive).",
                         "properties":  [
                                            {
                                                "id":  "operating_force",
-                                               "label":  "Operating force (OF)",
+                                               "label":  "Operating force (OF max)",
                                                "quantity":  "force",
-                                               "value":  null,
+                                               "value":  0.25,
                                                "unit":  "N",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01FL hinge lever, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "release_force",
-                                               "label":  "Release force (RF)",
+                                               "label":  "Release force (RF min)",
                                                "quantity":  "force",
-                                               "value":  null,
+                                               "value":  0.03,
                                                "unit":  "N",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01FL hinge lever, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "pretravel",
-                                               "label":  "Pretravel (PT)",
+                                               "label":  "Pretravel (PT max)",
                                                "quantity":  "length",
-                                               "value":  null,
+                                               "value":  2.5,
                                                "unit":  "mm",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01FL hinge lever, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "overtravel",
-                                               "label":  "Overtravel (OT)",
+                                               "label":  "Overtravel (OT min)",
                                                "quantity":  "length",
-                                               "value":  null,
+                                               "value":  0.55,
                                                "unit":  "mm",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01FL hinge lever, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "movement_differential",
-                                               "label":  "Movement differential (MD)",
+                                               "label":  "Movement differential (MD max)",
                                                "quantity":  "length",
-                                               "value":  null,
+                                               "value":  0.5,
                                                "unit":  "mm",
                                                "conditions":  {
-                                                                  "note":  "Not published in acquired originals"
+
                                                               },
                                                "variant":  "D2F-01FL hinge lever, low operating force",
-                                               "provenance":  "unknown",
-                                               "verification":  "unverified"
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
+                                           },
+                                           {
+                                               "id":  "contact_resistance",
+                                               "label":  "Initial contact resistance (max)",
+                                               "quantity":  "resistance",
+                                               "value":  0.1,
+                                               "unit":  "ohm",
+                                               "conditions":  {
+
+                                                              },
+                                               "variant":  "D2F-01FL hinge lever, low operating force",
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "d2f-ds"
+                                                              ]
                                            },
                                            {
                                                "id":  "contact_form",
@@ -3002,8 +3136,10 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Dimensioned PDF drawing only; no native CAD (account-gated)."
+                                         "kind":  "brep",
+                                         "level":  "simplified",
+                                         "label":  "Omron D2F datasheet drawing reconstruction: 12.8x5.8x6.5 mm body (6.5 mm hole pitch) with D2F-01FL actuator",
+                                         "drawingReconstruction":  "switch_omron_d2f_01fl"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3026,12 +3162,18 @@
                                                                                  {
                                                                                      "id":  "spdt_travel_hysteresis",
                                                                                      "parameters":  [
+                                                                                                        "operating_force",
+                                                                                                        "release_force",
+                                                                                                        "pretravel",
+                                                                                                        "overtravel",
+                                                                                                        "movement_differential",
+                                                                                                        "contact_resistance",
                                                                                                         "contact_form"
                                                                                                     ],
                                                                                      "curveRefs":  [
 
                                                                                                    ],
-                                                                                     "scope":  "Ideal SPDT with travel hysteresis; thresholds must be filled from the original tables (currently unknown). Bounce unmodeled."
+                                                                                     "scope":  "SPDT snap-action contact model with PT/MD travel hysteresis and 100 mOhm max initial contact resistance. Contact bounce waveform unmodeled."
                                                                                  }
                                                                              ]
                                                               }
@@ -3045,9 +3187,57 @@
                         "model":  "BMI270",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
-                        "description":  "Bare LGA IMU. Configuration blob/motion algorithms are proprietary and not modeled.",
+                        "category":  "Electrical/Sensors",
+                        "description":  "Bare LGA-14 IMU. Configuration blob/motion algorithms are proprietary and not modeled.",
                         "properties":  [
+                                           {
+                                               "id":  "package_length",
+                                               "label":  "Package length",
+                                               "quantity":  "length",
+                                               "value":  3,
+                                               "unit":  "mm",
+                                               "conditions":  {
+
+                                                              },
+                                               "variant":  "BMI270 sales part 0 273 017 008",
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "bmi270-ds"
+                                                              ]
+                                           },
+                                           {
+                                               "id":  "package_width",
+                                               "label":  "Package width",
+                                               "quantity":  "length",
+                                               "value":  2.5,
+                                               "unit":  "mm",
+                                               "conditions":  {
+
+                                                              },
+                                               "variant":  "BMI270 sales part 0 273 017 008",
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "bmi270-ds"
+                                                              ]
+                                           },
+                                           {
+                                               "id":  "package_height",
+                                               "label":  "Package height",
+                                               "quantity":  "length",
+                                               "value":  0.83,
+                                               "unit":  "mm",
+                                               "conditions":  {
+
+                                                              },
+                                               "variant":  "BMI270 sales part 0 273 017 008",
+                                               "provenance":  "manufacturer_published",
+                                               "verification":  "reviewed",
+                                               "sourceRefs":  [
+                                                                  "bmi270-ds"
+                                                              ]
+                                           },
                                            {
                                                "id":  "accel_ranges",
                                                "label":  "Accelerometer full-scale ranges",
@@ -3055,11 +3245,11 @@
                                                "value":  "+/-2, 4, 8, 16 g",
                                                "unit":  null,
                                                "conditions":  {
-                                                                  "note":  "Recalled; confirm against rev 1.6"
+
                                                               },
                                                "variant":  "BMI270 sales part 0 273 017 008",
                                                "provenance":  "manufacturer_published",
-                                               "verification":  "unverified",
+                                               "verification":  "reviewed",
                                                "sourceRefs":  [
                                                                   "bmi270-ds"
                                                               ]
@@ -3071,11 +3261,11 @@
                                                "value":  "+/-125, 250, 500, 1000, 2000 dps",
                                                "unit":  null,
                                                "conditions":  {
-                                                                  "note":  "Recalled; confirm against rev 1.6"
+
                                                               },
                                                "variant":  "BMI270 sales part 0 273 017 008",
                                                "provenance":  "manufacturer_published",
-                                               "verification":  "unverified",
+                                               "verification":  "reviewed",
                                                "sourceRefs":  [
                                                                   "bmi270-ds"
                                                               ]
@@ -3108,8 +3298,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Package/PCB reference only."
+                                         "kind":  "envelope",
+                                         "level":  "envelope",
+                                         "label":  "Manufacturer LGA-14 package outline envelope: 3.00x2.50x0.83 mm",
+                                         "widthMm":  2.5,
+                                         "heightMm":  0.83,
+                                         "lengthMm":  3
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3152,8 +3346,8 @@
                         "model":  "SEN-22301",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
-                        "description":  "Breakout board; Eagle sources and driver snapshot acquired, no solid.",
+                        "category":  "Electrical/Sensors",
+                        "description":  "Breakout board; Eagle sources and driver snapshot acquired, no STEP.",
                         "properties":  [
                                            {
                                                "id":  "interface",
@@ -3173,8 +3367,10 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Native Eagle board only."
+                                         "kind":  "brep",
+                                         "level":  "simplified",
+                                         "label":  "SparkFun Eagle board outline reconstruction: 25.4x25.4x1.6 mm Qwiic PCB with BMI270 LGA-14 package",
+                                         "drawingReconstruction":  "pcb_sparkfun_sen_22301"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3216,7 +3412,7 @@
                         "model":  "VL53L1CXV0FY/1",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Electrical/Sensors",
                         "description":  "Bare module; Pololu #3415 carrier is separate.",
                         "properties":  [
                                            {
@@ -3298,8 +3494,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Package/optical drawing in datasheet."
+                                         "kind":  "envelope",
+                                         "level":  "envelope",
+                                         "label":  "Manufacturer optical LGA12 package outline envelope: 4.90x2.50x1.56 mm",
+                                         "widthMm":  2.5,
+                                         "heightMm":  1.56,
+                                         "lengthMm":  4.9
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3341,7 +3541,7 @@
                         "model":  "3415",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Electrical/Sensors",
                         "description":  "Carrier with regulator and level shifting.",
                         "properties":  [
                                            {
@@ -3362,8 +3562,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Original carrier STEP; attach with Attach CAD."
+                                         "kind":  "brep",
+                                         "level":  "manufacturer",
+                                         "label":  "Manufacturer solid geometry with original placement (mm)",
+                                         "sourceFile":  "vl53l0x-vl53l1x-vl53l3cx-vl53l4cd-carrier-model.step",
+                                         "sourcePath":  "manufacturer-foundation/vl53l0x-vl53l1x-vl53l3cx-vl53l4cd-carrier-model.step",
+                                         "sourceSha256":  "e7a0bf09f1fb4fb442448e7beae76aed2d67526c93b80a3f8a3320059b9e5c6f"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3413,7 +3617,7 @@
                         "model":  "623ZZ",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Structure/Bearings",
                         "description":  "Shielded SUJ2 miniature ball bearing. Grease friction/stiffness uncalibrated.",
                         "properties":  [
                                            {
@@ -3500,7 +3704,7 @@
                                                "id":  "mass",
                                                "label":  "Reference mass",
                                                "quantity":  "mass",
-                                               "value":  1.57,
+                                               "value":  1.67,
                                                "unit":  "g",
                                                "conditions":  {
 
@@ -3516,10 +3720,10 @@
                                                "id":  "limit_speed_grease",
                                                "label":  "Limiting speed, grease",
                                                "quantity":  "frequency",
-                                               "value":  1100,
+                                               "value":  1133.3333333333333,
                                                "unit":  "Hz",
                                                "conditions":  {
-                                                                  "original":  "66000 min^-1"
+                                                                  "original":  "68000 min^-1"
                                                               },
                                                "variant":  "623ZZ SUJ2 unflanged shielded",
                                                "provenance":  "manufacturer_published",
@@ -3559,8 +3763,10 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Catalog envelope table; reconstruct revolved ring/ball/shield body."
+                                         "kind":  "brep",
+                                         "level":  "simplified",
+                                         "label":  "Catalog dimensional table reconstruction: OD 10 mm, bore 3 mm, width 4 mm (EZO 623ZZ)",
+                                         "drawingReconstruction":  "bearing_ezo_623zz"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3594,7 +3800,8 @@
                                                                                  }
                                                                              ]
                                                               }
-                                        }
+                                        },
+                        "massKg":  0.0016699999999999998
                     },
                     {
                         "id":  "bearing-ezo-625zz",
@@ -3604,7 +3811,7 @@
                         "model":  "625ZZ",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Structure/Bearings",
                         "description":  "Shielded SUJ2 miniature ball bearing. Grease friction/stiffness uncalibrated.",
                         "properties":  [
                                            {
@@ -3691,7 +3898,7 @@
                                                "id":  "mass",
                                                "label":  "Reference mass",
                                                "quantity":  "mass",
-                                               "value":  4.53,
+                                               "value":  4.71,
                                                "unit":  "g",
                                                "conditions":  {
 
@@ -3707,10 +3914,10 @@
                                                "id":  "limit_speed_grease",
                                                "label":  "Limiting speed, grease",
                                                "quantity":  "frequency",
-                                               "value":  733.33333333333337,
+                                               "value":  533.33333333333337,
                                                "unit":  "Hz",
                                                "conditions":  {
-                                                                  "original":  "44000 min^-1"
+                                                                  "original":  "32000 min^-1"
                                                               },
                                                "variant":  "625ZZ SUJ2 unflanged shielded",
                                                "provenance":  "manufacturer_published",
@@ -3723,10 +3930,10 @@
                                                "id":  "limit_speed_oil",
                                                "label":  "Limiting speed, oil",
                                                "quantity":  "frequency",
-                                               "value":  866.66666666666663,
+                                               "value":  633.33333333333337,
                                                "unit":  "Hz",
                                                "conditions":  {
-                                                                  "original":  "52000 min^-1"
+                                                                  "original":  "38000 min^-1"
                                                               },
                                                "variant":  "625ZZ SUJ2 unflanged shielded",
                                                "provenance":  "manufacturer_published",
@@ -3750,8 +3957,10 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Catalog envelope table; reconstruct revolved ring/ball/shield body."
+                                         "kind":  "brep",
+                                         "level":  "simplified",
+                                         "label":  "Catalog dimensional table reconstruction: OD 16 mm, bore 5 mm, width 5 mm (EZO 625ZZ)",
+                                         "drawingReconstruction":  "bearing_ezo_625zz"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3785,7 +3994,8 @@
                                                                                  }
                                                                              ]
                                                               }
-                                        }
+                                        },
+                        "massKg":  0.00471
                     },
                     {
                         "id":  "wheel-pololu-1088",
@@ -3795,7 +4005,7 @@
                         "model":  "1088",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Wheels \u0026 Hubs",
                         "description":  "Press-fit 3 mm D-shaft silicone-tire wheel. Black STEP in the archive is another colour variant.",
                         "properties":  [
                                            {
@@ -3887,8 +4097,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Original white-wheel STEP; attach with Attach CAD."
+                                         "kind":  "brep",
+                                         "level":  "manufacturer",
+                                         "label":  "Manufacturer solid geometry with original placement (mm)",
+                                         "sourceFile":  "pololu-wheel-32x7mm-white.step",
+                                         "sourcePath":  "manufacturer-foundation/pololu-wheel-32x7mm-white.step",
+                                         "sourceSha256":  "977899fd1cb535216e4764f71620b718625ad4ca804d8c624783a7345e075435"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -3931,7 +4145,7 @@
                         "model":  "1078",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Wheels \u0026 Hubs",
                         "description":  "Shaft-compatible hub; not a proven direct mate to wheel #1088.",
                         "properties":  [
                                            {
@@ -3968,8 +4182,12 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Original hub STEP; attach with Attach CAD."
+                                         "kind":  "brep",
+                                         "level":  "manufacturer",
+                                         "label":  "Manufacturer solid geometry with original placement (mm)",
+                                         "sourceFile":  "pololu-universal-aluminum-mounting-hub-for-3mm-shaft-4-40-holes.step",
+                                         "sourcePath":  "manufacturer-foundation/pololu-universal-aluminum-mounting-hub-for-3mm-shaft-4-40-holes.step",
+                                         "sourceSha256":  "3918a8ad9847a71a530039e9f41c5ef3ba66b45e38e2dfccd6ee52ccd3e28bff"
                                      },
                         "engineering":  {
                                             "specification":  {
@@ -4019,7 +4237,7 @@
                         "model":  "LSN-S-MB-320",
                         "revision":  1,
                         "origin":  "commercial",
-                        "category":  "Manufacturer References",
+                        "category":  "Motion/Lead Screws",
                         "description":  "Tr8 lead screw (320 mm) with black flange nut. Pitch/starts and efficiency unpublished; none assumed.",
                         "properties":  [
                                            {
@@ -4191,8 +4409,10 @@
                                            }
                                        ],
                         "geometry":  {
-                                         "kind":  "none",
-                                         "label":  "Drawing reconstruction (flange nut dimensions in datasheet); helical thread detail incomplete."
+                                         "kind":  "brep",
+                                         "level":  "simplified",
+                                         "label":  "Manufacturer drawing A4646 reconstruction: T8x320 mm screw with flanged nut (3x3.56 mm holes on 19.05 mm PCD)",
+                                         "drawingReconstruction":  "leadscrew_lsn_s_mb_320"
                                      },
                         "engineering":  {
                                             "specification":  {

@@ -19,6 +19,7 @@ juce::String digest(const juce::String&);
 bool validate(const juce::var&,juce::String&);
 TopoDS_Shape shape(const juce::var&,juce::String&);
 juce::String encodeShape(const TopoDS_Shape&);
+juce::File resolveAssetFile(const juce::var& record,const juce::String& relativePath);
 bool attachModel(juce::var&,const juce::File&,juce::String&);
 bool readWorkbook(const juce::File&,juce::Array<juce::var>& records,juce::var& report,juce::String& error);
 juce::String details(const juce::var&);

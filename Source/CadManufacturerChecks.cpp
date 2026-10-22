@@ -21,6 +21,18 @@ bool runCadManufacturerCheck(juce::var& report,const juce::File& root)
     using namespace components;juce::var semantic;bool passed=engineering::checks(root.getChildFile("manufacturer-reference-library.json"),semantic);juce::Array<juce::var> rows;
     const auto check=[&](bool ok,const char* name,const juce::var& detail=juce::var()){auto r=object();put(r,"name",name);put(r,"passed",ok);put(r,"detail",detail);rows.add(r);passed&=ok;};
     const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/manufacturer-check");folder.createDirectory();
+    const auto cacheDir=juce::File::getCurrentWorkingDirectory().getChildFile("build/step-brep-cache");cacheDir.createDirectory();
+    for(const auto& djo:folder.findChildFiles(juce::File::findFiles,false,"*.djo"))
+    {
+        CadDocument existing;juce::String ignore;
+        if(existing.load(djo,ignore))
+            if(const auto* defs=existing.componentData()["definitions"].getArray();defs&&!defs->isEmpty())
+            {
+                const auto g=(*defs)[0]["record"]["geometry"];const auto sha=g["sourceSha256"].toString();
+                if(sha.length()==64&&g["data"].toString().isNotEmpty()&&!cacheDir.getChildFile(sha+".json").existsAsFile())
+                    cacheDir.getChildFile(sha+".json").replaceWithText(juce::JSON::toString(g));
+            }
+    }
     juce::var library;juce::String error;check(engineering::loadLibrary(root.getChildFile("manufacturer-reference-library.json"),library,error),"Load reference library",error);
     const int solidCounts[]{1,12,1};const double volumes[]{2117.92,9342.31,427.522};int index=0;
     if(library["records"].isArray())for(const auto& original:*library["records"].getArray())
@@ -72,9 +84,29 @@ bool runCadManufacturerCheck(juce::var& report,const juce::File& root)
             check(total>=24&&verified==total,"Robotics records validate and every original asset hash matches",firstFailure.isEmpty()?juce::var(total):juce::var(firstFailure));
             for(const auto& r:*robotics["records"].getArray())
             {
-                const auto id=r["id"].toString();if(id!="wheel-pololu-1088"&&id!="hub-pololu-1078")continue;
-                auto record=clone(r);juce::File step;for(const auto& s:*engineering::specification(record)["sources"].getArray())if(s["path"].toString().endsWith(".step"))step=root.getChildFile(s["path"].toString());
-                juce::String importError;const bool ok=attachModel(record,step,importError);check(ok,("Import original STEP: "+id).toRawUTF8(),ok?record["geometry"]["import"]:juce::var(importError));
+                const auto id=r["id"].toString();
+                auto record=clone(r);put(record,"engineeringAssetRoot",root.getFullPathName());
+                juce::String validErr;check(validate(record,validErr),("Validate CAD record: "+id).toRawUTF8(),validErr);
+                if(id=="wheel-pololu-1088"||id=="hub-pololu-1078"||id=="module-pololu-3415"||id=="actuator-linear-actuonix-l12-30-210-12-p")
+                {
+                    juce::String shapeErr;const auto s=shape(record,shapeErr);
+                    check(!s.IsNull(),("Pre-associated STEP geometry builds directly: "+id).toRawUTF8(),shapeErr);
+                }
+            }
+            auto* service=new CadCommandService();service->setComponentLibraryFile(folder.getChildFile("robotics-default-library.json"));
+            for(const auto* id:{"motor-dc-pololu-2365","actuator-linear-actuonix-l12-50-100-6-p","actuator-linear-actuonix-l12-50-100-6-r","actuator-linear-actuonix-l12-30-210-12-p","driver-pololu-2130","wheel-pololu-1088","hub-pololu-1078","module-pololu-3415","bearing-ezo-623zz","bearing-ezo-625zz","leadscrew-stepperonline-lsn-s-mb-320","servo-continuous-feetech-fs90r-v1","switch-omron-d2f-01f","switch-omron-d2f-01fl","module-sparkfun-sen-22301","servo-positional-towerpro-sg90","servo-positional-towerpro-mg90s","driver-ti-drv8833pwpr","sensor-ams-as5600","sensor-bosch-bmi270","sensor-st-vl53l1x"})
+            {
+                auto req=object();put(req,"action","insert");put(req,"component",id);
+                const auto res=service->componentCommand(req);
+                check((bool)res["ok"],(juce::String("Direct library insert without manual Attach CAD: ")+id).toRawUTF8(),res["error"]);
+            }
+            const auto listed=service->componentCommand(object())["records"];
+            for(const auto* id:{"motor-dc-pololu-2379","motor-dc-pololu-5134"})
+            {
+                juce::var rec;if(listed.isArray())for(const auto& item:*listed.getArray())if(item["id"].toString()==id)rec=item;
+                const auto asset=rec.isObject()?resolveAssetFile(rec,rec["geometry"]["sourcePath"].toString()):juce::File();
+                check(rec.isObject()&&rec["geometry"]["kind"].toString()=="brep"&&asset.existsAsFile()&&engineering::fileHash(asset)==rec["geometry"]["sourceSha256"].toString(),
+                      (juce::String("Pre-associated micro-gearmotor STEP verified in library: ")+id).toRawUTF8());
             }
         }
     }

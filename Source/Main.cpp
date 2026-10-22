@@ -1332,7 +1332,8 @@ public:
         if(commandLine.startsWith("--cad-component-manufacturer-check"))
         {
             juce::var report;const bool ok=djehuti::cad::runCadManufacturerCheck(report,juce::File::getCurrentWorkingDirectory().getChildFile("Resources"));
-            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-manufacturer-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(ok?0:1);
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-manufacturer-check.result.json").replaceWithText(juce::JSON::toString(report));
+            TerminateProcess(GetCurrentProcess(),ok?0u:1u);
         }
         if(commandLine.startsWith("--cad-component-check"))
         {
