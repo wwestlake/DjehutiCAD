@@ -55,7 +55,7 @@ bool runCadCraftCheck(juce::var& report)
     bad=clone(seeds[3]["geometry"]);put(bad,"lengthMm",10);check(!craft::validateGeometry(bad,error),"Impossible rounded stick rejected");
     CadCommandService service;service.setComponentLibraryFile(folder.getChildFile("library.json"));service.setCatalogFile(folder.getChildFile("materials.json"));
     const auto command=[&](const char* action,juce::var args=object()){put(args,"action",action);return service.componentCommand(args);};
-    auto state=command("list");check((bool)state["ok"]&&state["records"].size()==86,"Craft templates and mechanical references extend the existing component catalog",state["error"].toString());
+    auto state=command("list");check((bool)state["ok"]&&state["records"].size()==90,"Craft templates and mechanical references extend the existing component catalog",state["error"].toString());
     const auto insert=[&](const char* name){auto a=object();put(a,"component",name);return command("insert",a);};
     auto r=insert("craft-rounded-stick");const auto first=r["id"].toString();if(!check((bool)r["ok"],"Insert rounded stick through shared component command",r["error"].toString()))return false;
     auto& doc=service.document();const auto firstFeature=doc.mechanicsData().findInstance(first)->featureId;

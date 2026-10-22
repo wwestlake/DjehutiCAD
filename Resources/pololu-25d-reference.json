@@ -1,0 +1,1384 @@
+{
+  "format": "djehuti-pololu-25d-reference",
+  "schemaVersion": 1,
+  "manufacturer": "Pololu",
+  "sourceSnapshot": "2026-10-22",
+  "models": {
+    "encoder": {
+      "file": "25d-metal-gearmotor-34-47-encoder.step",
+      "resource": "0J1647",
+      "sha256": "8d3dd8a1d471010d030b920acac54d39e435e7efec341fb639e29a09c5e3e9bb",
+      "geometry": {
+        "valid": true,
+        "solids": 2,
+        "bounds": [
+          -12.5000001,
+          -12.5000001,
+          -66.45,
+          12.5000001,
+          18.2535558586,
+          12.5000001
+        ],
+        "cylinders": [
+          {
+            "radius": 2,
+            "location": [
+              0,
+              0,
+              0
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2.0000001,
+              -2.0000001,
+              -1.00000006983e-07,
+              2.0000001,
+              2.0000001,
+              12.5000001
+            ]
+          },
+          {
+            "radius": 2.1,
+            "location": [
+              8.72870334711e-15,
+              0,
+              2.5
+            ],
+            "axis": [
+              -3.49148133884e-15,
+              0,
+              -1
+            ],
+            "bounds": [
+              -2.1000001,
+              -2.1000001,
+              -1.0000000755e-07,
+              2.1000001,
+              2.1000001,
+              2.5000001
+            ]
+          },
+          {
+            "radius": 3.5,
+            "location": [
+              8.72870334711e-15,
+              0,
+              2.5
+            ],
+            "axis": [
+              -3.49148133884e-15,
+              0,
+              -1
+            ],
+            "bounds": [
+              -3.5000001,
+              -3.5000001,
+              -1.0000001222e-07,
+              3.5000001,
+              3.5000001,
+              2.5000001
+            ]
+          },
+          {
+            "radius": 1.25,
+            "location": [
+              -9.9507218157e-15,
+              8.5,
+              -2.85
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -1.2500001,
+              7.2499999,
+              -2.8500001,
+              1.2500001,
+              9.7500001,
+              1.00000004364e-07
+            ]
+          },
+          {
+            "radius": 1.25,
+            "location": [
+              -9.01487423344e-15,
+              -8.5,
+              -2.85
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -1.2500001,
+              -9.7500001,
+              -2.8500001,
+              1.2500001,
+              -7.2499999,
+              1.00000004364e-07
+            ]
+          },
+          {
+            "radius": 2.5,
+            "location": [
+              -2.26946287025e-14,
+              8.5,
+              -6.5
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2.5000001,
+              5.9999999,
+              -6.5000001,
+              2.5000001,
+              11.0000001,
+              -2.8499999
+            ]
+          },
+          {
+            "radius": 2.5,
+            "location": [
+              -2.17587811202e-14,
+              -8.5,
+              -6.5
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2.5000001,
+              -11.0000001,
+              -6.5000001,
+              2.5000001,
+              -5.9999999,
+              -2.8499999
+            ]
+          },
+          {
+            "radius": 2.35,
+            "location": [
+              8.5,
+              0,
+              -0.9
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              6.1499999,
+              -2.3500001,
+              -0.9000001,
+              10.8500001,
+              2.3500001,
+              9.99999785274e-08
+            ]
+          },
+          {
+            "radius": 2.35,
+            "location": [
+              -8.5,
+              0,
+              -0.9
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -10.8500001,
+              -2.3500001,
+              -0.9000001,
+              -6.1499999,
+              2.3500001,
+              1.00000037883e-07
+            ]
+          },
+          {
+            "radius": 3.2,
+            "location": [
+              -1.8609595536e-13,
+              0,
+              -53.3
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -3.2000001,
+              -3.2000001,
+              -51.8000001,
+              3.2000001,
+              3.2000001,
+              -50.9999999
+            ]
+          },
+          {
+            "radius": 4,
+            "location": [
+              -2.03204213921e-13,
+              0,
+              -58.2
+            ],
+            "axis": [
+              -3.49148133884e-15,
+              0,
+              -1
+            ],
+            "bounds": [
+              -4.0000001,
+              -4.0000001,
+              -58.7000001,
+              4.0000001,
+              4.0000001,
+              -58.1999999
+            ]
+          },
+          {
+            "radius": 1.5,
+            "location": [
+              8.96192602211,
+              1.25951656369,
+              -88.6553390593
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              7.46192592211,
+              -0.240483536311,
+              -53.3000001,
+              10.4619261221,
+              2.75951666369,
+              -51.7999999
+            ]
+          },
+          {
+            "radius": 1.5,
+            "location": [
+              -8.96192602211,
+              -1.25951656369,
+              -88.6553390593
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -10.4619261221,
+              -2.75951666369,
+              -54.2000001,
+              -7.46192592211,
+              0.240483536311,
+              -51.7999999
+            ]
+          },
+          {
+            "radius": 3.2,
+            "location": [
+              -3.09538461914e-13,
+              0,
+              -88.6553390593
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -3.2000001,
+              -3.2000001,
+              -53.3000001,
+              3.2000001,
+              3.2000001,
+              -52.4999999
+            ]
+          }
+        ],
+        "shaftFlats": [
+          {
+            "normal": [
+              -1.63915961104e-16,
+              -1,
+              5.72309519332e-31
+            ],
+            "bounds": [
+              -1.32287565553,
+              1.5,
+              4.5,
+              1.32287565553,
+              1.5,
+              12.5
+            ]
+          }
+        ]
+      },
+      "sourceOriginMm": [
+        0,
+        0,
+        0
+      ],
+      "localTransform": "Translate by negative source origin; axes unchanged, shaft +Z"
+    },
+    "nonencoder": {
+      "file": "25d-metal-gearmotor-34-47.step",
+      "resource": "0J1113",
+      "sha256": "964455dd420472922c86f2948bf130d999e7b4284a9f551f82bb197275a86d0e",
+      "geometry": {
+        "valid": true,
+        "solids": 1,
+        "bounds": [
+          -12.5,
+          -12.5,
+          -56,
+          12.5,
+          12.5,
+          12.5
+        ],
+        "cylinders": [
+          {
+            "radius": 3.2,
+            "location": [
+              -1.20792265079e-13,
+              0,
+              -53.3
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -3.2,
+              -3.91886975727e-16,
+              -52.5,
+              3.2,
+              3.2,
+              -51
+            ]
+          },
+          {
+            "radius": 2.35,
+            "location": [
+              -8.5,
+              0,
+              -0.9
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -10.85,
+              -2.35,
+              -0.9,
+              -6.15,
+              2.877919978e-16,
+              3.66266905767e-14
+            ]
+          },
+          {
+            "radius": 2.35,
+            "location": [
+              8.5,
+              0,
+              -0.9
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              6.15,
+              -2.35,
+              -0.9,
+              10.85,
+              2.877919978e-16,
+              -2.37694419629e-14
+            ]
+          },
+          {
+            "radius": 2.5,
+            "location": [
+              4.26325641456e-14,
+              -8.5,
+              -6.5
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2.5,
+              -11,
+              -6.5,
+              2.5,
+              -8.5,
+              -2.85
+            ]
+          },
+          {
+            "radius": 2.5,
+            "location": [
+              4.26325641456e-14,
+              8.5,
+              -6.5
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2.5,
+              6,
+              -6.5,
+              2.5,
+              8.5,
+              -2.85
+            ]
+          },
+          {
+            "radius": 1.25,
+            "location": [
+              5.68434188608e-14,
+              -8.5,
+              -2.85
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -1.25,
+              -9.75,
+              -2.85,
+              1.25,
+              -8.5,
+              4.36435167355e-15
+            ]
+          },
+          {
+            "radius": 1.25,
+            "location": [
+              5.68434188608e-14,
+              8.5,
+              -2.85
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -1.25,
+              7.25,
+              -2.85,
+              1.25,
+              8.5,
+              4.36435167355e-15
+            ]
+          },
+          {
+            "radius": 3.5,
+            "location": [
+              7.1054273576e-14,
+              0,
+              2.5
+            ],
+            "axis": [
+              -3.49148133884e-15,
+              0,
+              -1
+            ],
+            "bounds": [
+              -3.5,
+              -4.28626379702e-16,
+              -1.42108547152e-14,
+              3.5,
+              3.5,
+              2.5
+            ]
+          },
+          {
+            "radius": 2.1,
+            "location": [
+              7.1054273576e-14,
+              0,
+              2.5
+            ],
+            "axis": [
+              -3.49148133884e-15,
+              0,
+              -1
+            ],
+            "bounds": [
+              -2.1,
+              -2.1,
+              -7.33211081157e-15,
+              2.1,
+              2.57175827821e-16,
+              2.5
+            ]
+          },
+          {
+            "radius": 2,
+            "location": [
+              6.03961325396e-14,
+              0,
+              0
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2,
+              0,
+              -7.1054273576e-15,
+              2,
+              2,
+              12.5
+            ]
+          },
+          {
+            "radius": 2,
+            "location": [
+              6.03961325396e-14,
+              0,
+              0
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2,
+              -2,
+              -7.1054273576e-15,
+              2,
+              2.44929359829e-16,
+              12.5
+            ]
+          },
+          {
+            "radius": 2.1,
+            "location": [
+              7.1054273576e-14,
+              0,
+              2.5
+            ],
+            "axis": [
+              -3.49148133884e-15,
+              0,
+              -1
+            ],
+            "bounds": [
+              -2.1,
+              0,
+              -7.33211081157e-15,
+              2.1,
+              2.1,
+              2.5
+            ]
+          },
+          {
+            "radius": 3.5,
+            "location": [
+              7.1054273576e-14,
+              0,
+              2.5
+            ],
+            "axis": [
+              -3.49148133884e-15,
+              0,
+              -1
+            ],
+            "bounds": [
+              -3.5,
+              -3.5,
+              -1.42108547152e-14,
+              3.5,
+              4.28626379702e-16,
+              2.5
+            ]
+          },
+          {
+            "radius": 1.25,
+            "location": [
+              5.68434188608e-14,
+              8.5,
+              -2.85
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -1.25,
+              8.5,
+              -2.85,
+              1.25,
+              9.75,
+              4.36435167355e-15
+            ]
+          },
+          {
+            "radius": 1.25,
+            "location": [
+              5.68434188608e-14,
+              -8.5,
+              -2.85
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -1.25,
+              -8.5,
+              -2.85,
+              1.25,
+              -7.25,
+              4.36435167355e-15
+            ]
+          },
+          {
+            "radius": 2.5,
+            "location": [
+              4.26325641456e-14,
+              8.5,
+              -6.5
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2.5,
+              8.5,
+              -6.5,
+              2.5,
+              11,
+              -2.85
+            ]
+          },
+          {
+            "radius": 2.5,
+            "location": [
+              4.26325641456e-14,
+              -8.5,
+              -6.5
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -2.5,
+              -8.5,
+              -6.5,
+              2.5,
+              -6,
+              -2.85
+            ]
+          },
+          {
+            "radius": 2.35,
+            "location": [
+              8.5,
+              0,
+              -0.9
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              6.15,
+              0,
+              -0.9,
+              10.85,
+              2.35,
+              -2.37694419629e-14
+            ]
+          },
+          {
+            "radius": 2.35,
+            "location": [
+              -8.5,
+              0,
+              -0.9
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -10.85,
+              0,
+              -0.9,
+              -6.15,
+              2.35,
+              3.66266905767e-14
+            ]
+          },
+          {
+            "radius": 3.2,
+            "location": [
+              -1.20792265079e-13,
+              0,
+              -53.3
+            ],
+            "axis": [
+              3.49148133884e-15,
+              0,
+              1
+            ],
+            "bounds": [
+              -3.2,
+              -3.2,
+              -52.5,
+              3.2,
+              3.91886975727e-16,
+              -51
+            ]
+          }
+        ],
+        "shaftFlats": [
+          {
+            "normal": [
+              -1.63915961104e-16,
+              -1,
+              5.72309519332e-31
+            ],
+            "bounds": [
+              -1.32287565553,
+              1.5,
+              4.5,
+              1.32287565553,
+              1.5,
+              12.5
+            ]
+          }
+        ]
+      },
+      "sourceOriginMm": [
+        30.875,
+        0,
+        18.375
+      ],
+      "localTransform": "Translate by negative source origin; axes unchanged, shaft +Z"
+    }
+  },
+  "sourceFiles": [
+    {
+      "resource": "0J1647",
+      "file": "25d-metal-gearmotor-34-47-encoder.step",
+      "sha256": "8d3dd8a1d471010d030b920acac54d39e435e7efec341fb639e29a09c5e3e9bb",
+      "bytes": 3270485,
+      "archiveSha256": "4b7f019dbee43e994d37aa2a9112a897eca97635a942591025e9de48d2049a01",
+      "crc": "pass"
+    },
+    {
+      "resource": "0J1113",
+      "file": "25d-metal-gearmotor-34-47.step",
+      "sha256": "964455dd420472922c86f2948bf130d999e7b4284a9f551f82bb197275a86d0e",
+      "bytes": 2779902,
+      "archiveSha256": "fdeb86e890e694f1e68eac731eb9c7167dbab37b76d7f35950078b4c1374c2be",
+      "crc": "pass"
+    },
+    {
+      "file": "pololu-25d-metal-gearmotors-rev-2-0.pdf",
+      "sha256": "a2db2ebd88546f6bdbf0a3e2ee9a45e211151abed10f6748a8839be30a1d4f10",
+      "pages": 64
+    },
+    {
+      "file": "25d-metal-gearmotor-dimension-diagram.pdf",
+      "sha256": "2bbda2bdcbafc819e290594703e18ca3ca8ff3954343adae3a7d8791073f6b43",
+      "pages": 3
+    },
+    {
+      "file": "pololu-4865-specs.html",
+      "sha256": "9cca156327218b764a427503b5a01e88808318d72f57512584f862cbc12ffde6",
+      "bytes": 66375
+    },
+    {
+      "file": "pololu-4865-description.html",
+      "sha256": "edd8157d5e3d9bfa2cb171c2160950ddea562099275587a8286ee556a8ba98dc",
+      "bytes": 119153
+    },
+    {
+      "file": "pololu-4885-specs.html",
+      "sha256": "f8b84efc6a3cf147f84e0f413c81ff88b021b9ae7ef1b61d1793523ea31c8f7f",
+      "bytes": 66323
+    },
+    {
+      "file": "pololu-4885-description.html",
+      "sha256": "1e7f7ada20b618332034d4dece46ede159c37cb1ce8c18715f8e158dc9068420",
+      "bytes": 119099
+    },
+    {
+      "file": "pololu-4845-specs.html",
+      "sha256": "eec47efe6fc628924fe1fd301bf0d41318d3ad43008f5c5aa62eb21b6288f2ce",
+      "bytes": 66236
+    },
+    {
+      "file": "pololu-4845-description.html",
+      "sha256": "d3a45c4daadacb223a4675c020bcb59925845e0e3c4fb202319135e6d259128d",
+      "bytes": 119016
+    },
+    {
+      "file": "pololu-3229-specs.html",
+      "sha256": "52c8b29ce9c2700089680f90a2abeee84fe86af3c3746128225bc9e0d5185089",
+      "bytes": 63603
+    },
+    {
+      "file": "pololu-3229-description.html",
+      "sha256": "123cc8c2bc5b9681b960a32d4312e04d1235fe00006a6549105f05844742b1be",
+      "bytes": 109572
+    }
+  ],
+  "motors": [
+    {
+      "id": "motor-dc-pololu-4865",
+      "symbolId": "motor_pololu_4865",
+      "manufacturer": "Pololu",
+      "partNumber": "4865",
+      "description": "47:1 25D MP 12V with 48 CPR encoder",
+      "powerClass": "MP",
+      "encoder": true,
+      "sourceUrl": "https://www.pololu.com/product/4865/specs",
+      "mechanical": {
+        "model": "encoder",
+        "shaftDiameterMm": 4,
+        "shaftAcrossFlatMm": 3.5,
+        "shaftProjectionMm": 12.5,
+        "pilotDiameterMm": 7,
+        "pilotHeightMm": 2.5,
+        "gearboxDiameterMm": 25,
+        "motorDiameterMm": 24.4,
+        "gearboxLengthMm": 21,
+        "motorLengthMm": 30.8,
+        "bodyLengthDrawingMm": 66.5,
+        "massKg": 0.101,
+        "mountThread": "M3",
+        "mountHoleCentersMm": [
+          [
+            0,
+            -8.5,
+            0
+          ],
+          [
+            0,
+            8.5,
+            0
+          ]
+        ],
+        "mountPitchMm": 17,
+        "maxScrewPenetrationMm": 6,
+        "threadPitch": null,
+        "threadFit": null,
+        "dimensionalTolerances": null,
+        "nominalGeometryNote": "STEP nominal solids retained including simplified thread representation. CAD rear extent differs from rounded drawing body length; no dimensions were forced to match.",
+        "sourceModel": "25d-metal-gearmotor-34-47-encoder.step"
+      },
+      "electrical": {
+        "status": "manufacturer-published typical values; extrapolated stall",
+        "nominalVoltageV": 12,
+        "noLoadRpm": 170,
+        "noLoadCurrentA": 0.1,
+        "stallCurrentA": 1.8,
+        "stallTorqueKgCm": 6.4,
+        "stallTorqueNm": 0.6276256,
+        "maxOutputPowerW": 2.8,
+        "gearRatioRounded": 46.85,
+        "noLoadSpeedTolerancePercent": 20,
+        "noLoadCurrentTolerancePercent": 50
+      },
+      "performance": {
+        "pdf": "pololu-25d-metal-gearmotors-rev-2-0.pdf",
+        "page": 39,
+        "status": "manufacturer plotted sample/fits, not identical to typical product endpoints",
+        "torqueAxisUnit": "kg*mm",
+        "speedRpmIntercept": 170,
+        "speedRpmPerKgMm": -2.6,
+        "currentAIntercept": 0.042,
+        "currentAPerKgMm": 0.027,
+        "fullCurvePreserved": true,
+        "rawMeasurementCsv": null
+      },
+      "derivedOutputEquivalent": {
+        "status": "calculated reference-model coefficients, not intrinsic measured motor constants",
+        "resistanceOhm": 6.666666666666666,
+        "torqueConstantNmPerA": 0.3486808888888889,
+        "backEmfVsPerRad": 0.6366197723675814,
+        "viscousLossNmsPerRad": 0.001958621895117974,
+        "equations": [
+          "R=V/Is",
+          "Kt_output=Ts/Is",
+          "Ke_output=(V-R*I0)/omega0",
+          "B_output=Kt_output*I0/omega0"
+        ]
+      },
+      "referenceAssumptions": {
+        "inductanceH": 0,
+        "inductanceNote": "Unpublished; zero explicitly neglects winding electrical transients",
+        "outputEquivalentInertiaKgM2": 1e-05,
+        "inertiaNote": "Unpublished; positive numerical reference required by existing dynamic interface, not calibrated transient timing"
+      },
+      "unknowns": [
+        "intrinsic winding resistance/inductance",
+        "intrinsic Kt/Ke",
+        "rotor and gearbox inertia",
+        "separate friction/gear loss/backlash",
+        "dimensional tolerances, shaft fit/chamfer, thread pitch/fit",
+        "thermal/duty/lifetime and encoder drive/timing limits"
+      ],
+      "operatingGuidance": {
+        "continuousGearboxTorqueKgCm": 4,
+        "intermittentGearboxTorqueKgCm": 8,
+        "continuousCurrentFractionOfStall": 0.25,
+        "note": "Guidance, not a thermal/damage simulation. Stall estimates are not safe operating ratings."
+      },
+      "encoderSpec": {
+        "status": "manufacturer published",
+        "supplyMinV": 3.5,
+        "supplyMaxV": 20,
+        "supplyCurrentMaxA": 0.01,
+        "countsPerMotorRevolution": 48,
+        "cyclesPerMotorRevolution": 12,
+        "countsPerOutputRevolution": 2248.86,
+        "encoderCountConsistentRatio": 46.85125,
+        "ratioStatus": "calculated from published counts; not exact rational tooth ratio",
+        "channels": [
+          "A",
+          "B"
+        ],
+        "phaseDegrees": 90,
+        "voltageLowV": 0,
+        "voltageHigh": "VCC",
+        "wiring": {
+          "red": "M1",
+          "black": "M2",
+          "green": "GND",
+          "blue": "VCC",
+          "yellow": "A",
+          "white": "B"
+        },
+        "connector": "1x6 female 2.54 mm pitch; physical pin numbering unverified",
+        "leadLengthApproxMm": 200,
+        "outputResistanceOhm": null,
+        "timingTolerance": null,
+        "maxFrequencyHz": null,
+        "modeledOutputResistanceOhm": 100,
+        "modeledOutputResistanceStatus": "explicit reference approximation"
+      }
+    },
+    {
+      "id": "motor-dc-pololu-4885",
+      "symbolId": "motor_pololu_4885",
+      "manufacturer": "Pololu",
+      "partNumber": "4885",
+      "description": "47:1 25D LP 12V with 48 CPR encoder",
+      "powerClass": "LP",
+      "encoder": true,
+      "sourceUrl": "https://www.pololu.com/product/4885/specs",
+      "mechanical": {
+        "model": "encoder",
+        "shaftDiameterMm": 4,
+        "shaftAcrossFlatMm": 3.5,
+        "shaftProjectionMm": 12.5,
+        "pilotDiameterMm": 7,
+        "pilotHeightMm": 2.5,
+        "gearboxDiameterMm": 25,
+        "motorDiameterMm": 24.4,
+        "gearboxLengthMm": 21,
+        "motorLengthMm": 30.8,
+        "bodyLengthDrawingMm": 66.5,
+        "massKg": 0.101,
+        "mountThread": "M3",
+        "mountHoleCentersMm": [
+          [
+            0,
+            -8.5,
+            0
+          ],
+          [
+            0,
+            8.5,
+            0
+          ]
+        ],
+        "mountPitchMm": 17,
+        "maxScrewPenetrationMm": 6,
+        "threadPitch": null,
+        "threadFit": null,
+        "dimensionalTolerances": null,
+        "nominalGeometryNote": "STEP nominal solids retained including simplified thread representation. CAD rear extent differs from rounded drawing body length; no dimensions were forced to match.",
+        "sourceModel": "25d-metal-gearmotor-34-47-encoder.step"
+      },
+      "electrical": {
+        "status": "manufacturer-published typical values; extrapolated stall",
+        "nominalVoltageV": 12,
+        "noLoadRpm": 120,
+        "noLoadCurrentA": 0.06,
+        "stallCurrentA": 0.9,
+        "stallTorqueKgCm": 4.8,
+        "stallTorqueNm": 0.4707192,
+        "maxOutputPowerW": 1.4,
+        "gearRatioRounded": 46.85,
+        "noLoadSpeedTolerancePercent": 20,
+        "noLoadCurrentTolerancePercent": 50
+      },
+      "performance": {
+        "pdf": "pololu-25d-metal-gearmotors-rev-2-0.pdf",
+        "page": 29,
+        "status": "manufacturer plotted sample/fits, not identical to typical product endpoints",
+        "torqueAxisUnit": "kg*mm",
+        "speedRpmIntercept": 120,
+        "speedRpmPerKgMm": -2.4,
+        "currentAIntercept": 0.029,
+        "currentAPerKgMm": 0.018,
+        "fullCurvePreserved": true,
+        "rawMeasurementCsv": null
+      },
+      "derivedOutputEquivalent": {
+        "status": "calculated reference-model coefficients, not intrinsic measured motor constants",
+        "resistanceOhm": 13.333333333333332,
+        "torqueConstantNmPerA": 0.5230213333333333,
+        "backEmfVsPerRad": 0.891267681314614,
+        "viscousLossNmsPerRad": 0.002497242916275417,
+        "equations": [
+          "R=V/Is",
+          "Kt_output=Ts/Is",
+          "Ke_output=(V-R*I0)/omega0",
+          "B_output=Kt_output*I0/omega0"
+        ]
+      },
+      "referenceAssumptions": {
+        "inductanceH": 0,
+        "inductanceNote": "Unpublished; zero explicitly neglects winding electrical transients",
+        "outputEquivalentInertiaKgM2": 1e-05,
+        "inertiaNote": "Unpublished; positive numerical reference required by existing dynamic interface, not calibrated transient timing"
+      },
+      "unknowns": [
+        "intrinsic winding resistance/inductance",
+        "intrinsic Kt/Ke",
+        "rotor and gearbox inertia",
+        "separate friction/gear loss/backlash",
+        "dimensional tolerances, shaft fit/chamfer, thread pitch/fit",
+        "thermal/duty/lifetime and encoder drive/timing limits"
+      ],
+      "operatingGuidance": {
+        "continuousGearboxTorqueKgCm": 4,
+        "intermittentGearboxTorqueKgCm": 8,
+        "continuousCurrentFractionOfStall": 0.25,
+        "note": "Guidance, not a thermal/damage simulation. Stall estimates are not safe operating ratings."
+      },
+      "encoderSpec": {
+        "status": "manufacturer published",
+        "supplyMinV": 3.5,
+        "supplyMaxV": 20,
+        "supplyCurrentMaxA": 0.01,
+        "countsPerMotorRevolution": 48,
+        "cyclesPerMotorRevolution": 12,
+        "countsPerOutputRevolution": 2248.86,
+        "encoderCountConsistentRatio": 46.85125,
+        "ratioStatus": "calculated from published counts; not exact rational tooth ratio",
+        "channels": [
+          "A",
+          "B"
+        ],
+        "phaseDegrees": 90,
+        "voltageLowV": 0,
+        "voltageHigh": "VCC",
+        "wiring": {
+          "red": "M1",
+          "black": "M2",
+          "green": "GND",
+          "blue": "VCC",
+          "yellow": "A",
+          "white": "B"
+        },
+        "connector": "1x6 female 2.54 mm pitch; physical pin numbering unverified",
+        "leadLengthApproxMm": 200,
+        "outputResistanceOhm": null,
+        "timingTolerance": null,
+        "maxFrequencyHz": null,
+        "modeledOutputResistanceOhm": 100,
+        "modeledOutputResistanceStatus": "explicit reference approximation"
+      }
+    },
+    {
+      "id": "motor-dc-pololu-4845",
+      "symbolId": "motor_pololu_4845",
+      "manufacturer": "Pololu",
+      "partNumber": "4845",
+      "description": "47:1 25D HP 12V with 48 CPR encoder",
+      "powerClass": "HP",
+      "encoder": true,
+      "sourceUrl": "https://www.pololu.com/product/4845/specs",
+      "mechanical": {
+        "model": "encoder",
+        "shaftDiameterMm": 4,
+        "shaftAcrossFlatMm": 3.5,
+        "shaftProjectionMm": 12.5,
+        "pilotDiameterMm": 7,
+        "pilotHeightMm": 2.5,
+        "gearboxDiameterMm": 25,
+        "motorDiameterMm": 24.4,
+        "gearboxLengthMm": 21,
+        "motorLengthMm": 30.8,
+        "bodyLengthDrawingMm": 66.5,
+        "massKg": 0.101,
+        "mountThread": "M3",
+        "mountHoleCentersMm": [
+          [
+            0,
+            -8.5,
+            0
+          ],
+          [
+            0,
+            8.5,
+            0
+          ]
+        ],
+        "mountPitchMm": 17,
+        "maxScrewPenetrationMm": 6,
+        "threadPitch": null,
+        "threadFit": null,
+        "dimensionalTolerances": null,
+        "nominalGeometryNote": "STEP nominal solids retained including simplified thread representation. CAD rear extent differs from rounded drawing body length; no dimensions were forced to match.",
+        "sourceModel": "25d-metal-gearmotor-34-47-encoder.step"
+      },
+      "electrical": {
+        "status": "manufacturer-published typical values; extrapolated stall",
+        "nominalVoltageV": 12,
+        "noLoadRpm": 220,
+        "noLoadCurrentA": 0.3,
+        "stallCurrentA": 5,
+        "stallTorqueKgCm": 15,
+        "stallTorqueNm": 1.4709975,
+        "maxOutputPowerW": 8.4,
+        "gearRatioRounded": 46.85,
+        "noLoadSpeedTolerancePercent": 20,
+        "noLoadCurrentTolerancePercent": 50
+      },
+      "performance": {
+        "pdf": "pololu-25d-metal-gearmotors-rev-2-0.pdf",
+        "page": 48,
+        "status": "manufacturer plotted sample/fits, not identical to typical product endpoints",
+        "torqueAxisUnit": "kg*mm",
+        "speedRpmIntercept": 220,
+        "speedRpmPerKgMm": -1.4,
+        "currentAIntercept": 0.16,
+        "currentAPerKgMm": 0.031,
+        "fullCurvePreserved": true,
+        "rawMeasurementCsv": null
+      },
+      "derivedOutputEquivalent": {
+        "status": "calculated reference-model coefficients, not intrinsic measured motor constants",
+        "resistanceOhm": 2.4,
+        "torqueConstantNmPerA": 0.2941995,
+        "backEmfVsPerRad": 0.4896184794754307,
+        "viscousLossNmsPerRad": 0.0038309976556497867,
+        "equations": [
+          "R=V/Is",
+          "Kt_output=Ts/Is",
+          "Ke_output=(V-R*I0)/omega0",
+          "B_output=Kt_output*I0/omega0"
+        ]
+      },
+      "referenceAssumptions": {
+        "inductanceH": 0,
+        "inductanceNote": "Unpublished; zero explicitly neglects winding electrical transients",
+        "outputEquivalentInertiaKgM2": 1e-05,
+        "inertiaNote": "Unpublished; positive numerical reference required by existing dynamic interface, not calibrated transient timing"
+      },
+      "unknowns": [
+        "intrinsic winding resistance/inductance",
+        "intrinsic Kt/Ke",
+        "rotor and gearbox inertia",
+        "separate friction/gear loss/backlash",
+        "dimensional tolerances, shaft fit/chamfer, thread pitch/fit",
+        "thermal/duty/lifetime and encoder drive/timing limits"
+      ],
+      "operatingGuidance": {
+        "continuousGearboxTorqueKgCm": 4,
+        "intermittentGearboxTorqueKgCm": 8,
+        "continuousCurrentFractionOfStall": 0.25,
+        "note": "Guidance, not a thermal/damage simulation. Stall estimates are not safe operating ratings."
+      },
+      "encoderSpec": {
+        "status": "manufacturer published",
+        "supplyMinV": 3.5,
+        "supplyMaxV": 20,
+        "supplyCurrentMaxA": 0.01,
+        "countsPerMotorRevolution": 48,
+        "cyclesPerMotorRevolution": 12,
+        "countsPerOutputRevolution": 2248.86,
+        "encoderCountConsistentRatio": 46.85125,
+        "ratioStatus": "calculated from published counts; not exact rational tooth ratio",
+        "channels": [
+          "A",
+          "B"
+        ],
+        "phaseDegrees": 90,
+        "voltageLowV": 0,
+        "voltageHigh": "VCC",
+        "wiring": {
+          "red": "M1",
+          "black": "M2",
+          "green": "GND",
+          "blue": "VCC",
+          "yellow": "A",
+          "white": "B"
+        },
+        "connector": "1x6 female 2.54 mm pitch; physical pin numbering unverified",
+        "leadLengthApproxMm": 200,
+        "outputResistanceOhm": null,
+        "timingTolerance": null,
+        "maxFrequencyHz": null,
+        "modeledOutputResistanceOhm": 100,
+        "modeledOutputResistanceStatus": "explicit reference approximation"
+      }
+    },
+    {
+      "id": "motor-dc-pololu-3229",
+      "symbolId": "motor_pololu_3229",
+      "manufacturer": "Pololu",
+      "partNumber": "3229",
+      "description": "47:1 25D MP 12V without encoder",
+      "powerClass": "MP",
+      "encoder": false,
+      "sourceUrl": "https://www.pololu.com/product/3229/specs",
+      "mechanical": {
+        "model": "nonencoder",
+        "shaftDiameterMm": 4,
+        "shaftAcrossFlatMm": 3.5,
+        "shaftProjectionMm": 12.5,
+        "pilotDiameterMm": 7,
+        "pilotHeightMm": 2.5,
+        "gearboxDiameterMm": 25,
+        "motorDiameterMm": 24.4,
+        "gearboxLengthMm": 21,
+        "motorLengthMm": 30.8,
+        "bodyLengthDrawingMm": 51.8,
+        "massKg": 0.088,
+        "mountThread": "M3",
+        "mountHoleCentersMm": [
+          [
+            0,
+            -8.5,
+            0
+          ],
+          [
+            0,
+            8.5,
+            0
+          ]
+        ],
+        "mountPitchMm": 17,
+        "maxScrewPenetrationMm": 6,
+        "threadPitch": null,
+        "threadFit": null,
+        "dimensionalTolerances": null,
+        "nominalGeometryNote": "STEP nominal solids retained including simplified thread representation. CAD rear extent differs from rounded drawing body length; no dimensions were forced to match.",
+        "sourceModel": "25d-metal-gearmotor-34-47.step"
+      },
+      "electrical": {
+        "status": "manufacturer-published typical values; extrapolated stall",
+        "nominalVoltageV": 12,
+        "noLoadRpm": 170,
+        "noLoadCurrentA": 0.08,
+        "stallCurrentA": 1.8,
+        "stallTorqueKgCm": 6.4,
+        "stallTorqueNm": 0.6276256,
+        "maxOutputPowerW": 2.8,
+        "gearRatioRounded": 46.85,
+        "noLoadSpeedTolerancePercent": 20,
+        "noLoadCurrentTolerancePercent": 50
+      },
+      "performance": {
+        "pdf": "pololu-25d-metal-gearmotors-rev-2-0.pdf",
+        "page": 39,
+        "status": "manufacturer plotted sample/fits, not identical to typical product endpoints",
+        "torqueAxisUnit": "kg*mm",
+        "speedRpmIntercept": 170,
+        "speedRpmPerKgMm": -2.6,
+        "currentAIntercept": 0.042,
+        "currentAPerKgMm": 0.027,
+        "fullCurvePreserved": true,
+        "rawMeasurementCsv": null
+      },
+      "derivedOutputEquivalent": {
+        "status": "calculated reference-model coefficients, not intrinsic measured motor constants",
+        "resistanceOhm": 6.666666666666666,
+        "torqueConstantNmPerA": 0.3486808888888889,
+        "backEmfVsPerRad": 0.6441094167483764,
+        "viscousLossNmsPerRad": 0.001566897516094379,
+        "equations": [
+          "R=V/Is",
+          "Kt_output=Ts/Is",
+          "Ke_output=(V-R*I0)/omega0",
+          "B_output=Kt_output*I0/omega0"
+        ]
+      },
+      "referenceAssumptions": {
+        "inductanceH": 0,
+        "inductanceNote": "Unpublished; zero explicitly neglects winding electrical transients",
+        "outputEquivalentInertiaKgM2": 1e-05,
+        "inertiaNote": "Unpublished; positive numerical reference required by existing dynamic interface, not calibrated transient timing"
+      },
+      "unknowns": [
+        "intrinsic winding resistance/inductance",
+        "intrinsic Kt/Ke",
+        "rotor and gearbox inertia",
+        "separate friction/gear loss/backlash",
+        "dimensional tolerances, shaft fit/chamfer, thread pitch/fit",
+        "thermal/duty/lifetime and encoder drive/timing limits"
+      ],
+      "operatingGuidance": {
+        "continuousGearboxTorqueKgCm": 4,
+        "intermittentGearboxTorqueKgCm": 8,
+        "continuousCurrentFractionOfStall": 0.25,
+        "note": "Guidance, not a thermal/damage simulation. Stall estimates are not safe operating ratings."
+      },
+      "encoderSpec": null
+    }
+  ]
+}

@@ -9,6 +9,10 @@
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
 #include <TopoDS.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <Bnd_Box.hxx>
+#include <set>
 #include <cmath>
 
 namespace djehuti::cad
@@ -102,6 +106,54 @@ bool runCadComponentCheck(juce::var& report,const juce::File& researchRoot)
     auto legacy=object();put(legacy,"format","djehuti-component-library");put(legacy,"schemaVersion",1);juce::Array<juce::var> oldRows;for(const auto& entry:*motorRecords.getArray())if(!entry["id"].toString().startsWith("motor-stepper-"))oldRows.add(clone(entry));
     const auto customizedId=oldRows[0]["id"].toString();put(oldRows.getReference(0),"name","Existing user customization");put(legacy,"records",oldRows);const auto legacyFile=folder.getChildFile("pre-motor-library.json");legacyFile.replaceWithText(juce::JSON::toString(legacy));CadComponentLibrary upgrade;upgrade.setFile(legacyFile);
     check(upgrade.ensureLoaded(error)&&upgrade.find(ids[0])&&upgrade.find(ids[1])&&upgrade.find(ids[2])&&(*upgrade.find(customizedId))["name"].toString()=="Existing user customization","Existing catalogs gain new bundled motors without overwriting user edits",error);
+    // Manufacturer STEP snapshots use the same component/OCAF path as every part.
+    CadCommandService pololu;pololu.setComponentLibraryFile(libraryFile);pololu.setCatalogFile(folder.getChildFile("materials.json"));
+    const auto library=pololu.componentCommand(juce::JSON::parse(R"({"action":"list"})"))["records"];
+    const char* partNumbers[]{"4865","4885","4845","3229"};juce::String firstPololuFeature;
+    for(int index=0;index<4;++index)
+    {
+        const juce::String part=partNumbers[index],key="motor-dc-pololu-"+part;juce::var record;
+        for(const auto& entry:*library.getArray())if(entry["id"].toString()==key)record=clone(entry);
+        check(record.isObject()&&record["partNumber"].toString()==part,"Exact Pololu part remains independently selectable",part);if(!record.isObject())continue;
+        const auto solid=components::shape(record,error);check(!solid.IsNull()&&record["geometry"]["level"].toString()=="manufacturer","Manufacturer solid snapshot loads",part+": "+error);if(solid.IsNull())continue;
+        int solids=0;for(TopExp_Explorer it(solid,TopAbs_SOLID);it.More();it.Next())++solids;
+        check(solids==(index==3?1:2),"Encoder/non-encoder manufacturer solid structure is preserved",part);
+        bool shaft=false,boss=false,flat=false,mount=false;std::set<int> holeSides;
+        for(TopExp_Explorer it(solid,TopAbs_FACE);it.More();it.Next())
+        {
+            const auto face=TopoDS::Face(it.Current());BRepAdaptor_Surface surface(face,true);
+            if(surface.GetType()==GeomAbs_Cylinder)
+            {
+                const auto c=surface.Cylinder();const auto p=c.Location();
+                if(std::abs(c.Axis().Direction().Z())>.999&&std::hypot(p.X(),p.Y())<1e-5){shaft|=std::abs(c.Radius()-2)<1e-5;boss|=std::abs(c.Radius()-3.5)<1e-5;}
+                if(std::abs(c.Radius()-1.25)<1e-5&&std::abs(p.X())<1e-5&&std::abs(std::abs(p.Y())-8.5)<1e-5)holeSides.insert(p.Y()>0?1:-1);
+            }
+            if(surface.GetType()==GeomAbs_Plane)
+            {
+                Bnd_Box bounds;BRepBndLib::AddOptimal(face,bounds,false,false);double x,y,z,X,Y,Z;bounds.Get(x,y,z,X,Y,Z);
+                flat|=std::abs(y-1.5)<1e-5&&std::abs(Y-1.5)<1e-5&&std::abs(z-4.5)<1e-5&&std::abs(Z-12.5)<1e-5;
+                GProp_GProps properties;BRepGProp::SurfaceProperties(face,properties);mount|=std::abs(z)<1e-5&&std::abs(Z)<1e-5&&properties.Mass()>200;
+            }
+        }
+        check(shaft&&boss&&flat,"Actual shaft Ø4, pilot Ø7 and CAD nominal D-flat (Y=1.5, Z=4.5..12.5) match the drawing",part);
+        check(mount&&holeSides.size()==2,"Mounting plane and M3 nominal bores at Y +/-8.5 are distinct from face screws",part);
+        if(index==0||index==3)
+        {
+            auto imported=clone(record);const auto resource=index==3?"0J1113":"0J1647";
+            const auto file=juce::File::getCurrentWorkingDirectory().getChildFile("Resources/components/manufacturer/pololu").getChildFile(resource).getChildFile(record["geometry"]["sourceFile"].toString());
+            bool loaded=components::attachModel(imported,file,error);auto transferred=loaded?components::shape(imported,error):TopoDS_Shape();
+            if(loaded&&index==3){gp_Trsf shift;shift.SetTranslation(gp_Vec(-30.875,0,-18.375));transferred=BRepBuilderAPI_Transform(transferred,shift,true).Shape();}
+            GProp_GProps sourceProps,snapshotProps;if(!transferred.IsNull()){BRepGProp::VolumeProperties(transferred,sourceProps);BRepGProp::VolumeProperties(solid,snapshotProps);}
+            check(loaded&&!transferred.IsNull()&&std::abs(sourceProps.Mass()-snapshotProps.Mass())<1e-5,"Production STEP importer reproduces the normalized snapshot volume",part+": "+error);
+        }
+        auto request=object();put(request,"action","insert");put(request,"component",key);auto placement=object();put(placement,"x",index*100.0);put(placement,"y",5.0);put(placement,"z",7.0);put(placement,"ry",90.0);put(request,"placement",placement);
+        const auto inserted=pololu.componentCommand(request);const auto* occurrence=pololu.document().mechanicsData().findInstance(inserted["id"].toString());
+        bool located=false;if(occurrence){gp_Dir axis(0,0,1);axis.Transform(occurrence->placement.toTrsf());located=std::abs(axis.X()-1)<1e-6&&std::abs(occurrence->placement.x-index*100.0)<1e-6;if(index==0)firstPololuFeature=occurrence->featureId;}
+        check((bool)inserted["ok"]&&located,"Pololu occurrence placement rotates the physical shaft axis",inserted["error"]);
+    }
+    const auto pololuFile=folder.getChildFile("pololu25d-assembly.djo");const auto pololuDefinitions=juce::JSON::toString(pololu.document().componentData());CadDocument pololuReloaded;
+    check(pololu.save(pololuFile,error)&&pololuReloaded.load(pololuFile,error)&&juce::JSON::toString(pololuReloaded.componentData())==pololuDefinitions&&pololuReloaded.mechanicsData().instances.size()==4,"Native save/reopen retains four Pololu identities, STEP geometry, interfaces and placements",error);
+    check(pololu.undo(error)&&pololu.document().mechanicsData().instances.size()==3&&pololu.redo(error)&&pololu.document().mechanicsData().instances.size()==4,"Pololu insertion preserves OCAF undo/redo",error);
     report=object();put(report,"passed",passed);put(report,"checks",checks);put(report,"imports",importReports);put(report,"coverage",juce::JSON::parse(R"({"robotComponents":32,"batteryPacks":43,"catalogOnly":7,"simplifiedCylinders":2,"envelopes":66,"materialReferencesNotDuplicated":29})"));put(report,"folder",folder.getFullPathName());return passed;
 }
 }
