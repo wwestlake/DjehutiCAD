@@ -17,7 +17,7 @@ const juce::Colour selectedColour(0xffffb86b), targetColour(0xff63d48a), toolCol
 const juce::Colour interferenceColour(0xffe0303a);           // parts of an interfering pair
 constexpr juce::uint32 interferenceRegionArgb = 0xffffe14d;  // outline of the common volume
 
-bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "revolve" || type == "cut" || type == "union" || type == "subtract" || type == "intersect" || type == "chamfer" || type == "fillet"; }
+bool isSolidType(const juce::String& type) { return type == "box" || type == "cylinder" || type == "extrude" || type == "revolve" || type == "cut" || type == "union" || type == "subtract" || type == "intersect" || type == "chamfer" || type == "hole" || type == "component" || type == "fillet"; }
 bool isPrimitiveType(const juce::String& type) { return type == "box" || type == "cylinder"; }
 // Joint coordinates are radians/metres everywhere except the UI, which shows degrees/millimetres.
 double toUi(const juce::String& jointType, double value) { return jointType == "revolute" ? value * 180.0 / juce::MathConstants<double>::pi : value * 1000.0; }
@@ -60,9 +60,9 @@ public:
         row.caption->setJustificationType(juce::Justification::topLeft);
         row.wide = true;
     }
-    juce::TextEditor& addNumber(const juce::String& key, const juce::String& caption, double value, const juce::String& unit, const juce::String& tip)
+    juce::TextEditor& addNumber(const juce::String& key, const juce::String& caption, double value, const juce::String& unit, const juce::String& tip, int decimals = 4)
     {
-        auto& editor = addText(key, caption, juce::String(value, 4).trimCharactersAtEnd("0").trimCharactersAtEnd("."), tip);
+        auto& editor = addText(key, caption, juce::String(value, decimals).trimCharactersAtEnd("0").trimCharactersAtEnd("."), tip);
         editor.setInputRestrictions(24, "0123456789.-");
         rows.back().unit = makeLabel(unit, dimTextColour, 13.0f, false);
         return editor;
@@ -672,7 +672,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
-            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
@@ -684,6 +684,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
+        else if (id == 40) executeUiCommand("hole");
         else if (id == 39) executeUiCommand("chamfer");
         else if (id == 38) executeUiCommand("lathe");
         else if (id == 37) executeUiCommand("revolve");
@@ -728,6 +729,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     cutButton.onClick = [this] { startTask(Task::cut); };
     latheButton.onClick = [this] { startTask(Task::lathe); };
     revolveButton.onClick = [this] { startTask(Task::revolve); };
+    holeButton.onClick = [this] { startTask(Task::hole); };
     chamferButton.onClick = [this] { startTask(Task::chamfer); };
     filletButton.onClick = [this] { startTask(Task::fillet); };
     subtractButton.onClick = [this] { startTask(Task::boolean, "subtract"); };
@@ -922,7 +924,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
         force = true;
     }
     if (!force && document.revision() == shownRevision) return;
-    chamferPreviewActive=false;chamferSourceActive=false;
+    chamferPreviewActive=false;chamferSourceActive=false;holeSourceActive=false;
     shownRevision = document.revision();
     if (interferenceActive && (document.revision() != interferenceReport.documentRevision || document.documentInstance() != interferenceReport.documentInstance)) markInterferenceStale();
     modelView.setSnapshot(service->snapshot());
@@ -1024,7 +1026,7 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
     selectFeature(id);
 }
 
-bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isCommandTask() const { return task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::hole || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
 // "face <token> of <body>" for a face-attached sketch.
 juce::String CadWorkspacePanel::supportText(const djehuti::cad::CadSketch& sketch) const { return "face " + sketch.supportFace + " of " + featureName(sketch.supportFeature); }
 bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
@@ -1048,6 +1050,7 @@ void CadWorkspacePanel::selectionChanged()
     updateHighlights();
     if (selection == nullptr) return;
     const auto& picked = selection->selected();
+    if(task==Task::hole){if(picked.valid()&&picked.face>=0)chooseHoleFace(picked);return;}
     if (picked.valid() && (picked.face >= 0 || picked.edge >= 0))
     {
         if (task == Task::fillet || task == Task::chamfer)
@@ -1123,6 +1126,7 @@ void CadWorkspacePanel::addSubshapePanel(juce::String& title, juce::String& inst
             form->addButton("faceSketch", "Create Sketch on this face", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr) safe->startTask(Task::createSketch); }); },
                             "Start a sketch attached to this face; it follows the face when the body changes.");
         else form->addNote({}, reason, 2);
+        if(face.planar&&face.token.isNotEmpty())form->addButton("faceHole","Drill a hole on this face...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::hole);});},"Open Drill Press with this planar face selected.");
     }
     else
     {
@@ -1134,6 +1138,7 @@ void CadWorkspacePanel::addSubshapePanel(juce::String& title, juce::String& inst
                 if (safe != nullptr) safe->startTask(Task::fillet);
             });
         }, "Create a constant-radius fillet on this edge.");
+        form->addButton("edgeChamfer","Chamfer this edge...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::chamfer);});},"Open Chamfer with this edge selected.");
     }
     form->addButton("clearPick", "Clear selection", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] { if (safe != nullptr && safe->selection != nullptr) safe->selection->clear(); }); }, "Clear the face or edge selection.");
 }
@@ -1232,7 +1237,7 @@ void CadWorkspacePanel::selectSketchEntity(const juce::String& id, bool second)
 void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
 {
     if (editingSketchId.isNotEmpty() && next != Task::sketchEdit) finishSketch();
-    clearChamferPreview(false);
+    clearHoleSource();clearChamferPreview(false);
     const auto* selected = service->document().find(selectedId);
     task = next; booleanKind = kind;
     if(next==Task::lathe)editingLatheId=selected!=nullptr&&selected->lathe?selectedId:juce::String();
@@ -1266,6 +1271,14 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
         auto* a=new juce::DynamicObject();a->setProperty("action","get");a->setProperty("id",editingChamferId);const auto p=service->chamferCommand(a)["parameters"];
         targetId=p["target"].toString();filletEdges.clear();if(const auto* edges=p["edges"].getArray())for(const auto& edge:*edges)filletEdges.push_back((int)edge);
         showChamferSource();
+    }
+    if(next==Task::hole)
+    {
+        editingHoleId=selected!=nullptr&&selected->type=="hole"?selectedId:juce::String();holeSettings=editingHoleId.isEmpty()?djehuti::cad::CadHoleParameters():selected->hole;
+        holeSelectionRevision=service->document().revision();const auto picked=selection!=nullptr?selection->selected():djehuti::cad::CadPick();
+        if(selection!=nullptr)selection->setMode(djehuti::cad::CadSelection::Mode::face);
+        if(editingHoleId.isNotEmpty()){targetId=selected->targetFeatureId;showHoleSource();}
+        else if(picked.valid()&&picked.face>=0)chooseHoleFace(picked);
     }
     if (next == Task::createSketch) { djehuti::cad::CadFaceInfo support; juce::String reason; if (selectedSupport(support, reason)) sketchPlane = "FACE"; }
     if (next == Task::extrude || next == Task::revolve || next == Task::cut) { if (selected != nullptr && selected->type == "sketch") profileId = selectedId; }
@@ -1310,7 +1323,7 @@ void CadWorkspacePanel::showChamferSource()
 void CadWorkspacePanel::clearChamferPreview(bool keepSource)
 {
     if(!chamferPreviewActive&&!chamferSourceActive)return;
-    chamferPreviewActive=false;chamferSourceActive=false;modelView.setSnapshot(service->snapshot());
+    chamferPreviewActive=false;chamferSourceActive=false;holeSourceActive=false;modelView.setSnapshot(service->snapshot());
     if(keepSource&&task==Task::chamfer&&editingChamferId.isNotEmpty())showChamferSource();
     wakeFrames();
 }
@@ -1322,6 +1335,69 @@ void CadWorkspacePanel::previewChamfer()
     if(snapshot==nullptr){if(task==Task::chamfer)showChamferSource();showError(error);return;}
     modelView.setSnapshot(snapshot);chamferPreviewActive=true;wakeFrames();
     setMessage("Chamfer preview. Apply commits it; changing inputs or Cancel clears it.",0);validateTask();
+}
+
+void CadWorkspacePanel::showHoleSource()
+{
+    if(editingHoleId.isEmpty()||targetId.isEmpty())return;
+    const auto all=service->document().snapshot(true);auto view=std::make_shared<djehuti::cad::CadRenderSnapshot>(*service->snapshot());
+    std::erase_if(view->meshes,[&](const auto& m){return m.featureId==editingHoleId||m.featureId==targetId;});
+    std::erase_if(view->edges,[&](const auto& e){return e.featureId==editingHoleId||e.featureId==targetId;});
+    for(const auto& m:all->meshes)if(m.featureId==targetId)view->meshes.push_back(m);
+    for(const auto& e:all->edges)if(e.featureId==targetId)view->edges.push_back(e);
+    view->revision|=(std::uint64_t(1)<<62);modelView.setSnapshot(view);holeSourceActive=true;wakeFrames();
+}
+
+void CadWorkspacePanel::clearHoleSource()
+{
+    if(!holeSourceActive)return;holeSourceActive=false;modelView.setSnapshot(service->snapshot());wakeFrames();
+}
+
+void CadWorkspacePanel::chooseHoleFace(const djehuti::cad::CadPick& pick)
+{
+    djehuti::cad::CadFaceInfo face;juce::String error;
+    if(!service->describeFace(pick.featureId,pick.face,face,error)){showError(error);return;}
+    if(!face.planar||face.token.isEmpty()){showError("Drill Press needs a planar face with a persistent name.");return;}
+    auto* a=new juce::DynamicObject();a->setProperty("action","face");a->setProperty("target",pick.featureId);a->setProperty("face",face.token);
+    const auto info=service->holeCommand(a);if(!(bool)info["ok"]){showError(info["error"].toString());return;}
+    auto p=holeSettings;
+    if(form!=nullptr&&form->control("holeDiameter")!=nullptr)
+    {
+        auto values=readHoleForm(error);
+        if(values.isObject()){values.getDynamicObject()->removeProperty("target");values.getDynamicObject()->setProperty("face",face.token);djehuti::cad::readHoleParameters(values,p,error);}
+    }
+    p.face=face.token;p.u=(double)info["centreUV"][0];p.v=(double)info["centreUV"][1];targetId=pick.featureId;holeSettings=p;
+    if(editingHoleId.isNotEmpty())showHoleSource();rebuildTaskPanel(false);
+}
+
+void CadWorkspacePanel::addHoleFields(const djehuti::cad::CadHoleParameters& p,const juce::String& target)
+{
+    form->addNote({},target.isEmpty()?"Choose a planar entry face in Face mode.":"Entry face on "+featureName(target)+". Position is measured in the face U/V frame; drilling goes into the body.",3);
+    form->addNumber("holeU","Position U",p.u,"mm","Coordinate along the support face's local U direction.",12);
+    form->addNumber("holeV","Position V",p.v,"mm","Coordinate along the support face's local V direction.",12);
+    const juce::StringArray styles{"plain","counterbore","countersink"};form->addChoice("holeStyle","Hole type",{"Plain","Counterbore","Countersink"},styles.indexOf(p.style),"Plain hole, cylindrical counterbore, or conical countersink.");
+    form->addNumber("holeDiameter","Diameter",p.diameter,"mm","Shaft diameter.",12);
+    form->addToggle("holeThroughAll","Through all",p.throughAll,"Follow the target's full extent in the drilling direction after parameter edits.");
+    form->addNumber("holeDepth","Blind depth",p.depth,"mm","Finite flat-bottom depth measured from the entry face.",12);
+    form->addNumber("holeHeadDiameter","Head diameter",p.headDiameter,"mm","Counterbore or countersink entry diameter; larger than the shaft.",12);
+    form->addNumber("holeHeadDepth","Counterbore depth",p.headDepth,"mm","Depth of the larger cylindrical recess.",12);
+    form->addNumber("holeAngle","Included angle",p.countersinkAngleDegrees,"deg","Countersink included angle, greater than 0 and less than 180 degrees.",12);
+    form->addNote({},"The centre must lie in face material. Use U/V to move away from edges or existing openings. Blind holes have a flat bottom; countersink depth follows its diameters and angle.",4);
+}
+
+juce::var CadWorkspacePanel::readHoleForm(juce::String& error) const
+{
+    const auto* feature=service->document().find(selectedId);const bool body=task==Task::body&&feature!=nullptr&&feature->type=="hole";
+    auto p=body?feature->hole:holeSettings;
+    const juce::StringArray styles{"plain","counterbore","countersink"};const int style=form->choice("holeStyle");
+    if(!juce::isPositiveAndBelow(style,styles.size())){error="Choose a hole type.";return {};}
+    p.style=styles[style];p.throughAll=form->toggle("holeThroughAll");
+    for(const auto& item:std::vector<std::pair<const char*,double*>>{{"holeU",&p.u},{"holeV",&p.v},{"holeDiameter",&p.diameter},{"holeDepth",&p.depth},{"holeHeadDiameter",&p.headDiameter},{"holeHeadDepth",&p.headDepth},{"holeAngle",&p.countersinkAngleDegrees}})
+    {
+        if(form->rowVisible(item.first)&&!form->numberValid(item.first)){error="Hole coordinates and dimensions must be finite numbers.";return {};}
+        if(form->numberValid(item.first))*item.second=form->number(item.first);
+    }
+    auto result=djehuti::cad::holeParametersToJson(p);result.getDynamicObject()->setProperty("target",body?feature->targetFeatureId:targetId);return result;
 }
 
 void CadWorkspacePanel::addLatheFields()
@@ -1338,7 +1414,7 @@ void CadWorkspacePanel::addLatheFields()
         form->addMultiline("latheInner","Bore profile",editingLatheId.isEmpty()?"0, 0\n30, 0":djehuti::cad::latheStationsText(data["parameters"]["inner"]),"One axial position, bore diameter per line, in mm. Zero diameter gives solid material down to the axis.");
     }
     else form->addNote({},"This profile has custom sketch edits or constraints. Edit the source sketch to preserve them; the turning angle remains editable here.",3);
-    form->addNumber("latheAngle","Angle",angle,"deg","360 for a complete turned part; partial angles remain supported.");
+    form->addNumber("latheAngle","Angle",angle,"deg","360 for a complete turned part; partial angles remain supported.",12);
     form->addToggle("latheReverse","Reverse rotation",reverse,"Reverse the Revolve direction.");
     form->addNote({},"Axial positions run along sketch V (world Z for new profiles); diameters are converted to radial X. Outside and bore ends must match. Station edits and turning are one Undo step.",4);
     if(editingLatheId.isNotEmpty())form->addButton("latheSketch","Edit 2D profile",[this,sketch=data["sketch"].toString()]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr)safe->enterSketch(sketch);});},"Use the normal sketch editor for freeform profile edits.");
@@ -1470,9 +1546,14 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
                 if(f->lathe)form->addButton("latheProfile","Lathe profile...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::lathe);});},"Edit outside and bore stations.");
                 form->addButton("revolveSketch","Edit source sketch",[this,sketch=f->sketchId]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr)safe->enterSketch(sketch);});},"Edit the authoritative 2D profile.");
             }
+            else if(f->type=="hole")
+            {
+                form->addHeader("Hole / Drill Press");addHoleFields(f->hole,f->targetFeatureId);
+                form->addButton("holeEditFace","Edit support face...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::hole);});},"Show the source body and select another planar support face.");
+            }
             else if(f->type=="chamfer")
             {
-                form->addHeader("Chamfer");form->addNumber("chamferDistance","Distance",f->width,"mm","Equal distance on both adjacent faces.");
+                form->addHeader("Chamfer");form->addNumber("chamferDistance","Distance",f->width,"mm","Equal distance on both adjacent faces.",12);
                 form->addNote({},juce::String(f->edges.size())+" persistent edge references",1);
                 form->addButton("chamferEditEdges","Edit edges...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::chamfer);});},"Show the source body and reselect edges.");
                 form->addButton("chamferPreview","Preview",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->previewChamfer();});},"Preview without changing the document.");
@@ -1666,6 +1747,10 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("distance", "Distance", extrudeDistance, "mm", "Extrusion distance from the sketch plane.");
             form->addToggle("reverse", "Reverse direction", false, "Extrude to the opposite side of the sketch plane.");
             break;
+        case Task::hole:
+            title="Drill Press / Hole";instruction="Pick a planar face, then set its U/V position, diameter and drilling depth.";accept=editingHoleId.isEmpty()?"Drill hole":"Update hole";
+            form->addSlot("holeTarget","Support face",targetId.isEmpty()?juce::String("Pick a planar face"):featureName(targetId),targetColour,true,[this]{if(selection!=nullptr)selection->setMode(djehuti::cad::CadSelection::Mode::face);setMessage("Pick a planar face on the target body.",0);},"Select the planar entry face in Face mode.");
+            addHoleFields(holeSettings,targetId);break;
         case Task::lathe:
             title = "Virtual Lathe"; instruction = "Enter axial positions and outside/bore diameters in mm. Repeated positions make shoulders and grooves."; accept = editingLatheId.isEmpty()?"Turn part":"Update turned part";
             addLatheFields(); break;
@@ -1711,7 +1796,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
                 postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
                     if (safe != nullptr) { safe->activeRole = 0; safe->rebuildTaskPanel(true); }
                 });
-            }, "Click, then pick the solid body to fillet.");
+            }, "Click, then pick the solid target body.");
             juce::String edgeSummary;
             if (filletEdges.empty())
             {
@@ -1739,7 +1824,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addHeader("Parameters");
             if(chamfer)
             {
-                form->addNumber("chamferDistance","Distance",chamferDistance,"mm","Equal distance on both faces adjoining each edge.");
+                form->addNumber("chamferDistance","Distance",chamferDistance,"mm","Equal distance on both faces adjoining each edge.",12);
                 form->addButton("chamferPreview","Preview",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->previewChamfer();});},"Validate and display the candidate without committing.");
                 form->addButton("chamferClearPreview","Clear preview",[this]{clearChamferPreview(true);validateTask();},"Restore the source body for edge picking.");
             }
@@ -1852,6 +1937,7 @@ void CadWorkspacePanel::validateTask()
             break;
         case Task::newBox: requirePositive("width", "Width"); requirePositive("depth", "Depth"); requirePositive("height", "Height"); break;
         case Task::newCylinder: requirePositive("radius", "Radius"); requirePositive("height", "Height"); break;
+        case Task::hole: break;
         case Task::lathe: { juce::String e; readLatheForm(e); if(e.isNotEmpty()){problem=e;severity=2;} break; }
         case Task::revolve: break;
         case Task::extrude:
@@ -1874,7 +1960,7 @@ void CadWorkspacePanel::validateTask()
         }
         case Task::chamfer:
         case Task::fillet:
-            if (targetId.isEmpty()) problem = "Select a solid body to fillet.";
+            if (targetId.isEmpty()) problem = "Select a solid target body.";
             else if (!isSolid(targetId)) problem = featureName(targetId) + " is not a solid body.";
             else if (filletEdges.empty()) problem = "Select at least one edge in Edge mode.";
             if(task==Task::chamfer)requirePositive("chamferDistance","Chamfer distance");else requirePositive("radius", "Radius");
@@ -1895,6 +1981,14 @@ void CadWorkspacePanel::validateTask()
     }
     if (task == Task::cut) form->setRowVisible("depth", !form->toggle("throughAll"));
     if(task==Task::chamfer&&chamferSelectionRevision!=service->document().revision()){problem="The model changed. Reopen Chamfer and reselect its edges.";severity=2;}
+    if(form->control("holeDiameter")!=nullptr)
+    {
+        const int style=form->choice("holeStyle");form->setRowVisible("holeDepth",!form->toggle("holeThroughAll"));form->setRowVisible("holeHeadDiameter",style>0);form->setRowVisible("holeHeadDepth",style==1);form->setRowVisible("holeAngle",style==2);
+        juce::String e;auto parameters=readHoleForm(e);djehuti::cad::CadHoleParameters p;
+        if(parameters.isObject()){const auto target=parameters["target"].toString();parameters.getDynamicObject()->removeProperty("target");if(!isSolid(target))e="Choose a solid target and a planar face.";else if(e.isEmpty())djehuti::cad::readHoleParameters(parameters,p,e);}
+        if(e.isNotEmpty()){problem=e;severity=2;}
+        if(task==Task::hole&&holeSelectionRevision!=service->document().revision()){problem="The model changed. Reopen Drill Press and choose its face again.";severity=2;}
+    }
     if(form->control("chamferDistance")!=nullptr)requirePositive("chamferDistance","Chamfer distance");
     if(auto* button=form->control("chamferPreview"))button->setEnabled(problem.isEmpty());
     if(auto* button=form->control("chamferClearPreview"))button->setEnabled(chamferPreviewActive);
@@ -1940,13 +2034,18 @@ void CadWorkspacePanel::acceptTask()
                 if (!ok) { showError(e); return; }
                 f = document.find(selectedId);
             }
+            if(f->type=="hole")
+            {
+                auto parameters=readHoleForm(e);if(e.isNotEmpty()){showError(e);return;}auto* args=new juce::DynamicObject();args->setProperty("action","update");args->setProperty("id",selectedId);args->setProperty("parameters",parameters);const auto reply=service->holeCommand(args);
+                if(!(bool)reply["ok"]){showError(reply["error"].toString());return;}f=document.find(selectedId);
+            }
             if(f->type=="chamfer")
             {
                 const auto request=chamferArguments("update");clearChamferPreview(false);const auto reply=service->chamferCommand(request);
                 if(!(bool)reply["ok"]){showError(reply["error"].toString());return;}f=document.find(selectedId);
             }
             if (ok && name != f->name) ok = service->rename(selectedId, name, e);
-            if (ok && (f = document.find(selectedId)) != nullptr && (f->type!="chamfer" && (w != f->width || d != f->depth || h != f->height || r != f->radius))) ok = service->setDimensions(selectedId, w, d, h, r, e);
+            if (ok && (f = document.find(selectedId)) != nullptr && (f->type!="chamfer" && f->type!="hole" && (w != f->width || d != f->depth || h != f->height || r != f->radius))) ok = service->setDimensions(selectedId, w, d, h, r, e);
             if (ok && (f = document.find(selectedId)) != nullptr && (x != f->x || y != f->y || z != f->z)) ok = service->setPlacement(selectedId, x, y, z, f->rx, f->ry, f->rz, e);
             refreshFromDocument(true);
             rebuildTaskPanel(false);
@@ -2019,6 +2118,12 @@ void CadWorkspacePanel::acceptTask()
             if (!service->createCylinder(cylinderSize[0], cylinderSize[1], id, e)) { showError(e); return; }
             refreshFromDocument(true); selectFeature(id); setMessage(featureName(id) + " created at the origin.", 0);
             return;
+        case Task::hole:
+        {
+            auto parameters=readHoleForm(e);if(e.isNotEmpty()){showError(e);return;}auto* args=new juce::DynamicObject();args->setProperty("action",editingHoleId.isEmpty()?"create":"update");args->setProperty("id",editingHoleId);args->setProperty("parameters",parameters);clearHoleSource();
+            const auto reply=service->holeCommand(args);if(!(bool)reply["ok"]){if(editingHoleId.isNotEmpty())showHoleSource();showError(reply["error"].toString());return;}
+            id=reply["id"].toString();refreshFromDocument(true);selectFeature(id);setMessage("Hole drilled.",0);return;
+        }
         case Task::lathe:
         {
             auto parameters=readLatheForm(e);if(e.isNotEmpty()){showError(e);return;}
@@ -2086,7 +2191,7 @@ void CadWorkspacePanel::acceptTask()
 
 void CadWorkspacePanel::cancelTask()
 {
-    clearChamferPreview(false);
+    clearHoleSource();clearChamferPreview(false);
     switch (task)
     {
         case Task::body: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;
@@ -2173,7 +2278,7 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what)
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
-    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &revolveButton, &latheButton, &cutButton, &filletButton, &chamferButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
+    for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &revolveButton, &latheButton, &cutButton, &filletButton, &chamferButton, &holeButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
     {
         const auto mode = selection != nullptr ? selection->mode() : djehuti::cad::CadSelection::Mode::body;
         bodyModeButton.setToggleState(mode == djehuti::cad::CadSelection::Mode::body, juce::dontSendNotification);
@@ -2198,7 +2303,7 @@ void CadWorkspacePanel::updateToolbar()
     if (const auto* sketch = service->document().findSketch(editingSketchId)) modeLabel.setText("Sketch  |  " + featureName(editingSketchId) + "  |  " + (sketch->onFace() ? "on " + supportText(*sketch) : sketch->plane + " plane"), juce::dontSendNotification);
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
-    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton, &revolveButton,&latheButton,&cutButton,&filletButton,&chamferButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
+    for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton, &revolveButton,&latheButton,&cutButton,&filletButton,&chamferButton,&holeButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
     resized(); repaint();
 }
 
@@ -3212,7 +3317,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
     if (command == "clearInterference") { clearInterference(); return true; }
     const std::pair<const char*,juce::TextButton*> commands[] = {
         {"undo",&undoButton},{"redo",&redoButton},{"sketch",&sketchButton},{"box",&boxButton},{"cylinder",&cylinderButton},
-        {"lathe",&latheButton},{"revolve",&revolveButton},{"extrude",&extrudeButton},{"cut",&cutButton},{"chamfer",&chamferButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
+        {"lathe",&latheButton},{"revolve",&revolveButton},{"extrude",&extrudeButton},{"cut",&cutButton},{"hole",&holeButton},{"chamfer",&chamferButton},{"fillet",&filletButton},{"subtract",&subtractButton},{"union",&unionButton},{"intersect",&intersectButton},
         {"sketchSelect",&selectToolButton},{"line",&lineButton},{"rectangle",&rectangleButton},{"circle",&circleButton},{"curve",&curveButton},{"constrain",&constrainButton},
         {"fitSketch",&fitSketchButton},{"finishSketch",&finishSketchButton},{"instance",&instanceButton},{"joint",&jointButton},{"coupling",&couplingButton},
         {"link",&linkButton},{"ik",&ikButton},{"fit",&fitButton},{"reset",&resetViewButton},{"views",&viewsButton},
@@ -3284,7 +3389,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -3293,6 +3398,7 @@ juce::var CadWorkspacePanel::automationState()
         auto* o = new juce::DynamicObject(); o->setProperty("id", f.id); o->setProperty("name", f.name); o->setProperty("type", f.type); o->setProperty("visible", f.visible);
         o->setProperty("width", f.width); o->setProperty("depth", f.depth); o->setProperty("height", f.height); o->setProperty("radius", f.radius);
         o->setProperty("x", f.x); o->setProperty("y", f.y); o->setProperty("z", f.z);
+        if(f.type=="hole"){auto p=djehuti::cad::holeParametersToJson(f.hole);p.getDynamicObject()->setProperty("target",f.targetFeatureId);o->setProperty("parameters",p);}
         if(f.type=="chamfer"){auto* a=new juce::DynamicObject();a->setProperty("action","get");a->setProperty("id",f.id);o->setProperty("parameters",service->chamferCommand(a)["parameters"]);}
         if (f.type == "revolve")
         { auto p = djehuti::cad::revolveParametersToJson(f.revolve); p.getDynamicObject()->setProperty("sketch", f.sketchId); o->setProperty("parameters", p); if(f.lathe)o->setProperty("workflow","lathe"); }

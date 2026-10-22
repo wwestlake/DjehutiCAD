@@ -16,6 +16,9 @@ parts, shoulders and grooves using the same parametric Revolve implementation.
 [Chamfer](docs/CHAMFER.md) adds editable equal-distance, multi-edge bevels and
 read-only previews through the GUI and shared command/API system.
 
+[Hole / Drill Press](docs/HOLE_DRILL_PRESS.md) provides face-based blind/through-all
+holes, counterbores, countersinks and editable numeric positioning.
+
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 

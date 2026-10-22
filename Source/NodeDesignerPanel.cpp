@@ -2158,6 +2158,7 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
         { "cad_list_faces", "CAD List Faces", "CAD", juce::Colour(0xff4b8fc8), 0, { in("feature", "string") }, { out("faces json", "string") } },
         { "cad_face_sketch", "CAD Face Sketch", "CAD", juce::Colour(0xff4b8fc8), 0, { in("feature", "string"), in("face", "string") }, { out("sketch", "string") } },
         // Manufacturing export: args json as for the cad_export agent tool ({"format":"3mf","path":"D:/out/part.3mf"}).
+        { "cad_hole", "Drill Press / Hole", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_chamfer", "CAD Chamfer", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_lathe", "Virtual Lathe", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_revolve", "CAD Revolve", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },

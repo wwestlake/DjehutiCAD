@@ -10,6 +10,15 @@ The old permanent command rows are removed. Apply/Cancel remain in the task insp
 
 ## Toolbox and selection
 
+The CAD **Modify** menu includes [Virtual Lathe](VIRTUAL_LATHE.md),
+[Chamfer](CHAMFER.md), and [Drill Press / Hole](HOLE_DRILL_PRESS.md). Lathe edits
+outside/bore profiles through the existing Revolve command. Chamfer supports
+Shift-click selection of multiple edges and a temporary preview. Drill Press
+uses a selected planar face with numeric U/V positioning and plain, counterbore
+or countersink geometry. Select the resulting body to edit parameters; dedicated
+buttons reopen profile/edge/support selection. Each tool shares the existing
+command service, OCAF history, native save and engineering JSON.
+
 The dockable Toolbox chooses persistent interaction tools for the shared CAD document. Pointer, Box select and Circle select operate in the model/3D views; Bodies/Faces/Edges choose the selection filter. Sketch Select, Line, Rectangle and Circle become available while a sketch is being edited. The active tool/filter is highlighted. Components and hardware are not Toolbox tools; a Parts Library is a separate future capability.
 
 - Pointer click selects the geometry under the cursor. Dragging still orbits; Shift/right-drag pans. Wheel zooms.

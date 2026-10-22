@@ -56,7 +56,7 @@ public:
 private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -142,7 +142,7 @@ private:
     juce::TooltipWindow tooltipWindow { this, 600 };
     juce::Label modeLabel, statusLabel, unitsLabel, treeHeading;
     juce::TextButton sketchButton { "Create Sketch" }, boxButton { "Box" }, cylinderButton { "Cylinder" }, extrudeButton { "Extrude" }, cutButton { "Cut Sketch" },
-        filletButton { "Fillet" }, revolveButton { "Revolve" }, latheButton { "Virtual Lathe" }, chamferButton { "Chamfer" },
+        filletButton { "Fillet" }, revolveButton { "Revolve" }, latheButton { "Virtual Lathe" }, chamferButton { "Chamfer" }, holeButton { "Drill Press" },
         subtractButton { "Subtract" }, unionButton { "Union" }, intersectButton { "Intersect" }, undoButton { "Undo" }, redoButton { "Redo" },
         fitButton { "Fit All" }, resetViewButton { "Reset View" }, viewsButton { "3D Views" },
         selectToolButton { "Select" }, lineButton { "Line" }, rectangleButton { "Rectangle" }, circleButton { "Circle" }, curveButton { "Curve" }, constrainButton { "Constrain" },
@@ -167,6 +167,15 @@ private:
     juce::String profileId, targetId, toolId;
     std::vector<int> filletEdges;
     double filletRadius = 2.0;
+    djehuti::cad::CadHoleParameters holeSettings;
+    juce::String editingHoleId;
+    bool holeSourceActive = false;
+    std::uint64_t holeSelectionRevision = 0;
+    void addHoleFields(const djehuti::cad::CadHoleParameters&, const juce::String& target);
+    juce::var readHoleForm(juce::String& error) const;
+    void chooseHoleFace(const djehuti::cad::CadPick&);
+    void showHoleSource();
+    void clearHoleSource();
     double chamferDistance = 1.0;
     juce::String editingChamferId;
     bool chamferPreviewActive = false, chamferSourceActive = false;

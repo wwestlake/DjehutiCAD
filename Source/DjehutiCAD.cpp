@@ -153,9 +153,9 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
-        if (name == "cad_revolve" || name == "cad_lathe" || name == "cad_chamfer")
+        if (name == "cad_revolve" || name == "cad_lathe" || name == "cad_chamfer" || name == "cad_hole")
         {
-            auto result = name == "cad_chamfer" ? safeThis->cadService->chamferCommand(parsedArgs) : name == "cad_lathe" ? safeThis->cadService->latheCommand(parsedArgs) : safeThis->cadService->revolveCommand(parsedArgs);
+            auto result = name == "cad_hole" ? safeThis->cadService->holeCommand(parsedArgs) : name == "cad_chamfer" ? safeThis->cadService->chamferCommand(parsedArgs) : name == "cad_lathe" ? safeThis->cadService->latheCommand(parsedArgs) : safeThis->cadService->revolveCommand(parsedArgs);
             result.getDynamicObject()->setProperty("state", safeThis->cadWorkspace->automationState());
             return juce::JSON::toString(result, false, 17).toStdString();
         }
@@ -575,6 +575,10 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "1. Create Sketch, choose the XY, XZ or YZ plane, then Create Sketch.\n"
                                                "2. Pick Line, Rectangle or Circle and drag in the canvas. Esc cancels a gesture; Select edits entities.\n"
                                                "3. Finish Sketch, keep the sketch selected, then Extrude (or Cut Sketch with a Target body).\n\n"
+                                               "Turning, bevels and drilling (Modify menu):\n"
+                                               "Virtual Lathe edits outside/bore station tables in axial mm and diameter mm; steps and grooves use repeated axial positions. It uses the existing editable parametric Revolve.\n"
+                                               "Chamfer: pick edges in Edge mode (Shift-click for several), enter an equal distance and Preview before Apply. Select the result to edit its distance or edges.\n"
+                                               "Drill Press / Hole: pick a planar face, set its local U/V centre and diameter, then blind depth or Through all. Plain, Counterbore and Countersink types are editable from the resulting body's inspector.\n\n"
                                                "Subtract:\n"
                                                "Choose Subtract, pick the Target (body to keep) and the Tool (cutting body) in the tree or model view, then press Subtract. "
                                                "Both sources stay in the history, hidden; Undo restores them.\n\n"

@@ -58,6 +58,9 @@ once finished.
 ## Tools
 
 All agent tools are available:
+- Hole/Drill Press: `cad_hole` supports planar-face frame inspection and CRUD;
+  see [Hole / Drill Press](HOLE_DRILL_PRESS.md) for U/V positioning, counterbores,
+  countersinks and through-all behavior.
 - Chamfer: `cad_chamfer` supports edge inspection, CRUD and read-only preview;
   see [Chamfer](CHAMFER.md) for selection, distance and preview semantics.
 - Virtual Lathe: `cad_lathe` supports `create`, `get`, `update`, `delete`; see

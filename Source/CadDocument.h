@@ -59,6 +59,16 @@ bool readRevolveParameters(const juce::var&, CadRevolveParameters&, juce::String
 juce::var latheProfileFromText(const juce::String& outer, const juce::String& inner, juce::String& error);
 juce::String latheStationsText(const juce::var& stations);
 
+struct CadHoleParameters
+{
+    juce::String face, style = "plain";
+    double u = 0, v = 0, diameter = 6, depth = 10;
+    bool throughAll = false;
+    double headDiameter = 12, headDepth = 3, countersinkAngleDegrees = 90;
+};
+juce::var holeParametersToJson(const CadHoleParameters&);
+bool readHoleParameters(const juce::var&, CadHoleParameters&, juce::String& error);
+
 struct CadFeature
 {
     juce::String id, name, type;
@@ -71,6 +81,7 @@ struct CadFeature
     juce::StringArray edges;  // for fillet: persistent edge reference tokens
     CadRevolveParameters revolve;
     bool lathe = false; // Lathe workflow; the editable source sketch remains the profile authority.
+    CadHoleParameters hole;
     TopoDS_Shape shape;
     CadFaceOrigins faceOrigins;   // derived with shape
 };
@@ -212,6 +223,7 @@ public:
     bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters&, juce::String& error);
     juce::var latheCommand(const juce::var& args);
     juce::var chamferCommand(const juce::var& args);
+    juce::var holeCommand(const juce::var& args);
     std::shared_ptr<const CadRenderSnapshot> chamferPreview(const juce::var& args, juce::var& result, juce::String& error) const;
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
@@ -345,6 +357,8 @@ private:
     bool sketchProfiles(const CadSketch& sketch, const CadSketchFrame& frame, std::vector<TopoDS_Face>& faces, juce::String& error, std::vector<std::pair<TopoDS_Shape, juce::String>>* edgeEntities = nullptr) const;
     TopoDS_Shape extrudeSketch(const CadSketch& sketch, const CadSketchFrame& frame, double depth, bool reverse, juce::String& error, CadFaceOrigins* origins = nullptr, const juce::String& owner = {}) const;
     TopoDS_Shape revolveSketch(const CadFeature&, const CadSketch&, const CadSketchFrame&, CadFaceOrigins&, juce::String& error);
+    bool holeSupport(const juce::String& target, const juce::String& face, CadSketchFrame&, TopoDS_Face&, juce::String& error, juce::StringArray& active);
+    TopoDS_Shape drillShape(const CadFeature&, const TopoDS_Shape& target, const CadFaceOrigins&, CadFaceOrigins&, juce::String& error, juce::StringArray& active);
     static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);
@@ -423,6 +437,7 @@ public:
     juce::var revolveCommand(const juce::var& args);
     juce::var latheCommand(const juce::var& args) { return model.latheCommand(args); }
     juce::var chamferCommand(const juce::var& args) { return model.chamferCommand(args); }
+    juce::var holeCommand(const juce::var& args) { return model.holeCommand(args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
