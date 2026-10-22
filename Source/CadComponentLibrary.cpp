@@ -1,4 +1,5 @@
 #include "CadComponents.h"
+#include "EngineeringSpecification.h"
 #include "CadDocument.h"
 #include "CadCraftStock.h"
 #include <EngineeringData.h>
@@ -140,6 +141,7 @@ juce::var CadComponentLibrary::command(const juce::var& args,CadDocument& docume
         if(!juce::File::isAbsolutePath(path)){ok=false;error="Choose an absolute workbook or portable library path.";}
         else if(juce::File(path).hasFileExtension("xlsx"))ok=readWorkbook(juce::File(path),records,parsing,error);
         else ok=decode(juce::JSON::parse(juce::File(path)),records,error);
+        if(ok)for(auto& record:records)if(!engineering::specification(record).isVoid())put(record,"engineeringAssetRoot",juce::File(path).getParentDirectory().getFullPathName());
         if(ok)ok=importRecords(records,(bool)args["replaceConflicts"],importing,error);
         put(response,"parsing",parsing);put(response,"import",importing);
     }
@@ -150,7 +152,7 @@ juce::var CadComponentLibrary::command(const juce::var& args,CadDocument& docume
         else
         {
             auto item=object();put(item,"id","custom-"+juce::Uuid().toDashedString());put(item,"revision",1);put(item,"origin","custom");put(item,"name",args.getProperty("name",part->name));put(item,"category",args.getProperty("category","Custom/Parts"));put(item,"description",args["description"]);put(item,"properties",juce::Array<juce::var>());
-            if(const auto* source=document.componentFor(feature)){auto inherited=clone(*source);put(item,"properties",inherited["properties"]);for(const auto* key:{"manufacturer","model","partNumber","sourceUrl","massKg"})if(inherited.hasProperty(key))put(item,key,inherited[key]);}
+            if(const auto* source=document.componentFor(feature)){auto inherited=clone(*source);put(item,"properties",inherited["properties"]);for(const auto* key:{"manufacturer","model","partNumber","sourceUrl","massKg","engineering","engineeringAssetRoot"})if(inherited.hasProperty(key))put(item,key,inherited[key]);}
             auto provenance=object();put(provenance,"documentModelId",document.mechanicsData().modelId);put(provenance,"feature",feature);put(provenance,"revision",(juce::int64)document.revision());put(provenance,"file",document.file().getFileName());put(item,"provenance",provenance);
             auto geometry=object();put(geometry,"kind","brep");put(geometry,"level","custom");put(geometry,"label","User-designed solid; exact evaluated BRep snapshot");
             if(const auto* inherited=document.componentFor(feature))
@@ -163,6 +165,19 @@ juce::var CadComponentLibrary::command(const juce::var& args,CadDocument& docume
     else if(ok)
     {
         const auto* found=find(args["component"].toString());if(!found){ok=false;error="Select a library component.";}
+        else if(action=="engineering")
+        {
+            auto interpreted=engineering::interpret(*found);put(response,"engineering",interpreted);ok=(bool)interpreted["ok"];
+            if(!ok)error=interpreted["error"].toString();
+            const auto root=args.getProperty("path",(*found)["engineeringAssetRoot"]).toString();
+            if(ok&&(bool)args["verifyAssets"])
+            {
+                ok=juce::File::isAbsolutePath(root)&&engineering::verifyAssets(*found,juce::File(root),error);
+                if(!ok&&error.isEmpty())error="Supply the absolute directory containing the portable library and original assets.";
+                put(response,"assetsVerified",ok);
+            }
+            put(response,"assetRoot",root);
+        }
         else if(action=="insert")
         {
             CadFrame placement;const auto p=args["placement"];

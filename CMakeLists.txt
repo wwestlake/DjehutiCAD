@@ -138,6 +138,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadCantileverChecks.cpp
     Source/CadComponents.h
     Source/CadComponentGeometry.cpp
+    Source/CadManufacturerImport.cpp
+    Source/CadManufacturerChecks.cpp
     Source/CadComponentWorkbook.cpp
     Source/CadComponentLibrary.cpp
     Source/CadComponentDocument.cpp
@@ -217,3 +219,8 @@ add_custom_command(TARGET DjehutiCAD POST_BUILD
     COMMENT "Copying lib3mf.dll next to djehuti_cad.exe")
 
 juce_generate_juce_header(DjehutiCAD)
+
+# Portable references remain separate source assets, rather than compiled-in component geometry.
+add_custom_command(TARGET DjehutiCAD POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/Resources/manufacturer-reference-library.json" "$<TARGET_FILE_DIR:DjehutiCAD>/manufacturer-reference-library.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Resources/manufacturer-foundation" "$<TARGET_FILE_DIR:DjehutiCAD>/manufacturer-foundation")

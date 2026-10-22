@@ -44,5 +44,6 @@ private:
     bool loaded=false;
     juce::Array<juce::var> entries;
 };
+bool runCadManufacturerCheck(juce::var&,const juce::File& resourceRoot);
 bool runCadComponentCheck(juce::var&,const juce::File& researchRoot);
 }

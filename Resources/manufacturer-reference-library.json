@@ -1,0 +1,694 @@
+{
+  "format": "djehuti-component-library",
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "motor-dc-pololu-2365",
+      "name": "Pololu 2365 50:1 Micro Metal Gearmotor MP 6V",
+      "manufacturer": "Pololu",
+      "partNumber": "2365",
+      "model": "2365",
+      "revision": 1,
+      "origin": "commercial",
+      "category": "Manufacturer References",
+      "description": "Reviewed reference data; source geometry attaches through the existing component library. No simulation calibration is implied.",
+      "properties": [
+        {
+          "id": "stall_voltage",
+          "label": "Stall voltage",
+          "quantity": "voltage",
+          "value": 6,
+          "unit": "V",
+          "conditions": {
+            "operatingPoint": "Extrapolated stall; not a continuous operating rating",
+            "supply": {
+              "quantity": "voltage",
+              "value": 6,
+              "unit": "V"
+            }
+          },
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2365-page-asset0"
+          ]
+        },
+        {
+          "id": "stall_current",
+          "label": "Stall current",
+          "quantity": "current",
+          "value": 0.67,
+          "unit": "A",
+          "conditions": {
+            "operatingPoint": "Extrapolated stall; not a continuous operating rating",
+            "supply": {
+              "quantity": "voltage",
+              "value": 6,
+              "unit": "V"
+            }
+          },
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2365-page-asset0"
+          ]
+        },
+        {
+          "id": "stall_torque",
+          "label": "Stall torque",
+          "quantity": "torque",
+          "value": 5.4,
+          "unit": "kgf mm",
+          "conditions": {
+            "operatingPoint": "Extrapolated stall; not a continuous operating rating",
+            "supply": {
+              "quantity": "voltage",
+              "value": 6,
+              "unit": "V"
+            }
+          },
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2365-page-asset0"
+          ]
+        },
+        {
+          "id": "gear_ratio",
+          "label": "Gear ratio",
+          "quantity": "ratio",
+          "value": 51.45,
+          "unit": "1",
+          "conditions": {
+            "shaft": "Output relative to motor"
+          },
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2365-page-asset0"
+          ]
+        },
+        {
+          "id": "nominal_no_load_speed",
+          "label": "Nominal no load speed",
+          "quantity": "angularSpeed",
+          "value": 420,
+          "unit": "rpm",
+          "conditions": {
+            "supply": {
+              "quantity": "voltage",
+              "value": 6,
+              "unit": "V"
+            },
+            "operatingPoint": "Nominal table"
+          },
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "manufacturer_published",
+          "verification": "conflicted",
+          "sourceRefs": [
+            "pololu2365-page-asset0"
+          ],
+          "conflictsWith": [
+            "curve_speed_intercept"
+          ],
+          "note": "Nominal table and fitted sample curve differ; retained as separate claims."
+        },
+        {
+          "id": "curve_speed_intercept",
+          "label": "Curve speed intercept",
+          "quantity": "angularSpeed",
+          "value": 390,
+          "unit": "rpm",
+          "conditions": {
+            "supply": {
+              "quantity": "voltage",
+              "value": 6,
+              "unit": "V"
+            },
+            "operatingPoint": "Manufacturer fitted curve at zero torque; page 22"
+          },
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "manufacturer_published",
+          "verification": "conflicted",
+          "sourceRefs": [
+            "pololu2365-page-asset0"
+          ],
+          "conflictsWith": [
+            "nominal_no_load_speed"
+          ],
+          "note": "Nominal table and fitted sample curve differ; retained as separate claims."
+        },
+        {
+          "id": "effective_stall_resistance",
+          "label": "Effective stall resistance",
+          "quantity": "resistance",
+          "value": 8.955223880597014,
+          "unit": "ohm",
+          "conditions": {
+            "operatingPoint": "Extrapolated stall; not a continuous operating rating",
+            "supply": {
+              "quantity": "voltage",
+              "value": 6,
+              "unit": "V"
+            }
+          },
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "analytically_derived",
+          "verification": "reviewed",
+          "sourceRefs": [],
+          "derivation": {
+            "operation": "voltage/current",
+            "numerator": "stall_voltage",
+            "denominator": "stall_current",
+            "assumptions": "Approximate effective terminal resistance; neglect brush/driver drops and temperature. Includes manufacturer-extrapolated stall current."
+          }
+        },
+        {
+          "id": "winding_inductance",
+          "label": "Winding inductance",
+          "quantity": "inductance",
+          "value": null,
+          "unit": "H",
+          "conditions": {},
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "unknown",
+          "verification": "unverified",
+          "sourceRefs": []
+        },
+        {
+          "id": "rotor_inertia",
+          "label": "Rotor inertia",
+          "quantity": "inertia",
+          "value": null,
+          "unit": "kg m2",
+          "conditions": {},
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "unknown",
+          "verification": "unverified",
+          "sourceRefs": []
+        },
+        {
+          "id": "gear_efficiency",
+          "label": "Gear efficiency",
+          "quantity": "ratio",
+          "value": null,
+          "unit": "1",
+          "conditions": {},
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "provenance": "unknown",
+          "verification": "unverified",
+          "sourceRefs": []
+        }
+      ],
+      "geometry": {
+        "kind": "none",
+        "label": "Original manufacturer STEP supplied alongside this record; attach to insert"
+      },
+      "engineering": {
+        "specification": {
+          "schemaVersion": 1,
+          "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+          "sources": [
+            {
+              "id": "pololu2365-page-asset0",
+              "originalFilename": "pololu-micro-metal-gearmotors-rev-6-2.pdf",
+              "url": "https://www.pololu.com/file/0J1487/pololu-micro-metal-gearmotors-rev-6-2.pdf",
+              "revision": "6.2 (February 2026)",
+              "path": "manufacturer-foundation/pololu-micro-metal-gearmotors-rev-6-2.pdf",
+              "sha256": "fb949beb58a92c4dff4d6e1849c8989761ddabe3a3224075755ad71561520ed0",
+              "page": 22
+            },
+            {
+              "id": "pololu2365-page-asset2",
+              "originalFilename": "mmgm-pm.step",
+              "url": "https://www.pololu.com/file/0J2042/Pololu%20Micro%20Metal%20Gearmotor%203D%20(STEP)%20Models.zip",
+              "revision": "Archive acquired 2026-10-22; manufacturer revision unspecified",
+              "path": "manufacturer-foundation/mmgm-pm.step",
+              "sha256": "fda8e4e7e84bdac6ba4d977e756e20ca3d636efc1a3df1e2b018561f4f58e126",
+              "archiveMember": "Pololu\\Micro Metal Gearmotors\\extracted\\pololu2365-page-asset2\\Pololu Micro Metal Gearmotor 3D %28STEP%29 Models\\No Encoder\\mmgm-pm.step"
+            }
+          ],
+          "curves": [
+            {
+              "id": "torque_speed_current",
+              "sourceRefs": [
+                "pololu2365-page-asset0"
+              ],
+              "variant": "MP 6V; 51.45:1; no encoder; standard shaft",
+              "axes": [
+                {
+                  "quantity": "torque",
+                  "unit": "kgf mm"
+                },
+                {
+                  "quantity": "angularSpeed",
+                  "unit": "rpm"
+                },
+                {
+                  "quantity": "current",
+                  "unit": "A"
+                }
+              ],
+              "conditions": {
+                "supply": {
+                  "quantity": "voltage",
+                  "value": 6,
+                  "unit": "V"
+                }
+              },
+              "page": 22,
+              "publishedFit": "speed(rpm)=390-72*torque(kgf mm); current(A)=0.053+0.11*torque(kgf mm)",
+              "note": "Original PDF preserved. Fit expression is source transcription; no digitized samples or dynamic validity claimed."
+            }
+          ],
+          "models": [
+            {
+              "id": "dc_dynamic_readiness",
+              "parameters": [
+                "effective_stall_resistance",
+                "winding_inductance",
+                "rotor_inertia",
+                "gear_efficiency",
+                "curve_speed_intercept"
+              ],
+              "curveRefs": [
+                "torque_speed_current"
+              ],
+              "scope": "Partial inputs for a future geared DC model; Kt, Ke, friction, thermal behavior and gearbox losses still need identification."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "actuator-linear-actuonix-l12-50-100-6-p",
+      "name": "Actuonix L12-50-100-6-P",
+      "manufacturer": "Actuonix",
+      "partNumber": "L12-50-100-6-P",
+      "model": "L12-50-100-6-P",
+      "revision": 1,
+      "origin": "commercial",
+      "category": "Manufacturer References",
+      "description": "Reviewed reference data; source geometry attaches through the existing component library. No simulation calibration is implied.",
+      "properties": [
+        {
+          "id": "stroke",
+          "label": "Stroke",
+          "quantity": "length",
+          "value": 50,
+          "unit": "mm",
+          "conditions": {},
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "closed_hole_spacing",
+          "label": "Closed hole spacing",
+          "quantity": "length",
+          "value": 102,
+          "unit": "mm",
+          "conditions": {
+            "position": "Fully retracted"
+          },
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "mass",
+          "label": "Mass",
+          "quantity": "mass",
+          "value": 40,
+          "unit": "g",
+          "conditions": {
+            "stroke": "50 mm"
+          },
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "no_load_speed",
+          "label": "No load speed",
+          "quantity": "speed",
+          "value": 13,
+          "unit": "mm/s",
+          "conditions": {
+            "gearing": "100:1",
+            "supply": "6 V",
+            "load": "No load"
+          },
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "max_lift_force",
+          "label": "Max lift force",
+          "quantity": "force",
+          "value": 42,
+          "unit": "N",
+          "conditions": {
+            "gearing": "100:1"
+          },
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "stall_current",
+          "label": "Stall current",
+          "quantity": "current",
+          "value": 460,
+          "unit": "mA",
+          "conditions": {
+            "supply": "6 V",
+            "operatingPoint": "Stall"
+          },
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "max_duty_cycle",
+          "label": "Max duty cycle",
+          "quantity": "ratio",
+          "value": 20,
+          "unit": "%",
+          "conditions": {},
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "interface",
+          "label": "Interface",
+          "quantity": "text",
+          "value": "Five-wire P: two motor leads and three potentiometer leads; external controller required. Not the three-wire R RC interface.",
+          "unit": "",
+          "conditions": {},
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "actuonix-page-asset0"
+          ]
+        },
+        {
+          "id": "winding_inductance",
+          "label": "Winding inductance",
+          "quantity": "inductance",
+          "value": null,
+          "unit": "H",
+          "conditions": {},
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "unknown",
+          "verification": "unverified",
+          "sourceRefs": []
+        },
+        {
+          "id": "current_vs_force",
+          "label": "Current vs force",
+          "quantity": "text",
+          "value": null,
+          "unit": "",
+          "conditions": {},
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "provenance": "unknown",
+          "verification": "unverified",
+          "sourceRefs": []
+        }
+      ],
+      "geometry": {
+        "kind": "none",
+        "label": "Original manufacturer STEP supplied alongside this record; attach to insert"
+      },
+      "engineering": {
+        "specification": {
+          "schemaVersion": 1,
+          "variant": "50 mm; 100:1; 6 V; P feedback interface",
+          "sources": [
+            {
+              "id": "actuonix-page-asset0",
+              "originalFilename": "ActuonixL12Datasheet.pdf",
+              "url": "https://www.actuonix.com/assets/images/datasheets/ActuonixL12Datasheet.pdf",
+              "revision": "F (November 2019)",
+              "path": "manufacturer-foundation/ActuonixL12Datasheet.pdf",
+              "sha256": "461dc22b85db497409182ac3cc02a5171fa0ea7817ed0f419b2c37708bcfeee3",
+              "page": 1
+            },
+            {
+              "id": "l12-load-curves",
+              "originalFilename": "L12 load curve.png",
+              "url": "https://www.actuonix.com/assets/images/L12%20load%20curve.png",
+              "revision": "Manufacturer revision unspecified; acquired 2026-10-22",
+              "path": "manufacturer-foundation/L12-load-curve.png",
+              "sha256": "0413f8251b4640977a45f2abb8a282f704b771620f93d463a0eb774c1fe6b645"
+            },
+            {
+              "id": "actuonix-page-asset2",
+              "originalFilename": "l12_50mm_in.stp",
+              "url": "https://www.actuonix.com/assets/images/datasheets/L12_STP.zip",
+              "revision": "Archive acquired 2026-10-22; manufacturer revision unspecified",
+              "path": "manufacturer-foundation/l12_50mm_in.stp",
+              "sha256": "31bb03591aef6acff562b1dc832e9df23ddb3ca56f12438d3cc323e6a5a2825f",
+              "archiveMember": "Actuonix\\L12\\extracted\\actuonix-page-asset2\\L12_STP\\l12_50mm_in.stp"
+            }
+          ],
+          "curves": [
+            {
+              "id": "force_speed",
+              "sourceRefs": [
+                "l12-load-curves",
+                "actuonix-page-asset0"
+              ],
+              "variant": "50 mm; 100:1; 6 V; P feedback interface",
+              "axes": [
+                {
+                  "quantity": "force",
+                  "unit": "N"
+                },
+                {
+                  "quantity": "speed",
+                  "unit": "mm/s"
+                }
+              ],
+              "conditions": {
+                "gearing": "Use only the 100:1 trace; family plot also has 50:1 and 210:1"
+              },
+              "note": "Force-speed reference only; no acquired current-vs-force curve."
+            }
+          ],
+          "models": [
+            {
+              "id": "actuator_readiness",
+              "parameters": [
+                "stroke",
+                "no_load_speed",
+                "max_lift_force",
+                "stall_current",
+                "winding_inductance",
+                "current_vs_force"
+              ],
+              "curveRefs": [
+                "force_speed"
+              ],
+              "scope": "Travel and steady-state ratings available; motor/load dynamics and control are not calibrated."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "driver-pololu-2130",
+      "name": "Pololu 2130 DRV8833 Dual Motor Driver Carrier",
+      "manufacturer": "Pololu",
+      "partNumber": "2130",
+      "model": "2130",
+      "revision": 1,
+      "origin": "commercial",
+      "category": "Manufacturer References",
+      "description": "Reviewed reference data; source geometry attaches through the existing component library. No simulation calibration is implied.",
+      "properties": [
+        {
+          "id": "supply_min",
+          "label": "Supply min",
+          "quantity": "voltage",
+          "value": 2.7,
+          "unit": "V",
+          "conditions": {},
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2130-description"
+          ]
+        },
+        {
+          "id": "supply_max",
+          "label": "Supply max",
+          "quantity": "voltage",
+          "value": 10.8,
+          "unit": "V",
+          "conditions": {},
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2130-description"
+          ]
+        },
+        {
+          "id": "continuous_current",
+          "label": "Continuous current",
+          "quantity": "current",
+          "value": 1.2,
+          "unit": "A",
+          "conditions": {
+            "scope": "Per carrier channel",
+            "cooling": "Approximate continuous rating; depends on operating and cooling conditions"
+          },
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2130-description"
+          ]
+        },
+        {
+          "id": "peak_current",
+          "label": "Peak current",
+          "quantity": "current",
+          "value": 2,
+          "unit": "A",
+          "conditions": {
+            "scope": "Per carrier channel",
+            "duration": "A few seconds, per manufacturer page"
+          },
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2130-description"
+          ]
+        },
+        {
+          "id": "control_interface",
+          "label": "Control interface",
+          "quantity": "text",
+          "value": "Two input logic pins per bridge; nSLEEP and nFAULT per carrier documentation.",
+          "unit": "",
+          "conditions": {},
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "provenance": "manufacturer_published",
+          "verification": "reviewed",
+          "sourceRefs": [
+            "pololu2130-description"
+          ]
+        },
+        {
+          "id": "loss_map",
+          "label": "Loss map",
+          "quantity": "text",
+          "value": null,
+          "unit": "",
+          "conditions": {},
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "provenance": "unknown",
+          "verification": "unverified",
+          "sourceRefs": []
+        },
+        {
+          "id": "thermal_time_constant",
+          "label": "Thermal time constant",
+          "quantity": "time",
+          "value": null,
+          "unit": "s",
+          "conditions": {},
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "provenance": "unknown",
+          "verification": "unverified",
+          "sourceRefs": []
+        }
+      ],
+      "geometry": {
+        "kind": "none",
+        "label": "Original manufacturer STEP supplied alongside this record; attach to insert"
+      },
+      "engineering": {
+        "specification": {
+          "schemaVersion": 1,
+          "variant": "DRV8833 carrier board; exact IC package/BOM unconfirmed",
+          "sources": [
+            {
+              "id": "pololu2130-description",
+              "originalFilename": "2130",
+              "url": "https://www.pololu.com/product/2130",
+              "revision": "Page captured 2026-10-22",
+              "path": "manufacturer-foundation/pololu-2130-description.html",
+              "sha256": "3565d1313ad05e51e6eda9045bf4774f6d437c327b0f23825ebfa0dd15326678"
+            },
+            {
+              "id": "pololu2130-page-asset1",
+              "originalFilename": "drv8833-dual-motor-driver-carrier-step.step",
+              "url": "https://www.pololu.com/file/0J1616/drv8833-dual-motor-driver-carrier-step.step",
+              "revision": "Manufacturer revision unspecified; acquired 2026-10-22",
+              "path": "manufacturer-foundation/drv8833-dual-motor-driver-carrier-step.step",
+              "sha256": "90960797d0f972d87bd07ec43d6adeec8bd4145686464896cd7f93a45d6bd70a"
+            },
+            {
+              "id": "ti-datasheet",
+              "originalFilename": "drv8833.pdf",
+              "url": "https://www.ti.com/lit/ds/symlink/drv8833.pdf",
+              "revision": "SLVSAR1E (July 2015)",
+              "path": "manufacturer-foundation/drv8833.pdf",
+              "sha256": "3e400e333f08f1b93ec99a2d52a6af2a864e88462cc892282208548d9e9f0de4"
+            }
+          ],
+          "curves": [],
+          "models": [
+            {
+              "id": "carrier_limits",
+              "parameters": [
+                "supply_min",
+                "supply_max",
+                "continuous_current",
+                "peak_current",
+                "loss_map",
+                "thermal_time_constant"
+              ],
+              "curveRefs": [],
+              "scope": "Carrier limits only. TI bare-IC 1.5 A RMS/bridge and paralleled ratings must not replace the board 1.2 A/channel rating. No new driver solver."
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

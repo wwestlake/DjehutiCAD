@@ -1329,6 +1329,11 @@ public:
             const bool interactive=commandLine.contains("--interactive");juce::MessageManager::callAsync([this,interactive]
             {const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/component-ui-check").getChildFile(juce::Uuid().toDashedString());juce::var report;const bool ok=runCadComponentUiCheck(report,folder,interactive);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-component-ui-check.result.json").replaceWithText(juce::JSON::toString(report));setApplicationReturnValue(ok?0:1);if(!interactive)juce::MessageManager::callAsync([this]{quit();});});return;
         }
+        if(commandLine.startsWith("--cad-component-manufacturer-check"))
+        {
+            juce::var report;const bool ok=djehuti::cad::runCadManufacturerCheck(report,juce::File::getCurrentWorkingDirectory().getChildFile("Resources"));
+            juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-manufacturer-check.result.json").replaceWithText(juce::JSON::toString(report));std::exit(ok?0:1);
+        }
         if(commandLine.startsWith("--cad-component-check"))
         {
             const auto args=juce::JUCEApplication::getCommandLineParameterArray();const int index=args.indexOf("--research-root");const auto root=index>=0&&index+1<args.size()?juce::File(args[index+1]):juce::File();
