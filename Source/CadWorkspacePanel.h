@@ -11,6 +11,9 @@
 
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
+class SketchToolPalette;
+bool runSketchUsabilityCheck(juce::var& report);
+
 class CadWorkspacePanel final : public juce::Component,
                                 private juce::KeyListener,
                                 private juce::Timer,
@@ -38,8 +41,8 @@ public:
     void setSelection(std::shared_ptr<djehuti::cad::CadSelection> shared);
     std::function<void()> onOpenViews;
     WorkspaceMenu workspaceMenu;
-    juce::String viewState() const { return juce::JSON::toString(modelView.viewState()); }
-    void restoreViewState(const juce::String& json) { modelView.restoreViewState(juce::JSON::parse(json)); }
+    juce::String viewState() const;
+    void restoreViewState(const juce::String& json);
     void viewContextCommand(const juce::String&, const djehuti::cad::CadPick&);
     bool executeUiCommand(const juce::String& command);
     bool uiToolActive(const juce::String& command) const;
@@ -57,6 +60,8 @@ private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    friend bool runSketchUsabilityCheck(juce::var&);
+    class SketchEntityItem;
     class FeatureItem;
     class GroupItem;
     class SketchCanvas;
@@ -84,7 +89,11 @@ private:
     void setSketchTool(const juce::String& tool);
     void chooseConstraint();
     void addConstraint();
-    void sketchGeometryAdded(const juce::String& what);
+    void sketchGeometryAdded(const juce::String& what, const juce::String& entityOrGroup);
+    void sketchEntityClicked(const juce::String& sketch, const juce::String& entity, bool second);
+    void showSketchEntityMenu(const juce::String& sketch, const juce::String& entity);
+    bool deleteSelectedSketchEntities();
+    bool handleSketchKey(const juce::KeyPress&);
     // Interactive sketch edits committed by the canvas (one document command each): vertex/handle drag,
     // vertex insertion. selectSketchVertex selects an endpoint ("<entity>:p1|p2") for precise editing.
     void selectSketchVertex(const juce::String& pointRef);
@@ -154,6 +163,8 @@ private:
     juce::Component centre, side;
     Viewport3D modelView { 0 };
     std::unique_ptr<SketchCanvas> sketchCanvas;
+    std::unique_ptr<SketchToolPalette> sketchPalette;
+    std::map<juce::String,juce::TreeViewItem*> entityTreeItems;
     juce::Label taskTitle, taskInstruction, messageLabel;
     juce::Viewport taskViewport { "CAD Task" };
     std::unique_ptr<TaskForm> form;

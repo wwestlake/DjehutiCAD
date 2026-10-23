@@ -41,6 +41,8 @@
 
 namespace djehuti::cad
 {
+// Millimetres: comfortably above OCCT confusion, without imposing a screen-size minimum.
+inline constexpr double minimumSketchCircleRadius = 1.0e-6;
 // Construction origins of the faces of an evaluated shape: each face carries tokens "<featureId>/<role>" naming
 // the feature that generated it and its role there (box "top", extrude "end", "side:<sketch entity>", ...).
 // Tokens follow faces through Booleans and placements via OCCT's modified/deleted history; they are how a
@@ -216,6 +218,8 @@ public:
     bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {});
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error);
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error);
+    // Removes entities and their constraints atomically; dependent rebuild failures roll back.
+    bool deleteSketchEntities(const juce::String& sketchId, const juce::StringArray& entityIds, juce::String& error);
     bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error);
     bool setSketchEntityPosition(const juce::String& sketchId, const juce::String& entityId, double x, double y, juce::String& error);
     bool addSketchConstraint(const juce::String& sketchId, const juce::String& type, const juce::String& firstEntity, const juce::String& secondEntity, double value, juce::String& constraintId, juce::String& error);
@@ -452,6 +456,7 @@ public:
     bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {}) { return model.addSketchLine(sketchId, x1, y1, x2, y2, entityId, error, firstConnection, secondConnection); }
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error) { return model.addSketchRectangle(sketchId, x, y, width, height, groupId, error); }
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error) { return model.addSketchCircle(sketchId, x, y, radius, entityId, error); }
+    bool deleteSketchEntities(const juce::String& sketchId, const juce::StringArray& entityIds, juce::String& error) { return model.deleteSketchEntities(sketchId, entityIds, error); }
     bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error) { return model.setSketchEntityDimension(sketchId, entityId, value, error); }
     bool setSketchEntityPosition(const juce::String& sketchId, const juce::String& entityId, double x, double y, juce::String& error) { return model.setSketchEntityPosition(sketchId, entityId, x, y, error); }
     bool addSketchConstraint(const juce::String& sketchId, const juce::String& type, const juce::String& firstEntity, const juce::String& secondEntity, double value, juce::String& constraintId, juce::String& error) { return model.addSketchConstraint(sketchId, type, firstEntity, secondEntity, value, constraintId, error); }

@@ -125,6 +125,7 @@ target_sources(DjehutiCAD PRIVATE
     Source/MotionLink.h
     Source/MotionLink.cpp
     Source/CadWorkspacePanel.h
+    Source/SketchToolPalette.h
     Source/CadWorkspacePanel.cpp
     Source/CadExport.h
     Source/CadExport.cpp
