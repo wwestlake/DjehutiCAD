@@ -251,7 +251,7 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
                 const auto t = len2 > 0.0f ? juce::jlimit(0.0f, 1.0f, ((position.x - a.x) * ab.x + (position.y - a.y) * ab.y) / len2) : 0.0f;
                 const auto closest = a + ab * t; const auto distanceToEdge = closest.getDistanceFrom(position);
                 const auto depth = 1.0f/((1.0f-t)/da+t/db);
-                if (distanceToEdge < bestDistance && (!std::isfinite(bestDepth) || depth <= bestDepth + juce::jmax(depth*1e-5f,4*distance*std::tan(.425f)/juce::jmax(1,getHeight())))) { bestDistance = distanceToEdge; edgePick = { id, line.featureId, -1, line.edgeIndex }; }
+                if (depth>=pickClip[0] && depth<=pickClip[1] && distanceToEdge < bestDistance && (!std::isfinite(bestDepth) || depth <= bestDepth + juce::jmax(depth*1e-5f,4*distance*std::tan(.425f)/juce::jmax(1,getHeight())))) { bestDistance = distanceToEdge; edgePick = { id, line.featureId, -1, line.edgeIndex }; }
             }
         }
     }
@@ -484,6 +484,7 @@ void Viewport3D::renderOpenGL()
     const bool wideDepth=lastFrame.farPlane/lastFrame.nearPlane>50000;auto* drawShader=wideDepth?rangeShader.get():shader.get();if(drawShader==nullptr)return;
     // JUCE paints the component overlay after renderOpenGL() and leaves GL_DEPTH_TEST disabled, so restore the
     // 3D pipeline state every frame; otherwise parts are layered by draw order instead of depth while orbiting.
+    glDisable(GL_SCISSOR_TEST); glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
     glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS); glDepthMask(GL_TRUE); glEnable(GL_CULL_FACE); glCullFace(GL_BACK); glFrontFace(GL_CCW); glDisable(GL_BLEND);
     const auto scale = static_cast<float>(context.getRenderingScale()); glViewport(0, 0, juce::roundToInt(scale * (float) getWidth()), juce::roundToInt(scale * (float) getHeight())); glClearColor(0.035f, 0.055f, 0.075f, 1.0f); glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     const auto activeSlot = static_cast<size_t>(lastSlot); M4 projection, viewMatrix, model; std::memcpy(projection.v, lastFrame.projection.v, sizeof(projection.v)); std::memcpy(viewMatrix.v, lastFrame.view.v, sizeof(viewMatrix.v)); std::memcpy(model.v, lastFrame.model.v, sizeof(model.v)); const auto finalMvp = mul(projection, mul(viewMatrix, model));

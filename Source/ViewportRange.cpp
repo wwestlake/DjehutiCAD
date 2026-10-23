@@ -114,9 +114,20 @@ bool Viewport3D::captureViewport(const juce::File& file,juce::String& error)
     context.executeOnGLThread([this,file](juce::OpenGLContext&)
     {
         const auto scale=context.getRenderingScale();const int w=juce::roundToInt(getWidth()*scale),h=juce::roundToInt(getHeight()*scale);if(w<1||h<1)return;
-        GLint previousFramebuffer=0;glGetIntegerv(GL_FRAMEBUFFER_BINDING,&previousFramebuffer);glBindFramebuffer(GL_FRAMEBUFFER,context.getFrameBufferID());renderOpenGL();
-        std::vector<juce::uint8> rgba((size_t)w*h*4);glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,rgba.data());
-        glBindFramebuffer(GL_FRAMEBUFFER,(GLuint)previousFramebuffer);
+        // A dedicated target avoids reading a stale front buffer while JUCE is
+        // compositing its overlay. Capture exactly the current model/grid pass.
+        GLint previousDraw=0,previousRead=0;glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING,&previousDraw);glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&previousRead);
+        GLuint framebuffer=0,texture=0,depth=0;glGenFramebuffers(1,&framebuffer);glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
+        glGenTextures(1,&texture);glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,nullptr);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);
+        glGenRenderbuffers(1,&depth);glBindRenderbuffer(GL_RENDERBUFFER,depth);glRenderbufferStorage(GL_RENDERBUFFER,GL_DEPTH_COMPONENT24,w,h);glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,depth);
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);glReadBuffer(GL_COLOR_ATTACHMENT0);
+        const bool complete=glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE;
+        std::vector<juce::uint8> rgba((size_t)w*h*4);
+        if(complete){renderOpenGL();glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,rgba.data());}
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER,(GLuint)previousDraw);glBindFramebuffer(GL_READ_FRAMEBUFFER,(GLuint)previousRead);
+        glDeleteRenderbuffers(1,&depth);glDeleteTextures(1,&texture);glDeleteFramebuffers(1,&framebuffer);
+        if(!complete){juce::Logger::writeToLog("Viewport capture framebuffer is incomplete.");return;}
         juce::Image result(juce::Image::ARGB,w,h,true);juce::Image::BitmapData pixels(result,juce::Image::BitmapData::writeOnly);
         for(int y=0;y<h;++y)for(int x=0;x<w;++x){const auto* p=rgba.data()+((size_t)(h-1-y)*w+x)*4;pixels.setPixelColour(x,y,juce::Colour(p[0],p[1],p[2],p[3]));}
         if(auto stream=file.createOutputStream()){stream->setPosition(0);stream->truncate();juce::PNGImageFormat().writeImageToStream(result,*stream);}
