@@ -248,7 +248,13 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
             const auto t = 1.0f - u - v;
             if (u < 0.0f || v < 0.0f || t < 0.0f) continue;
             const auto depth = u * da + v * db + t * dc;
-            if (depth >= -1.0f && depth < bestDepth) { bestDepth = depth; result.drawId = draw.id; result.featureId = mesh.featureId; result.face = mesh.faceIndex; }
+            if (depth >= -1.0f && depth < bestDepth)
+            {
+                bestDepth = depth; result.drawId = draw.id; result.featureId = mesh.featureId; result.face = mesh.faceIndex;
+                double weights[3]{u,v,t},sum=0;
+                for(int k=0;k<3;++k){const auto* vertex=mesh.vertices.data()+mesh.indices[i+k]*6u;const auto clipW=mvp.v[3]*vertex[0]+mvp.v[7]*vertex[1]+mvp.v[11]*vertex[2]+mvp.v[15];weights[k]/=clipW;sum+=weights[k];}
+                result.point={0,0,0};for(int k=0;k<3;++k)for(int j=0;j<3;++j)result.point[j]+=weights[k]/sum*mesh.vertices[mesh.indices[i+k]*6u+j];result.hasPoint=true;
+            }
         }
     }
     if (mode == Mode::body) { result.face = -1; return result; }
@@ -459,7 +465,7 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 void Viewport3D::newOpenGLContextCreated()
 {
     const char* vertex = "#version 410 core\nlayout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(std140) uniform FrameData { mat4 uMVP; mat4 uModel; }; uniform mat4 uInstance; out vec3 n; void main(){ n=mat3(uModel)*mat3(uInstance)*normal; gl_Position=uMVP*uInstance*vec4(position,1.0); }";
-    const char* fragment = "#version 410 core\nin vec3 n; uniform vec3 uColour; out vec4 colour; void main(){ vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(n),l),0.0); colour=vec4(uColour*(0.25+0.75*d),1.0); }";
+    const char* fragment = "#version 410 core\nin vec3 n; uniform vec3 uColour; out vec4 colour; void main(){ vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(gl_FrontFacing?n:-n),l),0.0); colour=vec4(uColour*(0.25+0.75*d),1.0); }";
     shader = std::make_unique<juce::OpenGLShaderProgram>(context);
     if (!shader->addVertexShader(vertex) || !shader->addFragmentShader(fragment) || !shader->link()) { glStatus = "Shader error: " + shader->getLastError(); juce::Logger::writeToLog(glStatus); shader.reset(); repaint(); return; }
     positionAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "position"); normalAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "normal");
@@ -483,7 +489,7 @@ void Viewport3D::renderOpenGL()
         meshRanges.clear();
         for (const auto& mesh : pendingSnapshot->meshes)
         {
-            meshRanges.push_back({ mesh.featureId, static_cast<GLsizei>(indices.size()), static_cast<GLsizei>(mesh.indices.size()), mesh.faceIndex });
+            meshRanges.push_back({ mesh.featureId, static_cast<GLsizei>(indices.size()), static_cast<GLsizei>(mesh.indices.size()), mesh.faceIndex, mesh.doubleSided });
             const auto base = static_cast<std::uint32_t>(vertices.size() / 6);
             vertices.insert(vertices.end(), mesh.vertices.begin(), mesh.vertices.end());
             for (const auto index : mesh.indices) indices.push_back(base + index);
@@ -519,6 +525,7 @@ void Viewport3D::renderOpenGL()
         const auto colourOf = [&](const juce::String& id) { juce::Colour colour(0xff2e9ec7); for (const auto& item : colours) if (item.first == id) colour = item.second; for(const auto& p:pickedItems) if(p.drawId==id && p.face<0 && p.edge<0) colour=juce::Colour(0xffff4fd8); return colour; };
         const auto draw = [&](const MeshRange& range, const float* matrix, const juce::String& id)
         {
+            if(range.doubleSided)glDisable(GL_CULL_FACE);else glEnable(GL_CULL_FACE);
             const auto colour = colourOf(id);
             shader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
             shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
@@ -572,7 +579,7 @@ void Viewport3D::renderOpenGL()
                 shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
                 for (const auto& range : meshRanges)
                     if (range.featureId == p.featureId && range.faceIndex == p.face)
-                        glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));
+                    {if(range.doubleSided)glDisable(GL_CULL_FACE);else glEnable(GL_CULL_FACE);glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));}
                 glBindVertexArray(0);
                 glDisable(GL_POLYGON_OFFSET_FILL); glDepthFunc(GL_LESS);
             }

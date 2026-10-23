@@ -72,7 +72,12 @@ inline bool isReplicationType(const juce::String& type) { return type=="mirror"|
 juce::var replicationDefaults(const juce::String& type);
 bool validateReplication(const juce::String& type, const juce::var&, juce::String& error);
 juce::StringArray replicationDependencies(const juce::var&);
-inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"; }
+inline bool isSurfaceType(const juce::String& type) { return juce::StringArray{"surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken"}.contains(type); }
+inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"||isSurfaceType(type); }
+juce::var surfaceDefaults(const juce::String&);
+bool validateSurface(const juce::String&,const juce::var&,juce::String&);
+juce::var surfaceTopology(const TopoDS_Shape&);
+juce::String modelingLabel(const juce::String&);
 juce::var modelingDefaults(const juce::String& type);
 bool validateModeling(const juce::String& type,const juce::var&,juce::String& error);
 juce::StringArray modelingDependencies(const juce::var&);
@@ -127,6 +132,7 @@ struct CadSketch
 struct CadMesh
 {
     juce::String featureId;
+    bool doubleSided = false;
     int faceIndex = -1;   // face of the feature's shape in TopExp order (transient render index)
     std::vector<float> vertices;
     std::vector<std::uint32_t> indices;
@@ -378,7 +384,10 @@ private:
     bool modelingEdge(const CadFeature&,const juce::String&,TopoDS_Edge&,juce::String& error) const;
     TopoDS_Wire modelingPath(const juce::var&,const CadSketchFrame* overrideFrame,juce::String&,juce::StringArray& active);
     bool modelingSection(const juce::String&,TopoDS_Face&,CadSketchFrame&,juce::String&,juce::StringArray& active);
-    TopoDS_Shape evaluateModeling(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active);
+    TopoDS_Shape evaluateModeling(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active,bool surfaceOutput=false);
+    TopoDS_Shape evaluateSurface(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active);
+    bool modelingProfile(const juce::String&,TopoDS_Wire&,CadSketchFrame&,juce::String&,juce::StringArray&);
+    bool surfaceInput(const juce::String&,const juce::String&,TopoDS_Shape&,CadFaceOrigins&,juce::String&,juce::StringArray&);
     static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
     bool syncOCAFFromItems(juce::String& error);

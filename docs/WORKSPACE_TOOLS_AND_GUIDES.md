@@ -1,5 +1,12 @@
 # Workspace menus, tools and reference geometry
 
+Modify includes Create Surface, Trim Surface, Extend Surface, Sew Surfaces,
+Solidify Shell and Thicken Surface. All use the existing source-selection task
+form, isolated Preview, Apply/Cancel and inspector editing workflow. Open surfaces
+display from both sides. Trim supports picking a region point directly in model
+views; sewing reports unmatched boundaries and leaves solidification explicit.
+See the [surface modeling guide](SURFACE_MODELING.md).
+
 ## Application and workspace commands
 
 File, Window, Settings, Account and Help remain application commands. Each editing workspace owns its own command bar: CAD has Edit/Create/Modify/Sketch/Assembly/View, FRust has Run, the node editor has Graph/Build, and 3D Views has Views/Reference guides. The Workspace menu floats or docks that content. Menus remain inside floating windows. Closing/hiding a dock panel preserves its content; the application Window menu can reopen it.

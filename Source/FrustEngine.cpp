@@ -343,6 +343,60 @@ extern "C" const char* djehuti_cad_ik(const char* command, const char* argsJson)
 }
 
 // Same structured command as the agent/API and the document commands used by the GUI.
+extern "C" const char* djehuti_cad_surface(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->modelingCommand("surface",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_surface_trim(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->modelingCommand("surface_trim",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_surface_extend(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->modelingCommand("surface_extend",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_surface_sew(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->modelingCommand("surface_sew",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_surface_solidify(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->modelingCommand("surface_solidify",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_surface_thicken(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->modelingCommand("surface_thicken",juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
 extern "C" const char* djehuti_cad_sweep(const char* argsJson)
 {
     if(auto service=activeCadService())
@@ -505,6 +559,12 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_sketch_dimension", reinterpret_cast<void*>(&djehuti_cad_sketch_dimension));
         frust_plugin_register_host_function("djehuti_cad_sketch_position", reinterpret_cast<void*>(&djehuti_cad_sketch_position));
         frust_plugin_register_host_function("djehuti_cad_sketch_constraint", reinterpret_cast<void*>(&djehuti_cad_sketch_constraint));
+        frust_plugin_register_host_function("djehuti_cad_surface", reinterpret_cast<void*>(&djehuti_cad_surface));
+        frust_plugin_register_host_function("djehuti_cad_surface_trim", reinterpret_cast<void*>(&djehuti_cad_surface_trim));
+        frust_plugin_register_host_function("djehuti_cad_surface_extend", reinterpret_cast<void*>(&djehuti_cad_surface_extend));
+        frust_plugin_register_host_function("djehuti_cad_surface_sew", reinterpret_cast<void*>(&djehuti_cad_surface_sew));
+        frust_plugin_register_host_function("djehuti_cad_surface_solidify", reinterpret_cast<void*>(&djehuti_cad_surface_solidify));
+        frust_plugin_register_host_function("djehuti_cad_surface_thicken", reinterpret_cast<void*>(&djehuti_cad_surface_thicken));
         frust_plugin_register_host_function("djehuti_cad_sweep", reinterpret_cast<void*>(&djehuti_cad_sweep));
         frust_plugin_register_host_function("djehuti_cad_loft", reinterpret_cast<void*>(&djehuti_cad_loft));
         frust_plugin_register_host_function("djehuti_cad_mill", reinterpret_cast<void*>(&djehuti_cad_mill));
@@ -809,6 +869,12 @@ std::string cadPrelude()
            "extern fn djehuti_cad_sketch_dimension(sketch: String, entity: String, value: f64) -> i64;\n"
            "extern fn djehuti_cad_sketch_position(sketch: String, entity: String, x: f64, y: f64) -> i64;\n"
            "extern fn djehuti_cad_sketch_constraint(sketch: String, kind: String, first: String, second: String, value: f64) -> String;\n"
+           "extern fn djehuti_cad_surface(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_surface_trim(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_surface_extend(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_surface_sew(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_surface_solidify(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_surface_thicken(args_json: String) -> String;\n"
            "extern fn djehuti_cad_sweep(args_json: String) -> String;\n"
            "extern fn djehuti_cad_loft(args_json: String) -> String;\n"
            "extern fn djehuti_cad_mill(args_json: String) -> String;\n"
@@ -845,7 +911,7 @@ std::string cadPrelude()
 const std::vector<std::string>& cadHostFunctions()
 {
     static const std::vector<std::string> names {
-        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_sweep", "djehuti_cad_loft", "djehuti_cad_mill", "djehuti_cad_mirror", "djehuti_cad_linear_pattern", "djehuti_cad_circular_pattern", "djehuti_cad_hole", "djehuti_cad_chamfer", "djehuti_cad_lathe", "djehuti_cad_revolve", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
+        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_surface", "djehuti_cad_surface_trim", "djehuti_cad_surface_extend", "djehuti_cad_surface_sew", "djehuti_cad_surface_solidify", "djehuti_cad_surface_thicken", "djehuti_cad_sweep", "djehuti_cad_loft", "djehuti_cad_mill", "djehuti_cad_mirror", "djehuti_cad_linear_pattern", "djehuti_cad_circular_pattern", "djehuti_cad_hole", "djehuti_cad_chamfer", "djehuti_cad_lathe", "djehuti_cad_revolve", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
         "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
         "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik", "djehuti_cad_list_faces", "djehuti_cad_create_face_sketch", "djehuti_cad_export", "djehuti_cad_workspace"

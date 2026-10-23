@@ -153,9 +153,9 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
-        if(name=="cad_sweep"||name=="cad_loft"||name=="cad_mill")
+        if(name=="cad_sweep"||name=="cad_loft"||name=="cad_mill"||djehuti::cad::isSurfaceType(juce::String(name).substring(4)))
         {
-            const juce::String type=name=="cad_sweep"?"sweep":name=="cad_loft"?"loft":"mill";
+            const juce::String type=juce::String(name).substring(4);
             return juce::JSON::toString(safeThis->cadService->modelingCommand(type,parsedArgs),false,17).toStdString();
         }
         if(name=="cad_mirror"||name=="cad_linear_pattern"||name=="cad_circular_pattern")
@@ -590,6 +590,7 @@ void DjehutiCAD::menuItemSelected(int commandId, int)
                                                "Chamfer: click successive edges in Edge mode to add them, enter an equal distance and Preview before Apply. Select the result to edit its distance or edges.\n"
                                                "Drill Press / Hole: pick a planar face, set its local U/V centre and diameter, then blind depth or Through all. Plain, Counterbore and Countersink types are editable from the resulting body's inspector.\n\n"
                                                "Mirror and patterns: choose sources, Bodies or Modeling feature mode, a plane/direction/axis, and distribution. Hole/Cut/Union/Subtract feature mode modifies the intended target. Preview, then Apply. Select the result and Edit sources and parameters to revise it.\n\n"
+                                               "Surface modeling: Create Surface supports planar, extruded, revolved, swept and lofted faces/shells, with Flip normals. Trim uses a boundary/intersection and picked region point; Extend continues eligible rectangular U/V boundaries. Sew reports unmatched edges and retains shells; Solidify is explicit. Thicken uses positive, negative or symmetric normal offsets. All support isolated previews and inspector editing.\n\n"
                                                "Sweep: select a closed profile and connected sketch/edge path, orientation and operation; controlled twist uses straight paths. Loft: select ordered closed sketch sections, smooth/ruled and correspondence. Virtual Router / Mill: select target and accessible entry plane, a pocket region or slot/profile path, diameter and blind/through depth. All provide Preview and editable source references.\n\n"
                                                "Subtract:\n"
                                                "Choose Subtract, pick the Target (body to keep) and the Tool (cutting body) in the tree or model view, then press Subtract. "

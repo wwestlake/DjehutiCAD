@@ -22,6 +22,11 @@ holds no CAD logic.
 
 ## Endpoints
 
+Surface commands are `cad_surface`, `cad_surface_trim`, `cad_surface_extend`,
+`cad_surface_sew`, `cad_surface_solidify`, and `cad_surface_thicken`. Each exposes
+structured CRUD and isolated previews through the same GUI/OCAF command service.
+See [surface parameters and topology diagnostics](SURFACE_MODELING_API.md).
+
 | Method and path | Result |
 |---|---|
 | `GET /v1/status` | `{status: "ready", service, version}` |

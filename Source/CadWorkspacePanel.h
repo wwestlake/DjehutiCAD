@@ -172,6 +172,9 @@ private:
     bool modelingPreviewActive=false,modelingSourcesActive=false;
     std::uint64_t modelingRevision=0;
     void addModelingFields();
+    void addSurfaceFields();
+    void readSurfaceForm(juce::var&,juce::String&) const;
+    bool pickSurface(const djehuti::cad::CadPick&);
     juce::var readModelingForm(juce::String& error) const;
     void pickModeling(const djehuti::cad::CadPick&);
     void editLoftSection(int index,int action);

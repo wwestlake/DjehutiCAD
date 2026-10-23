@@ -2158,6 +2158,12 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
         { "cad_list_faces", "CAD List Faces", "CAD", juce::Colour(0xff4b8fc8), 0, { in("feature", "string") }, { out("faces json", "string") } },
         { "cad_face_sketch", "CAD Face Sketch", "CAD", juce::Colour(0xff4b8fc8), 0, { in("feature", "string"), in("face", "string") }, { out("sketch", "string") } },
         // Manufacturing export: args json as for the cad_export agent tool ({"format":"3mf","path":"D:/out/part.3mf"}).
+        { "cad_surface", "Create Surface", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_surface_trim", "Trim Surface", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_surface_extend", "Extend Surface", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_surface_sew", "Sew Surfaces", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_surface_solidify", "Solidify Shell", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_surface_thicken", "Thicken Surface", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_sweep", "Sweep", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_loft", "Loft", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_mill", "Virtual Router / Mill", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },

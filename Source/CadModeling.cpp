@@ -12,6 +12,8 @@
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepGProp.hxx>
@@ -113,6 +115,7 @@ TopoDS_Shape prism(const TopoDS_Face& face,const gp_Vec& extent,const juce::Stri
 
 juce::var modelingDefaults(const juce::String& type)
 {
+    if(isSurfaceType(type))return surfaceDefaults(type);
     auto p=object();auto* o=p.getDynamicObject();o->setProperty("target","");
     if(type=="sweep")
     {o->setProperty("operation","new");o->setProperty("profile","");o->setProperty("path",pathDefault());o->setProperty("orientation","transport");o->setProperty("binormal",juce::Array<juce::var>{0,0,1});o->setProperty("alignProfile",true);o->setProperty("rollDegrees",0.0);o->setProperty("twistDegrees",0.0);o->setProperty("transition","round");}
@@ -126,14 +129,23 @@ juce::var modelingDefaults(const juce::String& type)
 juce::StringArray modelingDependencies(const juce::var& p)
 {
     juce::StringArray ids;if(!p.isObject())return ids;
+    if(p.hasProperty("method"))
+    {
+        const auto method=p["method"].toString();
+        if(method=="loft"){if(const auto* values=p["sections"].getArray())for(const auto& v:*values)ids.addIfNotAlreadyThere(v.toString());}
+        else {if(p["profile"].toString().isNotEmpty())ids.add(p["profile"].toString());if(method=="sweep")for(const auto* key:{"sketch","feature"})if(p["path"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["path"][key].toString());}
+        return ids;
+    }
     for(const auto* key:{"profile","region","target"})if(p[key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p[key].toString());
-    if(const auto* sections=p["sections"].getArray())for(const auto& v:*sections)ids.addIfNotAlreadyThere(v.toString());
+    for(const auto* key:{"sections","sources"})if(const auto* values=p[key].getArray())for(const auto& v:*values)ids.addIfNotAlreadyThere(v.isObject()?v["feature"].toString():v.toString());
+    for(const auto* key:{"sketch","feature"})if(p["tool"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["tool"][key].toString());
     for(const auto* key:{"sketch","feature"})if(p["path"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["path"][key].toString());
     if(p["reference"]["feature"].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["reference"]["feature"].toString());return ids;
 }
 
 bool validateModeling(const juce::String& type,const juce::var& p,juce::String& error)
 {
+    if(isSurfaceType(type))return validateSurface(type,p,error);
     const auto fail=[&](const juce::String& e){error=e;return false;};if(!isModelingType(type)||!p.isObject())return fail("Invalid modeling definition.");
     const auto defaults=modelingDefaults(type);for(const auto& v:p.getDynamicObject()->getProperties())if(!defaults.hasProperty(v.name))return fail("Unknown parameter: "+v.name.toString());
     if(!p["target"].isString())return fail("Target must be a stable body ID.");
@@ -212,17 +224,21 @@ TopoDS_Wire CadDocument::modelingPath(const juce::var& p,const CadSketchFrame* o
     if((bool)p.getProperty("reverse",false))wire.Reverse();return wire;
 }
 
-TopoDS_Shape CadDocument::evaluateModeling(const CadFeature& feature,CadFaceOrigins& origins,juce::String& error,juce::StringArray& active)
+TopoDS_Shape CadDocument::evaluateModeling(const CadFeature& feature,CadFaceOrigins& origins,juce::String& error,juce::StringArray& active,bool surfaceOutput)
 {
+    if(isSurfaceType(feature.type))return evaluateSurface(feature,origins,error,active);
     const auto p=feature.modeling;if(!validateModeling(feature.type,p,error))return {};TopoDS_Shape tool;CadFaceOrigins toolNames;
     if(feature.type=="sweep")
     {
-        TopoDS_Face section;CadSketchFrame frame;if(!modelingSection(p["profile"].toString(),section,frame,error,active))return {};const auto spine=modelingPath(p["path"],nullptr,error,active);if(spine.IsNull())return {};
+        TopoDS_Wire sourceProfile;CadSketchFrame frame;
+        if(surfaceOutput){if(!modelingProfile(p["profile"].toString(),sourceProfile,frame,error,active))return {};}
+        else {TopoDS_Face section;if(!modelingSection(p["profile"].toString(),section,frame,error,active))return {};sourceProfile=BRepTools::OuterWire(section);}
+        const auto spine=modelingPath(p["path"],nullptr,error,active);if(spine.IsNull())return {};
         BRepTools_WireExplorer ex(spine);if(!ex.More()){error="The sweep path is empty.";return {};}const auto first=ex.Current();BRepAdaptor_Curve curve(first);gp_Pnt start;gp_Vec tangent;curve.D1(first.Orientation()==TopAbs_REVERSED?curve.LastParameter():curve.FirstParameter(),start,tangent);if(first.Orientation()==TopAbs_REVERSED)tangent.Reverse();
         if(tangent.Magnitude()<1e-9){error="The path has a degenerate starting tangent.";return {};}const gp_Dir normal(tangent);gp_Vec u(frame.u);u-=gp_Vec(normal)*u.Dot(gp_Vec(normal));if(u.Magnitude()<1e-7){u=gp_Vec(frame.v);u-=gp_Vec(normal)*u.Dot(gp_Vec(normal));}const gp_Dir targetU(u);
         gp_Trsf align;if((bool)p["alignProfile"])align.SetDisplacement(gp_Ax3(frame.origin,frame.normal,frame.u),gp_Ax3(start,normal,targetU));
         else if(std::abs(gp_Vec(frame.origin,start).Dot(gp_Vec(frame.normal)))>1e-6||std::abs(frame.normal.Dot(normal))<1-1e-7){error="The unaligned profile must pass through the path start and be normal to its tangent.";return {};}
-        gp_Trsf roll;roll.SetRotation(gp_Ax1(start,normal),(double)p["rollDegrees"]*juce::MathConstants<double>::pi/180.0);align=roll.Multiplied(align);BRepBuilderAPI_Transform moved(section,align,true);auto profile=BRepTools::OuterWire(TopoDS::Face(moved.Shape()));
+        gp_Trsf roll;roll.SetRotation(gp_Ax1(start,normal),(double)p["rollDegrees"]*juce::MathConstants<double>::pi/180.0);align=roll.Multiplied(align);BRepBuilderAPI_Transform moved(sourceProfile,align,true);auto profile=TopoDS::Wire(moved.Shape());
         BRepOffsetAPI_MakePipeShell pipe(spine);pipe.SetTolerance(1e-6,1e-6,1e-5);const auto orientation=p["orientation"].toString();
         if(orientation=="fixed")pipe.SetMode(direction(p["binormal"]));else pipe.SetMode(orientation=="frenet");
         const auto twist=(double)p["twistDegrees"]*juce::MathConstants<double>::pi/180.0;
@@ -234,29 +250,33 @@ TopoDS_Shape CadDocument::evaluateModeling(const CadFeature& feature,CadFaceOrig
             const auto radial=targetU.Transformed(roll);Handle(Geom_CylindricalSurface) cylinder=new Geom_CylindricalSurface(gp_Ax3(start,normal,radial),1.0);Handle(Geom2d_Line) law=new Geom2d_Line(gp_Pnt2d(0,0),gp_Dir2d(twist,extent));
             auto edge=BRepBuilderAPI_MakeEdge(law,cylinder,0,std::hypot(twist,extent)).Edge();if(!BRepLib::BuildCurve3d(edge,1e-6)){error="Unable to construct the twist guide.";return {};}pipe.SetMode(BRepBuilderAPI_MakeWire(edge).Wire(),true,BRepFill_NoContact);
         }
-        const auto transition=p["transition"].toString();pipe.SetTransitionMode(transition=="round"?BRepBuilderAPI_RoundCorner:transition=="right"?BRepBuilderAPI_RightCorner:BRepBuilderAPI_Transformed);pipe.Add(profile,false,true);pipe.Build();
-        if(!pipe.IsDone()||!pipe.MakeSolid()){error="Sweep failed: invalid profile/path placement, tight bends, corner transition or self-intersection (OCCT status "+juce::String((int)pipe.GetStatus())+").";return {};}
+        const auto transition=p["transition"].toString();pipe.SetTransitionMode(transition=="round"?BRepBuilderAPI_RoundCorner:transition=="right"?BRepBuilderAPI_RightCorner:BRepBuilderAPI_Transformed);pipe.Add(profile,false,!surfaceOutput);pipe.Build();
+        if(!pipe.IsDone()||(!surfaceOutput&&!pipe.MakeSolid())){error="Sweep failed: invalid profile/path placement, tight bends, corner transition or self-intersection (OCCT status "+juce::String((int)pipe.GetStatus())+").";return {};}
         tool=pipe.Shape();if(!pipe.FirstShape().IsNull()&&pipe.FirstShape().ShapeType()==TopAbs_FACE)toolNames.push_back({pipe.FirstShape(),{feature.id+"/start"}});if(!pipe.LastShape().IsNull()&&pipe.LastShape().ShapeType()==TopAbs_FACE)toolNames.push_back({pipe.LastShape(),{feature.id+"/end"}});int index=0;
         CadTopologyEvolution history;history.featureId=feature.id;for(BRepTools_WireExplorer e(profile);e.More();e.Next(),++index)for(TopTools_ListIteratorOfListOfShape it(pipe.Generated(e.Current()));it.More();it.Next())if(it.Value().ShapeType()==TopAbs_FACE){toolNames.push_back({it.Value(),{feature.id+"/side:"+juce::String(index)}});history.generated.push_back({e.Current(),it.Value()});}operationHistory.push_back(std::move(history));
     }
     if(feature.type=="loft")
     {
-        BRepOffsetAPI_ThruSections loft(true,(bool)p["ruled"],1e-6);loft.SetMutableInput(false);loft.CheckCompatibility(p["alignment"].toString()=="auto");std::vector<TopoDS_Wire> sections;gp_Pnt previous;int expected=-1;
+        BRepOffsetAPI_ThruSections loft(!surfaceOutput,(bool)p["ruled"],1e-6);loft.SetMutableInput(false);loft.CheckCompatibility(p["alignment"].toString()=="auto");std::vector<TopoDS_Wire> sections;gp_Pnt previous;int expected=-1,expectedClosure=-1;
         for(int i=0;i<p["sections"].size();++i)
         {
-            TopoDS_Face face;CadSketchFrame frame;if(!modelingSection(p["sections"][i].toString(),face,frame,error,active))return {};GProp_GProps props;BRepGProp::SurfaceProperties(face,props);if(i>0&&props.CentreOfMass().Distance(previous)<1e-7){error="Consecutive loft sections must have distinct centres/planes.";return {};}previous=props.CentreOfMass();
-            auto wire=BRepTools::OuterWire(face);const bool reversed=p["reverseSections"].size()>0&&(bool)p["reverseSections"][i];if(reversed)wire.Reverse();std::vector<TopoDS_Edge> edges;for(BRepTools_WireExplorer e(wire);e.More();e.Next())edges.push_back(e.Current());const int count=(int)edges.size();
+            TopoDS_Wire wire;CadSketchFrame frame;GProp_GProps props;
+            if(surfaceOutput){if(!modelingProfile(p["sections"][i].toString(),wire,frame,error,active))return {};BRepGProp::LinearProperties(wire,props);}
+            else {TopoDS_Face face;if(!modelingSection(p["sections"][i].toString(),face,frame,error,active))return {};wire=BRepTools::OuterWire(face);BRepGProp::SurfaceProperties(face,props);}if(i>0&&props.CentreOfMass().Distance(previous)<1e-7){error="Consecutive loft sections must have distinct centres/planes.";return {};}previous=props.CentreOfMass();
+            if(surfaceOutput){const int closure=closed(wire)?1:0;if(expectedClosure>=0&&expectedClosure!=closure){error="Surface Loft sections must consistently be open or closed.";return {};}expectedClosure=closure;}
+            const bool reversed=p["reverseSections"].size()>0&&(bool)p["reverseSections"][i];if(reversed)wire.Reverse();std::vector<TopoDS_Edge> edges;for(BRepTools_WireExplorer e(wire);e.More();e.Next())edges.push_back(e.Current());const int count=(int)edges.size();
             const int offset=p["offsets"].size()>0?(int)p["offsets"][i]:0;const double seam=p["seamAngles"].size()>0?(double)p["seamAngles"][i]:0;
             if(offset>=count){error="Section seam offset is outside its edge count.";return {};}
             if(p["alignment"].toString()=="manual"&&expected>=0&&expected!=count){error="Manual correspondence requires equal edge counts. Choose auto alignment for compatible mixed sections.";return {};}expected=count;
             if(std::abs(seam)>1e-9)
             {if(count!=1||BRepAdaptor_Curve(edges.front()).GetType()!=GeomAbs_Circle){error="Numeric seam angles apply to circular sections; use edge offsets for polygons.";return {};}const auto circle=BRepAdaptor_Curve(edges.front()).Circle();const auto angle=seam*juce::MathConstants<double>::pi/180;auto edge=BRepBuilderAPI_MakeEdge(circle,angle,angle+2*juce::MathConstants<double>::pi).Edge();if(reversed)edge.Reverse();wire=BRepBuilderAPI_MakeWire(edge).Wire();}
-            else if(offset!=0){BRepBuilderAPI_MakeWire reordered;for(int j=0;j<count;++j)reordered.Add(edges[(j+offset)%count]);wire=reordered.Wire();}
+            else if(offset!=0){if(!closed(wire)){error="Starting-edge offsets require closed sections.";return {};}BRepBuilderAPI_MakeWire reordered;for(int j=0;j<count;++j)reordered.Add(edges[(j+offset)%count]);wire=reordered.Wire();}
             sections.push_back(wire);loft.AddWire(wire);
         }
         loft.Build();if(!loft.IsDone()||loft.Shape().IsNull()){error="Loft failed: incompatible sections/correspondence or degenerate geometry.";return {};}tool=loft.Shape();if(!loft.FirstShape().IsNull()&&loft.FirstShape().ShapeType()==TopAbs_FACE)toolNames.push_back({loft.FirstShape(),{feature.id+"/start"}});if(!loft.LastShape().IsNull()&&loft.LastShape().ShapeType()==TopAbs_FACE)toolNames.push_back({loft.LastShape(),{feature.id+"/end"}});
         CadTopologyEvolution history;history.featureId=feature.id;for(size_t s=0;s<sections.size();++s){int i=0;for(BRepTools_WireExplorer e(sections[s]);e.More();e.Next(),++i)for(TopTools_ListIteratorOfListOfShape it(loft.Generated(e.Current()));it.More();it.Next())if(it.Value().ShapeType()==TopAbs_FACE){toolNames.push_back({it.Value(),{feature.id+"/section:"+juce::String((int)s)+"/edge:"+juce::String(i)}});history.generated.push_back({e.Current(),it.Value()});}}operationHistory.push_back(std::move(history));
     }
+    if(surfaceOutput){if(tool.IsNull()||!BRepCheck_Analyzer(tool,true).IsValid()||selfIntersects(tool)){error="The generated surface is invalid or self-intersecting.";return {};}nameRemaining(tool,feature.id,toolNames);origins=toolNames;return tool;}
     CadFaceOrigins targetNames;TopoDS_Shape target;const auto mode=feature.type=="mill"?juce::String("subtract"):p["operation"].toString();
     if(mode!="new"){target=evaluate(p["target"].toString(),error,active,&targetNames);if(target.IsNull()||!solid(target,error))return {};}
     if(feature.type=="mill")
@@ -311,13 +331,13 @@ TopoDS_Shape CadDocument::evaluateModeling(const CadFeature& feature,CadFaceOrig
 std::shared_ptr<const CadRenderSnapshot> CadDocument::modelingPreview(const juce::String& type,const juce::var& args,juce::var& result,juce::String& error) const
 {
     CadDocument draft;draft.geometryCache=geometryCache;if(!draft.deserialize(serialize(),error))return {};auto request=copyJson(args);request.getDynamicObject()->setProperty("action",args["id"].toString().isEmpty()?"create":"update");result=draft.modelingCommand(type,request);if(!(bool)result["ok"]){error=result["error"].toString();return {};}
-    result.getDynamicObject()->setProperty("volume_mm3",volume(draft.find(result["id"].toString())->shape));result.getDynamicObject()->setProperty("preview",true);result.getDynamicObject()->setProperty("committed",false);if(args["id"].toString().isEmpty())result.getDynamicObject()->removeProperty("id");static std::atomic<std::uint64_t> serial{0};auto view=std::make_shared<CadRenderSnapshot>(*draft.snapshot());view->documentInstance=instanceId;view->revision=(std::uint64_t(1)<<63)|(std::uint64_t(1)<<60)|++serial;return view;
+    result.getDynamicObject()->setProperty("volume_mm3",isSurfaceType(type)?(double)result["topology"]["volume_mm3"]:volume(draft.find(result["id"].toString())->shape));result.getDynamicObject()->setProperty("preview",true);result.getDynamicObject()->setProperty("committed",false);if(args["id"].toString().isEmpty())result.getDynamicObject()->removeProperty("id");static std::atomic<std::uint64_t> serial{0};auto view=std::make_shared<CadRenderSnapshot>(*draft.snapshot());view->documentInstance=instanceId;view->revision=(std::uint64_t(1)<<63)|(std::uint64_t(1)<<60)|++serial;return view;
 }
 
 juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var& args)
 {
     auto reply=object();auto* out=reply.getDynamicObject();juce::String error;const auto fail=[&](const char* code,const juce::String& e){out->setProperty("ok",false);out->setProperty("code",code);out->setProperty("error",e);return reply;};
-    if(!isModelingType(type)||!args.isObject())return fail("invalid_arguments","Invalid Sweep/Loft/Router request.");const auto action=args.getProperty("action","get").toString();auto id=args["id"].toString();
+    if(!isModelingType(type)||!args.isObject())return fail("invalid_arguments","Invalid modeling request.");const auto action=args.getProperty("action","get").toString();auto id=args["id"].toString();
     if(action=="references"){auto a=copyJson(args);a.getDynamicObject()->setProperty("action","edges");return chamferCommand(a);}
     if(action=="preview"){juce::var details;if(modelingPreview(type,args,details,error)==nullptr)return fail("modeling_failed",error);return details;}
     if(!juce::StringArray{"create","get","update","delete"}.contains(action))return fail("invalid_arguments","Action must be create/get/update/delete/preview/references.");const auto* f=find(id);
@@ -331,20 +351,33 @@ juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var&
             auto a=object();a.getDynamicObject()->setProperty("action","edges");a.getDynamicObject()->setProperty("target",path["feature"]);const auto list=chamferCommand(a);juce::Array<juce::var> tokens;
             for(const auto& v:*path["edges"].getArray()){if(v.isString()){tokens.add(v);continue;}if(!numeric(v)||(double)v!=std::floor((double)v)||(double)v<0||(double)v>=list["edges"].size())return fail("invalid_reference","Path edge index is out of range.");tokens.add(list["edges"][(int)v]["reference"]);}path.getDynamicObject()->setProperty("edges",tokens);
         }
-        if(!validateModeling(type,p,error))return fail("invalid_arguments",error);for(const auto& dependency:modelingDependencies(p))if(dependency==id||find(dependency)==nullptr)return fail("invalid_reference","Missing or self-referencing source: "+dependency);
+        if(!validateModeling(type,p,error))return fail("invalid_arguments",error);
+        if(type=="surface_trim"&&(action=="create"||p["regionReference"]["face"].toString().isEmpty()||p["target"]!=f->modeling["target"]||p["face"]!=f->modeling["face"]||juce::JSON::toString(p["seed"],true)!=juce::JSON::toString(f->modeling["seed"],true)))
+        {
+            const auto* source=find(p["target"].toString());if(source==nullptr)return fail("invalid_reference","Missing trim source.");const auto selectedFace=p["face"].toString();
+            const auto vertex=BRepBuilderAPI_MakeVertex(point(p["seed"])).Vertex();int count=0;auto anchor=object();
+            for(TopExp_Explorer e(source->shape,TopAbs_FACE);e.More();e.Next())
+            {
+                juce::String token;for(const auto& name:source->faceOrigins)if(name.first.IsSame(e.Current()))for(const auto& t:name.second)if(selectedFace.isEmpty()||t==selectedFace){token=t;break;}
+                if(token.isEmpty())continue;BRepExtrema_DistShapeShape distance(vertex,e.Current());distance.Perform();if(!distance.IsDone()||distance.Value()>1e-6||distance.SupportTypeShape2(1)!=BRepExtrema_IsInFace)continue;
+                double u=0,v=0;distance.ParOnFaceS2(1,u,v);anchor.getDynamicObject()->setProperty("face",token);anchor.getDynamicObject()->setProperty("u",u);anchor.getDynamicObject()->setProperty("v",v);++count;
+            }
+            if(count!=1)return fail("invalid_reference","Trim region point must lie inside one uniquely named source face. Pick the region again.");p.getDynamicObject()->setProperty("regionReference",anchor);
+        }
+        for(const auto& dependency:modelingDependencies(p))if(dependency==id||find(dependency)==nullptr)return fail("invalid_reference","Missing or self-referencing source: "+dependency);
         auto created=id;const auto ok=mutate([&](juce::String&)
         {
-            if(action=="create"){CadFeature value;value.id=newId(type.toRawUTF8(),nextNumber++);value.type=type;value.name=(type=="sweep"?juce::String("Sweep"):type=="loft"?juce::String("Loft"):juce::String("Router / Mill"))+" "+juce::String(nextNumber-1);items.push_back(value);created=value.id;}
-            for(auto& value:items)if(value.id==created){value.modeling=p;value.firstOperand=type=="loft"?p["sections"][0].toString():type=="sweep"?p["profile"].toString():p["target"].toString();value.targetFeatureId=p["target"].toString();}
+            if(action=="create"){CadFeature value;value.id=newId(type.toRawUTF8(),nextNumber++);value.type=type;value.name=modelingLabel(type)+" "+juce::String(nextNumber-1);items.push_back(value);created=value.id;}
+            for(auto& value:items)if(value.id==created){value.modeling=p;value.firstOperand=modelingDependencies(p).isEmpty()?juce::String():modelingDependencies(p)[0];value.targetFeatureId=p["target"].toString();}
             for(auto& value:items)
             {
                 const bool target=value.id==p["target"].toString();
-                if((target&&(type=="mill"||p["operation"].toString()!="new"))||(!target&&modelingDependencies(p).contains(value.id)&&value.id!=p["reference"]["feature"].toString()))value.visible=false;
+                if((target&&(isSurfaceType(type)||type=="mill"||p["operation"].toString()!="new"))||(!target&&modelingDependencies(p).contains(value.id)&&value.id!=p["reference"]["feature"].toString()))value.visible=false;
             }
             return true;
         },error);
         if(!ok)return fail("modeling_failed",error.isEmpty()?"OCCT could not construct this feature. Check source geometry and parameters.":error);id=created;f=find(id);
     }
-    out->setProperty("ok",true);out->setProperty("id",id);out->setProperty("type",type);out->setProperty("parameters",copyJson(f->modeling));return reply;
+    out->setProperty("ok",true);out->setProperty("id",id);out->setProperty("type",type);out->setProperty("parameters",copyJson(f->modeling));if(isSurfaceType(type))out->setProperty("topology",surfaceTopology(f->shape));return reply;
 }
 }

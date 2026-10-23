@@ -34,6 +34,12 @@ structured APIs, FRust hosts, CAD nodes and [version 13 interchange](docs/ADVANC
 The [Order 4 completion report](docs/PROFESSIONAL_MODELING_ORDER4.md) records
 verification and current limitations.
 
+[Surface modeling](docs/SURFACE_MODELING.md) provides planar, extruded, revolved,
+swept and lofted surfaces, region trimming, eligible U/V boundary extension,
+shell sewing, separate solidification, and positive/negative/symmetric thickening.
+These share GUI previews, APIs, FRust hosts, CAD nodes and
+[version 14 interchange](docs/SURFACE_MODELING_API.md).
+
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 

@@ -128,7 +128,7 @@ private:
     float clipRadius = emptySceneRadius;
     juce::SpinLock highlightLock;
     std::vector<std::pair<juce::String, juce::Colour>> highlights;
-    struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; int faceIndex = -1; };
+    struct MeshRange { juce::String featureId; GLsizei first = 0, count = 0; int faceIndex = -1; bool doubleSided = false; };
     std::shared_ptr<djehuti::cad::CadSelection> selection;
     std::uint64_t shownSelectionSerial = 0;
     std::vector<djehuti::cad::CadPick> glChosen;

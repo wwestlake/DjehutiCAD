@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 
 #include <functional>
+#include <array>
 #include <vector>
 
 namespace djehuti::cad
@@ -14,8 +15,10 @@ struct CadPick
 {
     juce::String drawId, featureId;
     int face = -1, edge = -1;
+    std::array<double,3> point {0,0,0};
+    bool hasPoint = false; // Perspective-correct hit in the owning feature frame, for region picking.
     bool valid() const { return featureId.isNotEmpty(); }
-    bool operator== (const CadPick& o) const { return drawId == o.drawId && featureId == o.featureId && face == o.face && edge == o.edge; }
+    bool operator== (const CadPick& o) const { return drawId == o.drawId && featureId == o.featureId && face == o.face && edge == o.edge && hasPoint==o.hasPoint && (!hasPoint||point==o.point); }
     bool operator!= (const CadPick& o) const { return !(*this == o); }
 };
 

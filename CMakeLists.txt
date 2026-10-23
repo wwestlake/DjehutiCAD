@@ -100,6 +100,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadDocument.h
     Source/CadDocument.cpp
     Source/CadRevolve.cpp
+    Source/CadSurfaces.cpp
+    Source/CadSurfaceChecks.cpp
     Source/CadModeling.cpp
     Source/CadModelingChecks.cpp
     Source/CadReplication.cpp
