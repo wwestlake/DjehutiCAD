@@ -12,6 +12,9 @@
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
 class SketchToolPalette;
+class CadFloatingToolbar;
+class CadSketchSymmetryControls;
+namespace djehuti::cad::ui { struct SnapPreferences;struct ReferenceInput; }
 bool runSketchUsabilityCheck(juce::var& report);
 namespace djehuti::cad { bool runCadLatheCheck(juce::var&); }
 
@@ -64,6 +67,7 @@ private:
     friend bool runSketchUsabilityCheck(juce::var&);
     friend bool djehuti::cad::runCadLatheCheck(juce::var&);
     friend bool runSketchLineRepairCheck(juce::var&);
+    friend bool runCadWorkflowUiCheck(juce::var&);
     class SketchEntityItem;
     class FeatureItem;
     class GroupItem;
@@ -98,6 +102,24 @@ private:
     juce::PopupMenu::Options sketchEntityMenuOptions(juce::Point<int> screenPosition);
     void syncLineProperties(bool polar);
     bool lineAnglesInRadians = false;
+    void updateFloatingTools();
+    void symmetryOperation(const juce::var&);
+    bool pickingSymmetryCentre=false;
+    std::unique_ptr<CadSketchSymmetryControls> symmetryControls;
+    void showReferenceControls();
+    bool configureReferences(const juce::var&,juce::String& error);
+    juce::var referenceState();
+    std::vector<djehuti::cad::ui::ReferenceInput> referenceInputs();
+    void referencePreferencesChanged();
+    bool faceSnapAvailable() const;
+    bool refineFaceSnap(djehuti::cad::CadPick&) const;
+    std::unique_ptr<CadFloatingToolbar> modifyPalette,snapPalette;
+    std::unique_ptr<djehuti::cad::ui::SnapPreferences> snapPreferences;
+    bool showReferenceSketches=true,showReferenceSolids=true,snapReferences=true,referenceSelection=false;
+    float referenceOpacity=.4f;
+    juce::String selectedReference,referenceFileKey;
+    juce::var referenceVisibility,referenceDocuments;
+    std::uint64_t referenceSerial=0,referenceDocument=0,referencePoseSerial=0;
     bool deleteSelectedSketchEntities();
     bool handleSketchKey(const juce::KeyPress&);
     // Interactive sketch edits committed by the canvas (one document command each): vertex/handle drag,

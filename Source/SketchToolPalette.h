@@ -26,8 +26,11 @@ public:
         close.onClick=[this]{preferredVisible=false;changed();}; addAndMakeVisible(close);
         dock.setTooltip("Dock at the left edge or float over the sketch"); dock.setTitle("Dock or float sketch toolbox");
         dock.onClick=[this]{docked=!docked;changed();}; addAndMakeVisible(dock);
+        symmetry.setTooltip("Expand symmetry and mirror controls");symmetry.onClick=[this]{expanded=!expanded;changed();};addAndMakeVisible(symmetry);
         setTooltipText();
     }
+    void setSymmetryPanel(juce::Component* panel){symmetryPanel=panel;if(panel)addAndMakeVisible(panel);}
+    void setSymmetryMode(const juce::String& mode){symmetry.setButtonText(mode=="off"?"Sym":mode=="both"?"H+V":mode=="horizontal"?"Sym H":"Sym V");symmetry.setColour(juce::TextButton::buttonColourId,juce::Colour(mode=="off"?0xff293c48:0xff356d66));}
     bool wanted() const { return preferredVisible; }
     bool isDocked() const { return docked; }
     void toggleVisible() { preferredVisible=!preferredVisible;changed(); }
@@ -39,19 +42,20 @@ public:
     }
     void place(juce::Rectangle<int> area)
     {
-        if(area.isEmpty())return;
-        const int width=juce::jmin(58,area.getWidth()),height=juce::jmin(368,area.getHeight());
+        placement=area;if(area.isEmpty())return;
+        const int width=juce::jmin(expanded?328:58,area.getWidth()),height=juce::jmin(expanded?510:395,area.getHeight());
         const auto p=docked?juce::Point<int>{0,0}:juce::Point<int>{juce::jlimit(0,area.getWidth()-width,floating.x),juce::jlimit(0,area.getHeight()-height,floating.y)};
-        setBounds(p.x,p.y,width,height); if(!docked)floating=p;toFront(false);
+        setBounds(area.getX()+p.x,area.getY()+p.y,width,height); if(!docked)floating=p;toFront(false);
     }
     juce::var state() const
     {
         auto* o=new juce::DynamicObject();o->setProperty("visible",preferredVisible);o->setProperty("docked",docked);
-        o->setProperty("x",floating.x);o->setProperty("y",floating.y);o->setProperty("showing",isVisible());return o;
+        o->setProperty("x",floating.x);o->setProperty("y",floating.y);o->setProperty("showing",isVisible());o->setProperty("symmetryExpanded",expanded);return o;
     }
     void restore(const juce::var& value)
     {
         if(!value.isObject())return;
+        expanded=value.getProperty("symmetryExpanded",false);
         preferredVisible=value.getProperty("visible",true);docked=value.getProperty("docked",true);
         floating={juce::jlimit(0,100000,(int)value.getProperty("x",12)),juce::jlimit(0,100000,(int)value.getProperty("y",12))};changed();
     }
@@ -62,7 +66,8 @@ public:
     }
     void resized() override
     {
-        auto area=getLocalBounds().reduced(5);close.setBounds(area.getRight()-18,2,18,20);area.removeFromTop(20);
+        auto area=getLocalBounds().reduced(5);if(symmetryPanel){symmetryPanel->setVisible(expanded);symmetryPanel->setBounds(62,24,juce::jmax(1,getWidth()-66),getHeight()-28);}
+        area.setWidth(48);close.setBounds(35,2,18,20);area.removeFromTop(20);symmetry.setBounds(area.removeFromBottom(26));symmetry.setToggleState(expanded,juce::dontSendNotification);
         dock.setButtonText(docked?"Float":"Dock");dock.setBounds(area.removeFromBottom(24));
         const int row=juce::jmax(1,area.getHeight()/(int)buttons.size());
         for(auto& button:buttons)button->setBounds(area.removeFromTop(row).reduced(1,2));
@@ -76,11 +81,11 @@ public:
     {
         if(!dragging||getParentComponent()==nullptr)return;
         dragger.dragComponent(this,e,nullptr);
-        auto area=getParentComponent()->getLocalBounds();setTopLeftPosition(juce::jlimit(0,juce::jmax(0,area.getWidth()-getWidth()),getX()),juce::jlimit(0,juce::jmax(0,area.getHeight()-getHeight()),getY()));
+        auto area=placement;setTopLeftPosition(juce::jlimit(area.getX(),juce::jmax(area.getX(),area.getRight()-getWidth()),getX()),juce::jlimit(area.getY(),juce::jmax(area.getY(),area.getBottom()-getHeight()),getY()));
     }
     void mouseUp(const juce::MouseEvent&) override
     {
-        if(!dragging)return;dragging=false;floating=getPosition();docked=getX()<=8;changed();
+        if(!dragging)return;dragging=false;floating=getPosition()-placement.getPosition();docked=getX()<=placement.getX()+8;changed();
     }
 private:
     class Icon final : public juce::Button
@@ -105,7 +110,7 @@ private:
     };
     void changed(){dock.setButtonText(docked?"Float":"Dock");setTooltipText();if(layoutChanged)layoutChanged();}
     void setTooltipText(){setMouseCursor(juce::MouseCursor::DraggingHandCursor);}
-    bool preferredVisible=true,docked=true,dragging=false;
-    juce::Point<int> floating{12,12};juce::ComponentDragger dragger;
+    bool preferredVisible=true,docked=true,dragging=false,expanded=false;juce::Component* symmetryPanel=nullptr;juce::TextButton symmetry{"Sym"};
+    juce::Rectangle<int> placement;juce::Point<int> floating{12,12};juce::ComponentDragger dragger;
     juce::TextButton close{"x"},dock{"Float"};std::vector<std::unique_ptr<Icon>> buttons;
 };

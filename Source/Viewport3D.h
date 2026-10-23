@@ -60,6 +60,9 @@ public:
     juce::String pickBody(juce::Point<float> position) const;
     void setPoseSource(std::function<std::shared_ptr<const djehuti::cad::CadPoseSnapshot>()> source) { poseSource = std::move(source); }
     std::function<void(const juce::String& featureId)> onBodyPicked;
+    std::function<bool()> faceSnapEnabled;
+    std::function<bool(djehuti::cad::CadPick&)> refineFaceSnap;
+    bool faceSnapMarker=false;juce::Point<float> faceSnapScreen;
     // True while the owner needs whole bodies (a command choosing its target): clicks pick bodies in any mode.
     std::function<bool()> wantsBodyPick;
     std::function<bool()> wantsSketchPick; // Enabled by the sketch-driven Virtual Lathe selector only.

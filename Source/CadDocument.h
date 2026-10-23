@@ -111,7 +111,8 @@ struct CadFeature
 // Endpoints are not shared objects: connections are coincident constraints (see docs/SKETCH_EDITING_ARCHITECTURE.md).
 struct CadSketchEntity
 {
-    juce::String id, type, groupId;
+    juce::String id, type, groupId, mirrorOwner;
+    bool construction=false;
     double x1 = 0.0, y1 = 0.0, x2 = 0.0, y2 = 0.0, radius = 1.0;
     double cx1 = 0.0, cy1 = 0.0, cx2 = 0.0, cy2 = 0.0;
 };
@@ -122,6 +123,13 @@ struct CadSketchConstraint
     double value = 0.0;
 };
 
+struct CadSketchMirror
+{
+    juce::String id,axis="both",axisEntity;
+    juce::StringArray sources;
+    double cx=0,cy=0;
+    bool live=false;
+};
 struct CadSketch
 {
     juce::String id, plane = "XY";    // "XY", "XZ", "YZ", or "FACE" for a sketch attached to a model face
@@ -131,6 +139,8 @@ struct CadSketch
     bool onFace() const { return supportFeature.isNotEmpty(); }
     std::vector<CadSketchEntity> entities;
     std::vector<CadSketchConstraint> constraints;
+    juce::String symmetryMode="off";double symmetryX=0,symmetryY=0;
+    std::vector<CadSketchMirror> mirrors;
 };
 
 struct CadMesh
@@ -217,6 +227,8 @@ public:
     bool describeFace(const juce::String& featureId, int faceIndex, CadFaceInfo& face, juce::String& error) const;
     bool describeEdge(const juce::String& featureId, int edgeIndex, juce::String& description, juce::String& error) const;
     bool sketchFrame(const juce::String& sketchId, CadSketchFrame& frame) const;
+    juce::var sketchSymmetryState(const juce::String&) const;
+    bool sketchSymmetryCommand(const juce::String&,const juce::var&,juce::String&);
     bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {});
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error);
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error);
@@ -384,6 +396,8 @@ private:
     bool loadFile(const juce::File& file, juce::String& error);
     bool jointFramesFromRequest(const CadJointRequest& request, CadJoint& joint, juce::String& error) const;
     CadSketch* mutableSketch(const juce::String& id);
+    void registerSketchSymmetry(CadSketch&,const juce::StringArray&);
+    bool updateSketchMirrors(CadSketch&,juce::String&) const;
     bool solveSketch(CadSketch& sketch, juce::String& error) const;
     bool validateSketch(const CadSketch& sketch, juce::String& error) const;
     bool sketchProfiles(const CadSketch& sketch, const CadSketchFrame& frame, std::vector<TopoDS_Face>& faces, juce::String& error, std::vector<std::pair<TopoDS_Shape, juce::String>>* edgeEntities = nullptr) const;
@@ -449,6 +463,8 @@ private:
 class CadCommandService
 {
 public:
+    bool sketchSymmetryCommand(const juce::String& id,const juce::var& args,juce::String& error){return model.sketchSymmetryCommand(id,args,error);}
+    juce::var sketchSymmetryState(const juce::String& id) const{return model.sketchSymmetryState(id);}
     CadDocument& document() { return model; }
     const CadDocument& document() const { return model; }
     bool newDocument();

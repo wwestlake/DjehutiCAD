@@ -90,3 +90,7 @@ Workspace identifiers: cad, frust, nodes, views, agent, toolbox. Guide operation
 `--cad-viewport-range-check` checks adaptive clipping, scale extremes, aspect-aware fit, posed selection framing, camera callbacks and picking. Results are written to `build/cad-viewport-range-check.result.json`. See [Order 6 validation and limitations](VIEWPORT_RANGE_ORDER6.md).
 
 This diagnostic establishes service/component behavior. It does not substitute for observing native pointer interaction, rendered guides or menus in the running application. Actual build/check/GUI results are recorded in the handoff at closeout.
+
+## Modeling workflow controls
+
+Modify and Snap are floating workspace toolbars with persistent docking, visibility and position. Sketch supports ghosted read-only references, explicit geometric snap modes and a compact linked symmetry/mirror panel in its toolbox. See [Modeling workflow UI](MODELING_WORKFLOW_UI.md) and [automation actions](LOCAL_AUTOMATION_API.md#modeling-workflow-ui-and-symmetry). The existing `cad_workspace` nested `ui` action exposes the same controls to FRust and CAD Workspace nodes.

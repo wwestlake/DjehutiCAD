@@ -2,6 +2,16 @@
 #include "CadWorkspacePanel.h"
 #include "CadExportDialog.h"
 #include "SketchToolPalette.h"
+#include "CadFloatingToolbar.h"
+#include "CadSketchReferences.h"
+#include "CadReferenceControls.h"
+#include "CadSketchSymmetry.h"
+#include "CadSketchSymmetryControls.h"
+#include <BRep_Tool.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
 
 #include <deque>
 #include <cstdlib>
@@ -299,7 +309,7 @@ public:
         g.drawText(visible || type == "sketch" ? type : "hidden", w - 60, 0, 56, h, juce::Justification::centredRight, true);
     }
     void itemClicked(const juce::MouseEvent& e) override { if (e.mods.isPopupMenu()) panel.showFeatureMenu(id); else panel.featureClicked(id); }
-    void itemDoubleClicked(const juce::MouseEvent&) override { if (type == "sketch") panel.enterSketch(id); }
+    void itemDoubleClicked(const juce::MouseEvent&) override { if (type == "sketch") {if(panel.editingSketchId.isNotEmpty()&&id!=panel.editingSketchId)panel.featureClicked(id);else panel.enterSketch(id);} }
     juce::String getTooltip() override { return name + " (" + type + (visible ? "" : ", hidden") + ")  Right-click for actions."; }
 private:
     CadWorkspacePanel& panel;
@@ -353,20 +363,22 @@ class CadWorkspacePanel::SketchCanvas final : public juce::Component
 {
 public:
     friend bool runSketchUsabilityCheck(juce::var&);
+    friend bool runCadWorkflowUiCheck(juce::var&);
     explicit SketchCanvas(CadWorkspacePanel& ownerIn) : owner(ownerIn) { setWantsKeyboardFocus(true); }
-    void setSketch(const juce::String& id) { sketchId = id; gestureActive = false; needsFit = true; if (getWidth() > 0) fitToContent(); repaint(); }
+    void setSketch(const juce::String& id) { owner.pickingSymmetryCentre=false;sketchId = id; gestureActive = false; needsFit = true; if (getWidth() > 0) fitToContent(); repaint(); }
     void setSelection(const juce::String& first, const juce::String& second) { selectedEntity = first; secondEntity = second; repaint(); }
     juce::String tool() const { return mode; }
     void setTool(const juce::String& next) { cancelGesture(); mode = next; setMouseCursor(mode == "select" ? juce::MouseCursor::NormalCursor : juce::MouseCursor::CrosshairCursor); repaint(); }
     bool escape()
     {
+        if(owner.pickingSymmetryCentre){owner.pickingSymmetryCentre=false;repaint();return true;}
         if (gestureActive || pointDragActive) { cancelGesture(); owner.setMessage("Gesture cancelled; committed sketch geometry is unchanged.", 0); return true; }
         if (mode != "select") { owner.setSketchTool("select"); return true; }
         if (selectedEntity.isNotEmpty()) { owner.selectSketchEntity({}, false); return true; }
         return false;
     }
     bool hasActiveGesture() const { return gestureActive || pointDragActive; }
-    void cancelGesture() { gestureActive = false; panning = false; pointDragActive = false; dragRef.clear(); snapTarget.clear(); repaint(); }
+    void cancelGesture() { owner.pickingSymmetryCentre=false;gestureActive = false; panning = false; pointDragActive = false; dragRef.clear(); snapTarget.clear();lastSnap={}; repaint(); }
     void fitToContent()
     {
         needsFit = false;
@@ -378,6 +390,7 @@ public:
                 if (e.type == "circle") { include(e.x1 - e.radius, e.y1 - e.radius); include(e.x1 + e.radius, e.y1 + e.radius); }
                 else { include(e.x1, e.y1); include(e.x2, e.y2); if (e.type == "bezier") { include(e.cx1, e.cy1); include(e.cx2, e.cy2); } }
             }
+        ensureReferences();const auto referenceBounds=referenceScene.referenceBounds();if(!referenceBounds.isEmpty()){include(referenceBounds.getX(),referenceBounds.getY());include(referenceBounds.getRight(),referenceBounds.getBottom());}
         if (!found) { minX = minY = -50.0; maxX = maxY = 50.0; }
         const auto span = std::max({ maxX - minX, maxY - minY, 10.0 });
         centre = { (minX + maxX) * 0.5, (minY + maxY) * 0.5 };
@@ -410,17 +423,21 @@ public:
         g.setColour(juce::Colour(0xffc0605a)); g.drawText(plane.substring(0, 1), getWidth() - 24, juce::roundToInt(origin.y) - 18, 20, 16, juce::Justification::centred);
         g.setColour(juce::Colour(0xff5aa06a)); g.drawText(plane.substring(1, 2), juce::roundToInt(origin.x) + 4, 4, 20, 16, juce::Justification::centredLeft);
 
+        ensureReferences();referenceScene.paint(g,juce::AffineTransform((float)scale,0,(float)(getWidth()*.5-centre.x*scale),0,(float)-scale,(float)(getHeight()*.5+centre.y*scale)),scale,owner.referenceOpacity,owner.selectedReference,lastSnap);
         if (sketch != nullptr)
         {
             // While a vertex or handle is dragged the canvas shows the moved geometry; the document changes once, on release.
-            const auto entities = pointDragActive ? draggedEntities(*sketch) : sketch->entities;
+            auto entities = pointDragActive ? draggedEntities(*sketch) : sketch->entities;
+            if(pointDragActive){auto preview=*sketch;std::erase_if(entities,[](const auto& e){return e.mirrorOwner.isNotEmpty();});preview.entities=entities;for(const auto& m:preview.mirrors){juce::String error;const auto copies=djehuti::cad::reflectedSketchEntities(preview,m,error);preview.entities.insert(preview.entities.end(),copies.begin(),copies.end());}entities=preview.entities;}
+            if(sketch->symmetryMode!="off"){const auto p=toPoint(sketch->symmetryX,sketch->symmetryY);g.setColour(juce::Colour(0xffb793d8).withAlpha(.4f));const float dash[]{5,6};if(sketch->symmetryMode!="vertical")g.drawDashedLine(juce::Line<float>(0,p.y,(float)getWidth(),p.y),dash,2);if(sketch->symmetryMode!="horizontal")g.drawDashedLine(juce::Line<float>(p.x,0,p.x,(float)getHeight()),dash,2);}
+
             for (const auto& entity : entities)
             {
                 g.setColour(entity.id == selectedEntity ? selectedColour : entity.id == secondEntity ? juce::Colour(0xffc39bff) : juce::Colour(0xff78dcca));
                 const auto thickness = entity.id == selectedEntity || entity.id == secondEntity ? 3.0f : 2.0f;
                 if (entity.type == "circle") { const auto c = toPoint(entity.x1, entity.y1); const auto r = (float) (entity.radius * scale); g.drawEllipse(c.x - r, c.y - r, r * 2.0f, r * 2.0f, thickness); }
                 else if (entity.type == "bezier") g.strokePath(curvePath(entity), juce::PathStrokeType(thickness));
-                else { const auto a = toPoint(entity.x1, entity.y1), b = toPoint(entity.x2, entity.y2); g.drawLine(a.x, a.y, b.x, b.y, thickness); }
+                else { const auto a = toPoint(entity.x1, entity.y1), b = toPoint(entity.x2, entity.y2);if(entity.construction){const float dash[]{5,5};g.drawDashedLine(juce::Line<float>(a,b),dash,2,thickness);}else g.drawLine(a.x, a.y, b.x, b.y, thickness); }
             }
             // Handles of the selected curve: thin lines from each endpoint to its square control point.
             for (const auto& entity : entities)
@@ -459,9 +476,27 @@ public:
             else if (mode == "circle") { const auto r = (float) (std::hypot(current.x - start.x, current.y - start.y) * scale); g.drawEllipse(a.x - r, a.y - r, r * 2.0f, r * 2.0f, 1.5f); g.drawLine(a.x, a.y, b.x, b.y, 1.0f); readout = "R " + juce::String(std::hypot(current.x - start.x, current.y - start.y), 2) + " mm"; }
             else if (mode == "curve") { g.strokePath(curvePath(defaultCurve(start, current)), juce::PathStrokeType(1.5f)); readout = "Curve, chord " + juce::String(std::hypot(current.x - start.x, current.y - start.y), 2) + " mm"; }
             else { g.drawLine(a.x, a.y, b.x, b.y, 1.5f); readout = "L " + juce::String(std::hypot(current.x - start.x, current.y - start.y), 2) + " mm"; }
+            if(sketch&&sketch->symmetryMode!="off")
+            {
+                djehuti::cad::CadSketch preview;djehuti::cad::CadSketchEntity e;e.id="preview";e.type=mode=="curve"?"bezier":mode=="circle"?"circle":"line";e.x1=start.x;e.y1=start.y;e.x2=current.x;e.y2=current.y;
+                if(mode=="curve")e=defaultCurve(start,current);if(mode=="circle")e.radius=std::hypot(current.x-start.x,current.y-start.y);
+                if(mode=="rectangle"){const double xs[]{start.x,current.x,current.x,start.x},ys[]{start.y,start.y,current.y,current.y};for(int i=0;i<4;++i){e.id="p"+juce::String(i);e.x1=xs[i];e.y1=ys[i];e.x2=xs[(i+1)%4];e.y2=ys[(i+1)%4];preview.entities.push_back(e);}}
+                else {e.id="preview";preview.entities.push_back(e);}
+                djehuti::cad::CadSketchMirror mirror;mirror.id="preview";mirror.axis=sketch->symmetryMode;mirror.cx=sketch->symmetryX;mirror.cy=sketch->symmetryY;for(const auto& entity:preview.entities)mirror.sources.add(entity.id);juce::String error;
+                for(const auto& entity:djehuti::cad::reflectedSketchEntities(preview,mirror,error))
+                {if(entity.type=="circle"){const auto p=toPoint(entity.x1,entity.y1);const auto r=(float)(entity.radius*scale);g.drawEllipse(p.x-r,p.y-r,r*2,r*2,1.5f);}else if(entity.type=="bezier")g.strokePath(curvePath(entity),juce::PathStrokeType(1.5f));else{const auto p=toPoint(entity.x1,entity.y1),q=toPoint(entity.x2,entity.y2);g.drawLine(p.x,p.y,q.x,q.y,1.5f);}}
+            }
             g.setFont(juce::Font(13.0f)); g.drawText(readout, juce::roundToInt(b.x) + 12, juce::roundToInt(b.y) + 6, 160, 18, juce::Justification::centredLeft);
         }
-        if (snapTarget.isNotEmpty()) { g.setColour(juce::Colour(0xffffdf7e)); const auto p = toPoint(snapPoint.x, snapPoint.y); g.drawEllipse(p.x - 6.0f, p.y - 6.0f, 12.0f, 12.0f, 2.0f); }
+        if(lastSnap.found)
+        {
+            g.setColour(juce::Colour(0xffffdf7e));const auto p=toPoint(lastSnap.point.x,lastSnap.point.y);
+            if(lastSnap.type=="vertex")g.drawRect(p.x-4,p.y-4,8.f,8.f,1.8f);
+            else if(lastSnap.type=="midpoint"){juce::Path marker;marker.addTriangle(p.x,p.y-6,p.x-6,p.y+5,p.x+6,p.y+5);g.strokePath(marker,juce::PathStrokeType(1.8f));}
+            else if(lastSnap.type=="intersection"){g.drawLine(p.x-5,p.y-5,p.x+5,p.y+5,1.8f);g.drawLine(p.x-5,p.y+5,p.x+5,p.y-5,1.8f);}
+            else{g.drawEllipse(p.x-5,p.y-5,10,10,1.8f);if(lastSnap.type=="center"||lastSnap.type=="grid"){g.drawLine(p.x-8,p.y,p.x+8,p.y,1);g.drawLine(p.x,p.y-8,p.x,p.y+8,1);}}
+            g.setFont(juce::Font(12.f));const auto label=lastSnap.type.substring(0,1).toUpperCase()+lastSnap.type.substring(1)+(lastSnap.reference?" (reference)":"");g.drawText(label,juce::jlimit(2,juce::jmax(2,getWidth()-150),(int)p.x+10),juce::jlimit(2,juce::jmax(2,getHeight()-18),(int)p.y-20),148,17,juce::Justification::left);
+        }
 
         g.setColour(dimTextColour); g.setFont(juce::Font(12.5f));
         g.drawText(plane + " plane  |  grid " + juce::String(step, step < 1.0 ? 1 : 0) + " mm  |  wheel zooms, right-drag pans", 10, getHeight() - 24, getWidth() - 220, 18, juce::Justification::centredLeft);
@@ -472,10 +507,13 @@ public:
     {
         grabKeyboardFocus();
         if (e.mods.isRightButtonDown() || e.mods.isMiddleButtonDown()) { panning = true; panMoved=false; panPress=panStart=e.position; return; }
+        if(owner.pickingSymmetryCentre){const auto p=nearestSnap(fromPoint(e.position)).point;auto* v=new juce::DynamicObject();v->setProperty("operation","configure");v->setProperty("x",p.x);v->setProperty("y",p.y);owner.pickingSymmetryCentre=false;owner.symmetryOperation(v);referenceClicked=true;return;}
         if (mode == "select")
         {
             // Pressing on a hovered vertex or handle starts a point drag; it commits on release (one undo step).
             updateHover(e.position);
+            if(owner.referenceSelection&&hoverRef.isEmpty()&&entityAt(fromPoint(e.position)).isEmpty())
+            {ensureReferences();const auto p=fromPoint(e.position);const auto hit=referenceScene.referenceAt({p.x,p.y},8/scale);if(hit.isNotEmpty()){owner.selectedReference=hit;referenceClicked=true;owner.setMessage("Reference selected (read-only): "+hit,0);repaint();return;}}
             if (hoverRef.isNotEmpty() && !e.mods.isShiftDown()) { pointDragActive = true; dragMoved = false; dragRef = hoverRef; dragPress = e.position; dragTo = hoverPoint; }
             return;
         }
@@ -490,7 +528,7 @@ public:
         if (pointDragActive)
         {
             if (e.position.getDistanceFrom(dragPress) >= 3.0f) dragMoved = true;
-            if (dragMoved) dragTo = fromPoint(e.position);
+            if (dragMoved) dragTo = nearestSnap(fromPoint(e.position)).point;
             repaint(); return;
         }
         if (!gestureActive) return;
@@ -499,6 +537,7 @@ public:
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
+        if(referenceClicked){referenceClicked=false;return;}
         if (panning) { panning = false; if(e.mods.isPopupMenu()&&!panMoved)owner.showSketchEntityMenu(sketchId,entityAt(fromPoint(e.position)),e.getScreenPosition()); return; }
         if (pointDragActive)
         {
@@ -525,15 +564,16 @@ public:
     }
     bool commitDrawing(double x, double y, const juce::String& endConnection, juce::String& error)
     {
+        juce::ignoreUnused(endConnection);
         const juce::Point<double> end(x, y);
         juce::String entityId; bool ok = false;
         if (mode == "rectangle") ok = owner.service->addSketchRectangle(sketchId, std::min(start.x, end.x), std::min(start.y, end.y), std::abs(end.x - start.x), std::abs(end.y - start.y), entityId, error);
         else if (mode == "circle") ok = owner.service->addSketchCircle(sketchId, start.x, start.y, std::hypot(end.x - start.x, end.y - start.y), entityId, error);
-        else if (mode == "line") ok = owner.service->addSketchLine(sketchId, start.x, start.y, end.x, end.y, entityId, error, startConnection, endConnection);
+        else if (mode == "line") ok = owner.service->addSketchLine(sketchId, start.x, start.y, end.x, end.y, entityId, error);
         else if (mode == "curve")
         {
             const auto c = defaultCurve(start, { end.x, end.y });
-            ok = owner.service->addSketchBezier(sketchId, c.x1, c.y1, c.cx1, c.cy1, c.cx2, c.cy2, c.x2, c.y2, entityId, error, startConnection, endConnection);
+            ok = owner.service->addSketchBezier(sketchId, c.x1, c.y1, c.cx1, c.cy1, c.cx2, c.cy2, c.x2, c.y2, entityId, error);
         }
         if (ok) owner.sketchGeometryAdded(mode, entityId); else owner.showError(error);
         repaint();
@@ -561,7 +601,7 @@ public:
     juce::var gestureState() const
     {
         auto* o = new juce::DynamicObject(); o->setProperty("active", gestureActive); o->setProperty("tool", mode);
-        o->setProperty("startX", start.x); o->setProperty("startY", start.y); o->setProperty("x", current.x); o->setProperty("y", current.y); return o;
+        o->setProperty("startX", start.x); o->setProperty("startY", start.y); o->setProperty("x", current.x); o->setProperty("y", current.y);o->setProperty("snap",lastSnap.state());o->setProperty("pixelsPerMm",scale);o->setProperty("gridStep",gridStep()); return o;
     }
     void mouseMove(const juce::MouseEvent& e) override { updateHover(e.position); updateCursor(e.position); }
     void mouseExit(const juce::MouseEvent&) override { hasCursor = false; hoverRef.clear(); repaint(); }
@@ -592,8 +632,8 @@ private:
     double gridStep() const { for (const auto s : { 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0 }) if (s * scale >= 16.0) return s; return 1000.0; }
     juce::Point<float> toPoint(double x, double y) const { return { (float) (getWidth() * 0.5 + (x - centre.x) * scale), (float) (getHeight() * 0.5 - (y - centre.y) * scale) }; }
     Point fromPoint(juce::Point<float> p) const { return { centre.x + (p.x - getWidth() * 0.5) / scale, centre.y + (getHeight() * 0.5 - p.y) / scale }; }
-    void updateCursor(juce::Point<float> p) { cursor = fromPoint(p); hasCursor = true; repaint(); }
-    bool snapsEnds() const { return mode == "line" || mode == "curve"; }
+    void updateCursor(juce::Point<float> p) { cursor = fromPoint(p); hasCursor = true;if(snapsEnds()||pointDragActive||owner.pickingSymmetryCentre){const auto hit=nearestSnap(cursor);snapTarget=hit.target;snapPoint=hit.point;} repaint(); }
+    bool snapsEnds() const { return mode=="line"||mode=="curve"||mode=="rectangle"||mode=="circle"; }
     static double bezierAt(double t, double p0, double p1, double p2, double p3) { const auto s = 1.0 - t; return s * s * s * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t * t * t * p3; }
     juce::Path curvePath(const djehuti::cad::CadSketchEntity& c) const
     {
@@ -636,7 +676,7 @@ private:
             if (const auto* sketch = owner.service->document().findSketch(sketchId))
                 for (const auto& entity : sketch->entities)
                 {
-                    if (entity.type != "line" && entity.type != "bezier") continue;
+                    if ((entity.type != "line" && entity.type != "bezier")||entity.mirrorOwner.isNotEmpty()) continue;
                     std::vector<std::tuple<double, double, juce::String>> points { { entity.x1, entity.y1, entity.id + ":p1" }, { entity.x2, entity.y2, entity.id + ":p2" } };
                     if (entity.type == "bezier" && entity.id == selectedEntity && mode == "select") { points.push_back({ entity.cx1, entity.cy1, entity.id + ":c1" }); points.push_back({ entity.cx2, entity.cy2, entity.id + ":c2" }); }
                     for (const auto& [px, py, r] : points)
@@ -666,7 +706,7 @@ private:
             const auto jc = joined[i].indexOfChar(':'); auto* e = find(joined[i].substring(0, jc)); if (e == nullptr) continue;
             const auto w = joined[i].substring(jc + 1); const auto x = px(*e, w), y = py(*e, w);
             for (const auto& c : sketch.constraints) if (c.type == "coincident") { if (c.firstEntity == joined[i]) joined.addIfNotAlreadyThere(c.secondEntity); else if (c.secondEntity == joined[i]) joined.addIfNotAlreadyThere(c.firstEntity); }
-            for (const auto& o : sketch.entities) if (o.type == "line" || o.type == "bezier") { if (std::hypot(o.x1 - x, o.y1 - y) < 1.0e-7) joined.addIfNotAlreadyThere(o.id + ":p1"); if (std::hypot(o.x2 - x, o.y2 - y) < 1.0e-7) joined.addIfNotAlreadyThere(o.id + ":p2"); }
+            for (const auto& o : sketch.entities) if (o.mirrorOwner.isEmpty()&&(o.type == "line" || o.type == "bezier")) { if (std::hypot(o.x1 - x, o.y1 - y) < 1.0e-7) joined.addIfNotAlreadyThere(o.id + ":p1"); if (std::hypot(o.x2 - x, o.y2 - y) < 1.0e-7) joined.addIfNotAlreadyThere(o.id + ":p2"); }
         }
         auto* origin = find(id); if (origin == nullptr) return entities;
         const auto dx = dragTo.x - px(*origin, which), dy = dragTo.y - py(*origin, which);
@@ -679,22 +719,34 @@ private:
         }
         return entities;
     }
+    static double distanceToSegment(double px,double py,double ax,double ay,double bx,double by)
+    {const auto dx=bx-ax,dy=by-ay,den=dx*dx+dy*dy;const auto t=den>0?juce::jlimit(0.0,1.0,((px-ax)*dx+(py-ay)*dy)/den):0;return std::hypot(px-ax-t*dx,py-ay-t*dy);}
     Snap nearestSnap(Point candidate) const
     {
-        Snap result { candidate, {} }; double bestPixels = 8.0;
-        if (const auto* sketch = owner.service->document().findSketch(sketchId))
-            for (const auto& entity : sketch->entities)
-                if (entity.type == "line" || entity.type == "bezier")
-                    for (const auto& endpoint : { std::pair<double, double> { entity.x1, entity.y1 }, std::pair<double, double> { entity.x2, entity.y2 } })
-                    {
-                        const auto pixels = toPoint(endpoint.first, endpoint.second).getDistanceFrom(toPoint(candidate.x, candidate.y));
-                        if (pixels < bestPixels) { bestPixels = pixels; result.point = { endpoint.first, endpoint.second }; result.target = entity.id + (endpoint.first == entity.x1 && endpoint.second == entity.y1 ? ":p1" : ":p2"); }
-                    }
-        return result;
+        ensureReferences();lastRaw=candidate;rawValid=true;const auto excluded=pointDragActive?dragRef.upToFirstOccurrenceOf(":",false,false):juce::String();
+        lastSnap=referenceScene.snap({candidate.x,candidate.y},scale,gridStep(),*owner.snapPreferences,owner.snapReferences,excluded);
+        return {{lastSnap.point.x,lastSnap.point.y},lastSnap.found?lastSnap.type+"|"+lastSnap.source+"/"+lastSnap.entity:juce::String()};
     }
-    static double distanceToSegment(double px, double py, double ax, double ay, double bx, double by) { const auto dx = bx - ax, dy = by - ay, q = dx * dx + dy * dy; const auto t = q > 0 ? juce::jlimit(0.0, 1.0, ((px - ax) * dx + (py - ay) * dy) / q) : 0.0; return std::hypot(px - (ax + t * dx), py - (ay + t * dy)); }
+    void ensureReferences() const
+    {
+        const auto sources=owner.referenceInputs();const auto pose=owner.motionRuntime!=nullptr?owner.motionRuntime->pose():nullptr;
+        const auto& doc=owner.service->document();const auto key=sketchId+"|"+juce::String(doc.documentInstance())+"|"+juce::String(doc.revision())+"|"+juce::String(owner.referenceSerial)+"|"+juce::String(pose?pose->serial:0);
+        if(referenceKey==key)return;referenceScene.rebuild(doc,sketchId,sources);referenceKey=key;
+    }
+public:
+    juce::var probeSnap(double x,double y){const auto hit=nearestSnap({x,y});snapPoint=hit.point;snapTarget=hit.target;repaint();return lastSnap.state();}
+    void referencesChanged(){referenceKey.clear();if(rawValid){const auto hit=nearestSnap(lastRaw);snapTarget=hit.target;snapPoint=hit.point;if(gestureActive)current=hit.point;}else lastSnap={};repaint();}
+    juce::var referenceCacheState() const{ensureReferences();return referenceScene.state();}
+    juce::var snapState() const{return lastSnap.state();}
+private:
 
     CadWorkspacePanel& owner;
+    mutable djehuti::cad::ui::SketchReferenceScene referenceScene;
+    mutable juce::String referenceKey;
+    mutable djehuti::cad::ui::SnapHit lastSnap;
+    mutable Point lastRaw;
+    mutable bool rawValid=false;
+    bool referenceClicked=false;
     bool panMoved=false;juce::Point<float> panPress;
     juce::String sketchId, selectedEntity, secondEntity, mode { "select" }, snapTarget, startConnection;
     juce::String hoverRef, selectedPoint, dragRef;   // point references "<entity>:p1|p2|c1|c2"
@@ -717,6 +769,8 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     taskTitle.setFont(juce::Font(17.0f, juce::Font::bold)); taskTitle.setColour(juce::Label::textColourId, textColour);
     taskInstruction.setColour(juce::Label::textColourId, dimTextColour); taskInstruction.setJustificationType(juce::Justification::topLeft); taskInstruction.setMinimumHorizontalScale(1.0f);
     messageLabel.setJustificationType(juce::Justification::topLeft); messageLabel.setMinimumHorizontalScale(1.0f);
+    snapPreferences=std::make_unique<djehuti::cad::ui::SnapPreferences>();
+    referenceVisibility=new juce::DynamicObject();referenceDocuments=new juce::DynamicObject();
     addAndMakeVisible(workspaceMenu);
     workspaceMenu.sections = [this]
     {
@@ -728,13 +782,14 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
             { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
-            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
+            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{56,"Modify toolbar",true,modifyPalette->visiblePreference()}, E{57,"Dock Modify toolbar",!sketching,modifyPalette->isDocked()}, E{58,"Snap toolbar",true,snapPalette->visiblePreference()}, E{59,"Dock Snap toolbar",true,snapPalette->isDocked()}, E{60,"Reference geometry...",sketching}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
         };
     };
     workspaceMenu.invoke = [this](int id)
     {
         const juce::StringArray names { "undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views" };
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
+        else if(id>=56&&id<=60)executeUiCommand(juce::StringArray{"modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"}[id-56]);
         else if(id>=53&&id<=55)executeUiCommand(juce::StringArray{"deleteSketchEntities","sketchToolbox","dockSketchToolbox"}[id-53]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
@@ -823,11 +878,31 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     sketchPalette=std::make_unique<SketchToolPalette>();centre.addChildComponent(*sketchPalette);
     sketchPalette->command=[this](const juce::String& name){executeUiCommand(name);};
     sketchPalette->layoutChanged=[this]{sketchPalette->setAvailable(editingSketchId.isNotEmpty());resized();workspaceMenu.refresh();};
+    using Toolbar=CadFloatingToolbar;
+    modifyPalette=std::make_unique<Toolbar>("Modify toolbar",std::vector<Toolbar::Tool>{
+        {"extrude","Extrude"},{"revolve","Revolve"},{"lathe","Virtual Lathe"},{"cut","Cut sketch"},{"fillet","Fillet"},{"chamfer","Chamfer"},{"hole","Drill Press / Hole"},
+        {"mirror","Mirror"},{"linearPattern","Linear Pattern"},{"circularPattern","Circular Pattern"},{"sweep","Sweep"},{"loft","Loft"},{"mill","Virtual Router / Mill"},
+        {"surface","Create Surface"},{"surface_trim","Trim Surface"},{"surface_extend","Extend Surface"},{"surface_sew","Sew Surfaces"},{"surface_solidify","Solidify Shell"},{"surface_thicken","Thicken Surface"},
+        {"subtract","Subtract"},{"union","Union"},{"intersect","Intersect"}},true,juce::Point<int>{12,12});
+    snapPalette=std::make_unique<Toolbar>("Snap toolbar",std::vector<Toolbar::Tool>{{"grid","Grid"},{"vertex","Vertex"},{"edge","Nearest edge"},{"midpoint","Midpoint"},{"center","Circle / arc centre"},{"intersection","Intersection"},{"face","Planar face point (Drill Press)"},{"off","Temporarily disable snapping"},{"references","Reference geometry visibility..."}},false,juce::Point<int>{76,100});
+    {juce::String error;snapPalette->configure(juce::JSON::parse(R"({"docked":true,"edge":"bottom"})"),error);}
+    centre.addChildComponent(*modifyPalette);centre.addChildComponent(*snapPalette);
+    modifyPalette->command=[this](const auto& c){executeUiCommand(c);};
+    snapPalette->command=[this](const auto& c){
+        if(c=="references"){showReferenceControls();return;}
+        if(c=="off")snapPreferences->enabled=!snapPreferences->enabled;
+        else {const int i=djehuti::cad::ui::SnapPreferences::names().indexOf(c);if(i>=0){snapPreferences->modes[(size_t)i]=!snapPreferences->enabled||!snapPreferences->modes[(size_t)i];snapPreferences->enabled=true;}}
+        sketchCanvas->referencesChanged();updateFloatingTools();};
+    modifyPalette->layoutChanged=snapPalette->layoutChanged=[this]{updateFloatingTools();resized();};
+    symmetryControls=std::make_unique<CadSketchSymmetryControls>();sketchPalette->setSymmetryPanel(symmetryControls.get());
+    symmetryControls->operate=[this](const auto& v){symmetryOperation(v);};symmetryControls->pickCentre=[this]{sketchCanvas->setTool("select");pickingSymmetryCentre=true;setMessage("Pick symmetry centre in the sketch; enabled snaps apply.",0);};
     modelView.setTitle("Perspective  |  Model  (drag to orbit, Shift/right-drag to pan, wheel to zoom, click to select)");
     modelView.onContextCommand = [this](const juce::String& command,const djehuti::cad::CadPick& pick) { viewContextCommand(command,pick); };
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
     modelView.onFrameRequested = [this] { wakeFrames(); };
-    modelView.wantsBodyPick = [this] { return isCommandTask(); };
+    modelView.wantsBodyPick = [this] { return isCommandTask()&&task!=Task::hole; };
+    modelView.faceSnapEnabled=[this]{return faceSnapAvailable()&&snapPreferences->enabled&&snapPreferences->modes[6];};
+    modelView.refineFaceSnap=[this](auto& pick){return refineFaceSnap(pick);};
     modelView.wantsSketchPick=[this]{return task==Task::lathe;};
     modelView.onTargetDragged = [this](const juce::String& targetId, const std::array<float, 3>& point, bool finished) { ikTargetDragged(targetId, point, finished); };
 
@@ -889,10 +964,13 @@ void CadWorkspacePanel::resized()
     juce::Component* items[] = { &tree, &leftBar, &centre, &rightBar, &side };
     columns.layOutComponents(items, 5, area.getX(), area.getY(), area.getWidth(), area.getHeight(), false, true);
     auto treeArea = tree.getBounds(); treeHeading.setBounds(treeArea.removeFromTop(30).reduced(10, 4)); tree.setBounds(treeArea.reduced(4, 0));
-    modelView.setBounds(centre.getLocalBounds());
-    auto sketchArea=centre.getLocalBounds();sketchPalette->place(sketchArea);
+    auto sketchArea=centre.getLocalBounds();
+    if(modifyPalette){modifyPalette->place(sketchArea,editingSketchId.isEmpty());modifyPalette->reserve(sketchArea);}
+    sketchPalette->place(sketchArea);
     if(sketchPalette->isVisible()&&sketchPalette->isDocked())sketchArea.removeFromLeft(sketchPalette->getWidth()+6);
-    sketchCanvas->setBounds(sketchArea);
+    if(snapPalette){snapPalette->place(sketchArea,true);snapPalette->reserve(sketchArea);}
+    if(!sketchPalette->isDocked())sketchPalette->place(sketchArea);
+    modelView.setBounds(sketchArea);sketchCanvas->setBounds(sketchArea);
 
     auto s = side.getLocalBounds().reduced(12, 10);
     taskTitle.setBounds(s.removeFromTop(28));
@@ -966,6 +1044,7 @@ void CadWorkspacePanel::timerCallback()
     const bool documentChanged = revision != shownRevision || instance != shownDocument;
     refreshFromDocument();
     const bool published = modelView.prepareFrame(0.0f, ++frameSerial);
+    if(editingSketchId.isNotEmpty()&&motionRuntime){const auto pose=motionRuntime->pose();const auto serial=pose?pose->serial:0;if(serial!=referencePoseSerial||documentChanged){referencePoseSerial=serial;sketchCanvas->repaint();}}
     if (documentChanged || published) wakeFrames();
     else if (fastFrames && ++idleFrameTicks >= 60) { fastFrames = false; startTimerHz(10); }
 }
@@ -1076,6 +1155,7 @@ void CadWorkspacePanel::syncTreeSelection()
 
 void CadWorkspacePanel::sketchEntityClicked(const juce::String& sketch,const juce::String& entity,bool second)
 {
+    if(editingSketchId.isNotEmpty()&&sketch!=editingSketchId){featureClicked(sketch);return;}
     if(task==Task::lathe){chooseLatheProfile(sketch,entity);return;}
     const auto* source=service->document().findSketch(sketch);bool found=false;
     if(source)for(const auto& e:source->entities)if(e.id==entity)found=true;
@@ -1095,6 +1175,7 @@ juce::PopupMenu::Options CadWorkspacePanel::sketchEntityMenuOptions(juce::Point<
 
 void CadWorkspacePanel::showSketchEntityMenu(const juce::String& sketch,const juce::String& entity,juce::Point<int> screenPosition)
 {
+    if(editingSketchId.isNotEmpty()&&sketch!=editingSketchId){featureClicked(sketch);showReferenceControls();return;}
     if(entity.isNotEmpty()&&(editingSketchId!=sketch||(sketchEntityId!=entity&&sketchSecondEntityId!=entity)))sketchEntityClicked(sketch,entity,false);
     juce::PopupMenu menu;menu.addItem(1,"Delete selected geometry",sketchEntityId.isNotEmpty());
     menu.addItem(2,"Select tool");
@@ -1125,12 +1206,19 @@ bool CadWorkspacePanel::handleSketchKey(const juce::KeyPress& key)
 juce::String CadWorkspacePanel::viewState() const
 {
     auto state=modelView.viewState();state.getDynamicObject()->setProperty("sketchToolbox",sketchPalette->state());
+    state.getDynamicObject()->setProperty("modifyToolbar",modifyPalette->state());state.getDynamicObject()->setProperty("snapToolbar",snapPalette->state());
+    state.getDynamicObject()->setProperty("snapping",snapPreferences->state());state.getDynamicObject()->setProperty("references",const_cast<CadWorkspacePanel*>(this)->referenceState());state.getDynamicObject()->setProperty("referenceDocuments",referenceDocuments);
     state.getDynamicObject()->setProperty("sketchLineAngleUnit",lineAnglesInRadians?"radians":"degrees");return juce::JSON::toString(state);
 }
 void CadWorkspacePanel::restoreViewState(const juce::String& json)
 {
     const auto state=juce::JSON::parse(json);modelView.restoreViewState(state);
     if(state.hasProperty("sketchToolbox"))sketchPalette->restore(state["sketchToolbox"]);
+    if(state.hasProperty("modifyToolbar"))modifyPalette->restore(state["modifyToolbar"]);if(state.hasProperty("snapToolbar"))snapPalette->restore(state["snapToolbar"]);
+    juce::String ignored;if(state.hasProperty("snapping"))snapPreferences->configure(state["snapping"],ignored);
+    if(state["referenceDocuments"].isObject())referenceDocuments=state["referenceDocuments"];
+    if(state["references"].isObject()){auto prefs=state["references"].clone();prefs.getDynamicObject()->removeProperty("sources");prefs.getDynamicObject()->removeProperty("selected");configureReferences(prefs,ignored);}
+    updateFloatingTools();resized();
     lineAnglesInRadians=state["sketchLineAngleUnit"].toString()=="radians";
 }
 
@@ -1165,6 +1253,13 @@ void CadWorkspacePanel::syncLineProperties(bool polar)
 
 void CadWorkspacePanel::featureClicked(const juce::String& id)
 {
+    if(editingSketchId.isNotEmpty()&&id.isNotEmpty()&&id!=editingSketchId&&(service->document().find(id)||isInstance(id)))
+    {
+        const auto sources=referenceInputs();const auto found=std::find_if(sources.begin(),sources.end(),[&](const auto& source){return source.id==id&&source.visible;});
+        if(referenceSelection&&found!=sources.end()){selectedReference=id;setMessage("Reference selected (read-only): "+featureName(id),0);}
+        else setMessage("Reference geometry is read-only while this sketch is open. Enable reference selection to highlight visible sources; finish the sketch before editing another source.",0);
+        sketchCanvas->repaint();return;
+    }
     if(task==Task::lathe){chooseLatheProfile(id);return;}
     if (isCommandTask() && task != Task::link) { assignRole(id); return; }
     if (selection != nullptr)
@@ -1570,7 +1665,10 @@ void CadWorkspacePanel::chooseHoleFace(const djehuti::cad::CadPick& pick)
         auto values=readHoleForm(error);
         if(values.isObject()){values.getDynamicObject()->removeProperty("target");values.getDynamicObject()->setProperty("face",face.token);djehuti::cad::readHoleParameters(values,p,error);}
     }
-    p.face=face.token;p.u=(double)info["centreUV"][0];p.v=(double)info["centreUV"][1];targetId=pick.featureId;holeSettings=p;
+    p.face=face.token;p.u=(double)info["centreUV"][0];p.v=(double)info["centreUV"][1];targetId=pick.featureId;
+    auto refined=pick;if(snapPreferences->enabled&&snapPreferences->modes[6]&&refineFaceSnap(refined))
+    {const auto frame=info["frame"];const auto origin=frame["origin"],u=frame["u"],v=frame["v"];p.u=0;p.v=0;for(int i=0;i<3;++i){p.u+=(refined.point[(size_t)i]-(double)origin[i])*(double)u[i];p.v+=(refined.point[(size_t)i]-(double)origin[i])*(double)v[i];}}
+    holeSettings=p;
     if(editingHoleId.isNotEmpty())showHoleSource();rebuildTaskPanel(false);
 }
 
@@ -3049,7 +3147,7 @@ void CadWorkspacePanel::updateToolbar()
     else modeLabel.setText("Model", juce::dontSendNotification);
     modeLabel.setColour(juce::Label::textColourId, sketching ? juce::Colour(0xff8fe3d6) : textColour);
     for (auto* b : { &sketchButton,&boxButton,&cylinderButton,&extrudeButton, &revolveButton,&latheButton,&cutButton,&filletButton,&chamferButton,&holeButton,&subtractButton,&unionButton,&intersectButton,&undoButton,&redoButton,&fitButton,&resetViewButton,&viewsButton,&selectToolButton,&lineButton,&rectangleButton,&circleButton,&curveButton,&constrainButton,&fitSketchButton,&instanceButton,&jointButton,&couplingButton,&linkButton,&ikButton,&bodyModeButton,&faceModeButton,&edgeModeButton }) b->setVisible(false);
-    resized(); repaint();
+    updateFloatingTools();resized(); repaint();
 }
 
 void CadWorkspacePanel::updateHighlights()
@@ -3084,6 +3182,7 @@ void CadWorkspacePanel::showExportDialog()
 
 void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
 {
+    if(editingSketchId.isNotEmpty()&&id!=editingSketchId){featureClicked(id);showReferenceControls();return;}
     const auto* f = service->document().find(id);
     if (f == nullptr)
     {
@@ -4051,6 +4150,11 @@ void CadWorkspacePanel::ikTargetDragged(const juce::String& targetId, const std:
 bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
 {
     if (!uiCommandEnabled(command)) return false;
+    if(command=="modifyToolbar"){modifyPalette->toggleVisible();return true;}
+    if(command=="dockModifyToolbar"){modifyPalette->toggleDocked();return true;}
+    if(command=="snapToolbar"){snapPalette->toggleVisible();return true;}
+    if(command=="dockSnapToolbar"){snapPalette->toggleDocked();return true;}
+    if(command=="references"){showReferenceControls();return true;}
     if(command=="deleteSketchEntities")return deleteSelectedSketchEntities();
     if(command=="sketchToolbox"){sketchPalette->toggleVisible();return true;}
     if(command=="dockSketchToolbox"){sketchPalette->toggleDocked();return true;}
@@ -4080,7 +4184,8 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
 {
     const bool sketch = editingSketchId.isNotEmpty();
     if(command=="deleteSketchEntities")return sketch&&sketchEntityId.isNotEmpty();
-    if(command=="dockSketchToolbox")return sketch;
+    if(command=="dockSketchToolbox"||command=="references")return sketch;
+    if(juce::StringArray{"extrude","revolve","lathe","cut","fillet","chamfer","hole","subtract","union","intersect"}.contains(command))return !sketch;
     if(djehuti::cad::isModelingType(command)||djehuti::cad::isReplicationType(command))return !sketch;
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
     if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","interference","materials"}.contains(command)) return !sketch;
@@ -4092,6 +4197,9 @@ bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
     if(djehuti::cad::isModelingType(command))return task==Task::modeling&&modelingKind==command;
     if(djehuti::cad::isReplicationType(command))return task==Task::replication&&replicationKind==command;
     if (editingSketchId.isNotEmpty()) return command == (sketchCanvas->tool() == "select" ? juce::String("sketchSelect") : sketchCanvas->tool());
+    if(command=="extrude")return task==Task::extrude;if(command=="revolve")return task==Task::revolve;if(command=="lathe")return task==Task::lathe;
+    if(command=="cut")return task==Task::cut;if(command=="fillet")return task==Task::fillet;if(command=="chamfer")return task==Task::chamfer;if(command=="hole")return task==Task::hole;
+    if(juce::StringArray{"subtract","union","intersect"}.contains(command))return task==Task::boolean&&booleanKind==command;
     if (selection == nullptr) return false;
     using Sel = djehuti::cad::CadSelection;
     if (command == "pointer") return selection->tool() == Sel::Tool::pointer;
@@ -4126,6 +4234,8 @@ juce::var CadWorkspacePanel::automationState()
     refreshFromDocument(); handleUpdateNowIfNeeded();
     const auto& document = service->document();
     auto* state = new juce::DynamicObject();
+    state->setProperty("symmetry",service->document().sketchSymmetryState(editingSketchId));
+    state->setProperty("modifyToolbar",modifyPalette->state());state->setProperty("snapToolbar",snapPalette->state());state->setProperty("snapping",snapPreferences->state());state->setProperty("references",referenceState());
     state->setProperty("modelingPreview",modelingPreviewActive);
     state->setProperty("replicationPreview",replicationPreviewActive);
     state->setProperty("chamferPreview",chamferPreviewActive);
@@ -4148,7 +4258,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox","modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -4168,7 +4278,7 @@ juce::var CadWorkspacePanel::automationState()
             o->setProperty("plane", sketch->plane); o->setProperty("offset", sketch->offset);
             juce::Array<juce::var> entities;
             for (const auto& e : sketch->entities)
-            { auto* item = new juce::DynamicObject(); item->setProperty("id", e.id); item->setProperty("type", e.type); item->setProperty("x1",e.x1); item->setProperty("y1",e.y1); item->setProperty("x2",e.x2); item->setProperty("y2",e.y2); item->setProperty("radius",e.radius);
+            { auto* item = new juce::DynamicObject(); item->setProperty("id", e.id); item->setProperty("type", e.type);item->setProperty("construction",e.construction);item->setProperty("mirrorOwner",e.mirrorOwner); item->setProperty("x1",e.x1); item->setProperty("y1",e.y1); item->setProperty("x2",e.x2); item->setProperty("y2",e.y2); item->setProperty("radius",e.radius);
               const auto row=entityTreeItems.find(f.id+"/"+e.id);item->setProperty("treeSelected",row!=entityTreeItems.end()&&row->second->isSelected());item->setProperty("treeName",friendlyEntity(e.id));
               if (e.type == "bezier") { item->setProperty("cx1",e.cx1); item->setProperty("cy1",e.cy1); item->setProperty("cx2",e.cx2); item->setProperty("cy2",e.cy2); }
               entities.add(item); }
@@ -4187,7 +4297,7 @@ juce::var CadWorkspacePanel::automation(const juce::var& args)
     refreshFromDocument(); handleUpdateNowIfNeeded();
     juce::String error;
     const auto action = args.getProperty("action", "state").toString();
-    if(action=="sketchToolbox"){commandMessage.clear();commandSeverity=0;}
+    if(juce::StringArray{"sketchToolbox","symmetry","toolbar","snapping","references","snap"}.contains(action)){commandMessage.clear();commandSeverity=0;}
     if (!args.isObject()) error = "Arguments must be an object.";
     else if (action == "state") {}
     else if (action == "command")
@@ -4195,6 +4305,18 @@ juce::var CadWorkspacePanel::automation(const juce::var& args)
         commandMessage.clear(); commandSeverity = 0;
         if (!executeUiCommand(args.getProperty("command", "").toString())) error = "Unknown or unavailable command.";
     }
+    else if(action=="symmetry"){if(args.hasProperty("value"))symmetryOperation(args["value"]);}
+    else if(action=="toolbar")
+    {
+        auto* palette=args["field"].toString()=="modify"?modifyPalette.get():args["field"].toString()=="snap"?snapPalette.get():nullptr;
+        if(!palette)error="Choose modify or snap toolbar.";
+        else if(args.hasProperty("value"))palette->configure(args["value"],error);
+        else if(args.hasProperty("command")&&!palette->invoke(args["command"].toString()))error="Toolbar command is absent or disabled.";
+    }
+    else if(action=="snapping"){if(args.hasProperty("value"))snapPreferences->configure(args["value"],error);sketchCanvas->referencesChanged();updateFloatingTools();}
+    else if(action=="references"){if(args.hasProperty("value"))configureReferences(args["value"],error);}
+    else if(action=="snap")
+    {if(editingSketchId.isEmpty())error="Open a sketch to probe plane snapping.";else if(!(args["x"].isInt()||args["x"].isInt64()||args["x"].isDouble())||!(args["y"].isInt()||args["y"].isInt64()||args["y"].isDouble())||!std::isfinite((double)args["x"])||!std::isfinite((double)args["y"]))error="Snap coordinates must be finite numbers.";else sketchCanvas->probeSnap((double)args["x"],(double)args["y"]);}
     else if (action == "set")
     {
         if (!form) error = "No task form is open.";
@@ -4242,7 +4364,7 @@ juce::var CadWorkspacePanel::automation(const juce::var& args)
         if(value.isObject())
         {
             auto next=sketchPalette->state();
-            for(const auto* key:{"visible","docked"})if(value.hasProperty(key)){if(!value[key].isBool())error="Toolbox visibility/docking must be boolean.";else next.getDynamicObject()->setProperty(key,value[key]);}
+            for(const auto* key:{"visible","docked","symmetryExpanded"})if(value.hasProperty(key)){if(!value[key].isBool())error="Toolbox visibility/docking must be boolean.";else next.getDynamicObject()->setProperty(key,value[key]);}
             for(const auto* key:{"x","y"})if(value.hasProperty(key)){auto v=value[key];if(!(v.isDouble()||v.isInt()||v.isInt64())||!std::isfinite((double)v)||(double)v<0||(double)v>100000)error="Toolbox position must be finite and between 0 and 100000 pixels.";else next.getDynamicObject()->setProperty(key,(int)(double)v);}
             if(error.isEmpty())sketchPalette->restore(next);
         }
@@ -4468,7 +4590,7 @@ bool runSketchLineRepairCheck(juce::var& report)
     {
         juce::String sketch,id;check(service->createSketch(plane,0,sketch,error)&&service->addSketchLine(sketch,1,2,11,2,id,error),juce::String(plane)+": create line");
         if(firstSketch.isEmpty()){firstSketch=sketch;firstLine=id;}
-        panel.refreshFromDocument(true);panel.sketchEntityClicked(sketch,id,false);panel.handleUpdateNowIfNeeded();
+        panel.finishSketch();panel.refreshFromDocument(true);panel.sketchEntityClicked(sketch,id,false);panel.handleUpdateNowIfNeeded();
         check(panel.form->control("endU")&&panel.form->control("endV")&&panel.form->control("direction"),juce::String(plane)+": both numeric methods available");
         set("angleUnit","Degrees");set("u",0);set("v",0);set("endU",50);set("endV",0);
         check(approximately(panel.form->number("dimension"),50)&&approximately(panel.form->number("direction"),0),juce::String(plane)+": endpoints derive 50 mm / 0 degrees");
@@ -4491,14 +4613,14 @@ bool runSketchLineRepairCheck(juce::var& report)
     const auto before=snapshot();const auto revision=service->document().revision();
     check(!service->setSketchLineGeometry(firstSketch,firstLine,0,0,0,0,error)&&snapshot()==before&&service->document().revision()==revision,"Degenerate command rolls back document and revision");
     check(!service->setSketchLineGeometry(firstSketch,firstLine,0,0,std::numeric_limits<double>::infinity(),1,error)&&snapshot()==before,"Nonfinite command leaves document unchanged");
-    panel.sketchEntityClicked(firstSketch,firstLine,false);panel.handleUpdateNowIfNeeded();
+    panel.finishSketch();panel.sketchEntityClicked(firstSketch,firstLine,false);panel.handleUpdateNowIfNeeded();
     check(!(bool)set("endU","NaN")["ok"]&&!(bool)set("direction","1..2")["ok"],"Automation rejects nonfinite and malformed values");
     juce::String s,a,b,c;service->createSketch("XY",0,s,error);service->addSketchLine(s,0,0,50,0,a,error);service->addSketchLine(s,50,0,50,20,b,error,a+":p2");
     service->addSketchConstraint(s,"horizontal",a,{},0,c,error);service->setSketchEntityDimension(s,a,50,error);
     check(service->setSketchLineGeometry(s,a,0,0,25,0,error)&&approximately(line(s,b).x1,25),"Length driving dimension is updated and joined endpoints follow atomically");
     const auto constrained=snapshot();const auto rev=service->document().revision();
     check(!service->setSketchLineGeometry(s,a,0,0,0,25,error)&&error.contains("constraints")&&snapshot()==constrained&&service->document().revision()==rev,"Incompatible horizontal direction is rejected without losing constraints");
-    panel.refreshFromDocument(true);panel.sketchEntityClicked(s,a,false);panel.handleUpdateNowIfNeeded();set("angleUnit","Degrees");set("direction",90);
+    panel.finishSketch();panel.refreshFromDocument(true);panel.sketchEntityClicked(s,a,false);panel.handleUpdateNowIfNeeded();set("angleUnit","Degrees");set("direction",90);
     const auto conflict=call(R"({"action":"click","button":"apply"})");
     check(!(bool)conflict["ok"]&&snapshot()==constrained&&approximately(panel.form->number("endU"),25),"GUI Apply reports a constraint conflict and restores synchronized document values");
     service->addSketchConstraint(s,"fixed",a,{},0,c,error);
@@ -4526,7 +4648,7 @@ bool runSketchLineRepairCheck(juce::var& report)
         }
         check(ok,juce::String("All planes, endpoints, constraints and stable ids save/reopen: ")+extension);
     }
-    panel.sketchEntityClicked(firstSketch,firstLine,false);panel.handleUpdateNowIfNeeded();set("angleUnit","Radians");
+    panel.finishSketch();panel.sketchEntityClicked(firstSketch,firstLine,false);panel.handleUpdateNowIfNeeded();set("angleUnit","Radians");
     auto* angleEditor=dynamic_cast<juce::TextEditor*>(panel.form->control("direction"));angleEditor->setCaretPosition(angleEditor->getText().length());angleEditor->onFocusLost();
     check(angleEditor->getCaretPosition()==0,"Long radian values show their leading digits after leaving the field");
     {CadWorkspacePanel restored(service);restored.restoreViewState(panel.viewState());check(restored.lineAnglesInRadians,"Angle unit preference persists in workspace settings");}
@@ -4559,4 +4681,161 @@ bool runSketchLineRepairCheck(juce::var& report)
     window.clearContentComponent();window.setVisible(false);
     auto image=panel.createComponentSnapshot(panel.getLocalBounds());if(auto stream=folder.getChildFile("line-properties.png").createOutputStream())juce::PNGImageFormat().writeImageToStream(image,*stream);
     auto* result=new juce::DynamicObject();result->setProperty("ok",failures==0);result->setProperty("failures",failures);result->setProperty("checks",checks);result->setProperty("pointerDriven",false);report=result;return failures==0;
+}
+
+void CadWorkspacePanel::updateFloatingTools()
+{
+    if(!modifyPalette||!snapPalette)return;
+    if(symmetryControls){juce::Array<juce::var> entities;if(const auto* s=service->document().findSketch(editingSketchId))for(const auto& e:s->entities){auto* v=new juce::DynamicObject();v->setProperty("id",e.id);v->setProperty("type",e.type);v->setProperty("construction",e.construction);v->setProperty("mirrorOwner",e.mirrorOwner);entities.add(v);}const auto state=service->document().sketchSymmetryState(editingSketchId);symmetryControls->setModel(state,entities,sketchEntityId,sketchSecondEntityId);sketchPalette->setSymmetryMode(state.getProperty("mode","off").toString());}
+
+    modifyPalette->refresh([this](const auto& c){return uiCommandEnabled(c);},[this](const auto& c){return uiToolActive(c);});
+    snapPalette->refresh([this](const auto& c){return c=="off"||(c=="face"?faceSnapAvailable():editingSketchId.isNotEmpty());},[this](const auto& c){if(c=="off")return !snapPreferences->enabled;if(c=="references")return showReferenceSketches||showReferenceSolids;const int i=djehuti::cad::ui::SnapPreferences::names().indexOf(c);return i>=0&&snapPreferences->enabled&&snapPreferences->modes[(size_t)i]&&(c=="face"?faceSnapAvailable():editingSketchId.isNotEmpty());});
+}
+std::vector<djehuti::cad::ui::ReferenceInput> CadWorkspacePanel::referenceInputs()
+{
+    const auto& d=service->document();const auto file=d.file().getFullPathName();
+    if(referenceDocument!=d.documentInstance()||referenceFileKey!=file)
+    {
+        referenceDocument=d.documentInstance();referenceFileKey=file;selectedReference.clear();
+        referenceVisibility=file.isNotEmpty()&&referenceDocuments.getProperty(juce::Identifier(file),{}).isObject()?referenceDocuments.getProperty(juce::Identifier(file),{}).clone():juce::var(new juce::DynamicObject());++referenceSerial;
+    }
+    std::vector<djehuti::cad::ui::ReferenceInput> sources;juce::StringArray instanced;
+    const auto& instances=d.mechanicsData().instances;for(const auto& i:instances)instanced.addIfNotAlreadyThere(i.featureId);
+    const auto add=[&](const juce::String& id,const juce::String& feature,const juce::String& label,bool solid,bool visible,const gp_Trsf& transform)
+    {sources.push_back({id,feature,label,solid,(bool)referenceVisibility.getProperty(id,visible)&&(solid?showReferenceSolids:showReferenceSketches)&&referenceOpacity>0,transform});};
+    for(const auto& f:d.features())if(f.id!=editingSketchId)
+    {
+        if(f.type=="sketch")add(f.id,f.id,f.name,false,f.visible,{});
+        else if(!f.shape.IsNull()&&!instanced.contains(f.id))add(f.id,f.id,f.name,true,f.visible,{});
+    }
+    const auto* worlds=motionRuntime!=nullptr?&motionRuntime->shownInstanceWorld():nullptr;
+    for(const auto& i:instances)if(const auto* f=d.find(i.featureId))
+    {auto world=i.placement.toTrsf();if(worlds){const auto found=worlds->find(i.id);if(found!=worlds->end())world=found->second;}add(i.id,f->id,i.name+" ("+f->name+")",true,f->visible,d.instanceShapeTransform(f->id,world));}
+    return sources;
+}
+juce::var CadWorkspacePanel::referenceState()
+{
+    auto* s=new juce::DynamicObject();s->setProperty("showSketches",showReferenceSketches);s->setProperty("showSolids",showReferenceSolids);s->setProperty("snap",snapReferences);s->setProperty("select",referenceSelection);s->setProperty("opacity",referenceOpacity);s->setProperty("selected",selectedReference);
+    juce::Array<juce::var> sources;for(const auto& source:referenceInputs()){auto* v=new juce::DynamicObject();v->setProperty("id",source.id);v->setProperty("label",source.label);v->setProperty("solid",source.solid);v->setProperty("visible",source.visible);const auto* f=service->document().find(source.feature);v->setProperty("enabled",referenceVisibility.getProperty(source.id,f?f->visible:true));sources.add(v);}s->setProperty("sources",sources);return s;
+}
+bool CadWorkspacePanel::configureReferences(const juce::var& value,juce::String& error)
+{
+    referenceInputs();if(!value.isObject()){error="Reference preferences must be an object.";return false;}
+    for(const auto& p:value.getDynamicObject()->getProperties())
+    {
+        const auto k=p.name.toString();if(juce::StringArray{"showSketches","showSolids","snap","select"}.contains(k)){if(!p.value.isBool()){error="Reference toggles must be boolean.";return false;}}
+        else if(k=="opacity"){if(!(p.value.isInt()||p.value.isDouble())||!std::isfinite((double)p.value)||(double)p.value<0||(double)p.value>1){error="Reference opacity must be between zero and one.";return false;}}
+        else if(k=="visibility"){if(!p.value.isObject()){error="Reference visibility must map source ids to booleans.";return false;}for(const auto& v:p.value.getDynamicObject()->getProperties())if(!v.value.isBool()||(!service->document().find(v.name.toString())&&!service->document().mechanicsData().findInstance(v.name.toString()))){error="Reference visibility needs existing source ids and booleans.";return false;}}
+        else{error="Unknown reference preference: "+k;return false;}
+    }
+    showReferenceSketches=value.getProperty("showSketches",showReferenceSketches);showReferenceSolids=value.getProperty("showSolids",showReferenceSolids);snapReferences=value.getProperty("snap",snapReferences);referenceSelection=value.getProperty("select",referenceSelection);referenceOpacity=(float)(double)value.getProperty("opacity",referenceOpacity);
+    if(auto* v=value["visibility"].getDynamicObject())for(const auto& p:v->getProperties())referenceVisibility.getDynamicObject()->setProperty(p.name,p.value);
+    if(referenceFileKey.isNotEmpty())referenceDocuments.getDynamicObject()->setProperty(referenceFileKey,referenceVisibility.clone());
+    referencePreferencesChanged();return true;
+}
+void CadWorkspacePanel::referencePreferencesChanged()
+{++referenceSerial;sketchCanvas->referencesChanged();sketchCanvas->repaint();updateFloatingTools();}
+void CadWorkspacePanel::showReferenceControls()
+{
+    if(editingSketchId.isEmpty())return;auto panel=std::make_unique<CadReferenceControls>(referenceState());
+    panel->changed=[safe=juce::Component::SafePointer<CadWorkspacePanel>(this)](const auto& v){if(safe){juce::String error;if(!safe->configureReferences(v,error))safe->showError(error);}};
+    juce::CallOutBox::launchAsynchronously(std::move(panel),snapPalette->getScreenBounds(),nullptr);
+}
+bool CadWorkspacePanel::faceSnapAvailable() const {return editingSketchId.isEmpty()&&task==Task::hole;}
+bool CadWorkspacePanel::refineFaceSnap(djehuti::cad::CadPick& pick) const
+{
+    if(!faceSnapAvailable()||!pick.valid()||pick.face<0||!pick.hasPoint)return false;
+    const auto* f=service->document().find(pick.featureId);if(!f)return false;
+    try {int index=0;for(TopExp_Explorer ex(f->shape,TopAbs_FACE);ex.More();ex.Next(),++index)if(index==pick.face)
+    {const auto face=TopoDS::Face(ex.Current());if(BRepAdaptor_Surface(face).GetType()!=GeomAbs_Plane)return false;BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(gp_Pnt(pick.point[0],pick.point[1],pick.point[2])).Vertex(),face);if(!distance.IsDone()||distance.NbSolution()<1)return false;const auto p=distance.PointOnShape2(1);pick.point={p.X(),p.Y(),p.Z()};return true;}}
+    catch(const Standard_Failure&){}return false;
+}
+
+void CadWorkspacePanel::symmetryOperation(const juce::var& value)
+{
+    juce::String error;if(!service->sketchSymmetryCommand(editingSketchId,value,error)){showError(error);return;}
+    refreshFromDocument(true);sketchCanvas->referencesChanged();updateFloatingTools();sketchCanvas->repaint();setMessage("Sketch symmetry updated.",0);
+}
+
+// Focused UI/document integration checks. Pointer events are dispatched to JUCE callbacks; no native mouse claim.
+bool runCadWorkflowUiCheck(juce::var& report)
+{
+    using namespace djehuti::cad;using namespace djehuti::cad::ui;
+    juce::Array<juce::var> checks;int failed=0;juce::String error;
+    const auto check=[&](bool ok,const juce::String& name){auto* v=new juce::DynamicObject();v->setProperty("ok",ok);v->setProperty("name",name);if(!ok){++failed;v->setProperty("detail",error);}checks.add(v);error.clear();};
+    const auto approx=[](double a,double b){return std::abs(a-b)<1e-7;};
+    const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/workflow-ui-check");folder.createDirectory();
+    auto service=std::make_shared<CadCommandService>();CadWorkspacePanel panel(service);panel.setSize(1500,950);
+    const auto call=[&](const juce::String& json){return panel.automation(juce::JSON::parse(json));};
+    const auto mutateSym=[&](const juce::String& id,const juce::String& json){error.clear();return service->document().sketchSymmetryCommand(id,juce::JSON::parse(json),error);};
+    const auto controls=panel.modifyPalette->state()["controls"];check(controls.size()==22,"Modify toolbar exposes every existing Modify command");
+    for(const auto& v:*controls.getArray())
+    {const auto name=v["command"].toString();check(panel.modifyPalette->invoke(name)&&panel.uiToolActive(name),"Modify icon dispatch and active indicator: "+name);panel.cancelTask();}
+    panel.workspaceMenu.invoke(44);check(panel.task==CadWorkspacePanel::Task::modeling&&panel.modelingKind=="sweep","Original Modify menu retains shared dispatch");panel.cancelTask();
+    check((bool)call(R"({"action":"toolbar","field":"modify","value":{"horizontal":false,"docked":true,"edge":"right","x":24,"y":36}})")["ok"]&&panel.modifyPalette->isDocked()&&!panel.modifyPalette->isHorizontal(),"Modify vertical docking and position preferences");
+    call(R"({"action":"toolbar","field":"snap","value":{"docked":true,"edge":"bottom","visible":false}})");const auto prefs=panel.viewState();
+    {CadWorkspacePanel restored(service);restored.setSize(1500,950);restored.restoreViewState(prefs);check(restored.modifyPalette->isDocked()&&!restored.modifyPalette->isHorizontal()&&!restored.snapPalette->visiblePreference(),"Toolbar preferences round-trip through existing application settings");}
+    check(!(bool)call(R"({"action":"toolbar","field":"snap","value":{"horizontal":false}})")["ok"],"Snap toolbar rejects vertical orientation");
+    call(R"({"action":"toolbar","field":"modify","value":{"horizontal":true,"docked":false,"visible":true}})");call(R"({"action":"toolbar","field":"snap","value":{"docked":false,"visible":true}})");
+    const auto pointerEvent=[](juce::Component& c,juce::Point<float> position,juce::Point<float> down){return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),position,juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier),1,0,0,0,0,&c,&c,juce::Time::getCurrentTime(),down,juce::Time::getCurrentTime(),1,true);};
+    auto& palette=*panel.modifyPalette;const auto beforeDrag=palette.getPosition();palette.mouseDown(pointerEvent(palette,{10,10},{10,10}));palette.mouseDrag(pointerEvent(palette,{55,55},{10,10}));palette.mouseUp(pointerEvent(palette,{55,55},{10,10}));check(palette.getPosition()!=beforeDrag&&!palette.isDocked(),"Modify toolbar grip/drag callbacks reposition and undock");
+    palette.mouseDown(pointerEvent(palette,{10,10},{10,10}));palette.setTopLeftPosition(palette.getX(),0);palette.mouseUp(pointerEvent(palette,{10,10},{10,10}));check(palette.isDocked(),"Toolbar drop callback docks at viewport edge");call(R"({"action":"toolbar","field":"modify","value":{"docked":false}})");
+    juce::String sketch,first,second,circle,curve;service->createSketch("XY",0,sketch,error);service->addSketchLine(sketch,0,0,10,0,first,error);service->addSketchLine(sketch,5,-5,5,5,second,error);service->addSketchCircle(sketch,20,20,3,circle,error);service->addSketchBezier(sketch,30,0,33,3,36,3,40,0,curve,error);panel.enterSketch(sketch);
+    check(!panel.modifyPalette->isVisible()&&!panel.modifyPalette->invoke("extrude"),"Modify commands unavailable during Sketch editing");
+    SketchReferenceScene scene;scene.rebuild(service->document(),sketch,{});SnapPreferences snaps;snaps.modes.fill(false);
+    const auto testSnap=[&](int mode,juce::Point<double> input,const juce::String& type,double x,double y,const juce::String& name){snaps.modes.fill(false);snaps.modes[(size_t)mode]=true;const auto hit=scene.snap(input,10,1,snaps,true);check(hit.found&&hit.type==type&&approx(hit.point.x,x)&&approx(hit.point.y,y),name);};
+    testSnap(0,{2.1,3.1},"grid",2,3,"Grid snap");testSnap(1,{.1,.1},"vertex",0,0,"Vertex snap");testSnap(2,{2,.2},"edge",2,0,"Exact bounded native edge snap");testSnap(3,{5,.1},"midpoint",5,0,"Midpoint snap");testSnap(4,{20.1,20.1},"center",20,20,"Circle centre snap");testSnap(5,{5.1,.1},"intersection",5,0,"Native curve intersection snap");
+    snaps.modes.fill(true);check(scene.snap({.1,.1},10,1,snaps,true).type=="vertex","Deterministic vertex priority over edge and grid");snaps.enabled=false;check(!scene.snap({.1,.1},10,1,snaps,true).found,"Snapping Off preserves raw coordinates");snaps.enabled=true;snaps.modes.fill(false);snaps.modes[1]=true;check(!scene.snap({.9,0},10,1,snaps,true).found&&scene.snap({.9,0},5,1,snaps,true).found,"Screen-space tolerance scales with zoom");
+    juce::String reference;service->createSketch("XY",0,reference,error);juce::String refLine;service->addSketchLine(reference,100.123456789,50,110,50,refLine,error);
+    scene.rebuild(service->document(),sketch,{{reference,reference,"Reference",false,true,{}}});auto hit=scene.snap({100.2,50.1},10,1,snaps,true);check(hit.found&&hit.reference&&approx(hit.point.x,100.123456789),"Visible reference sketch retains native double precision");check(!scene.snap({100.2,50.1},10,1,snaps,false).found,"Reference snap preference excludes references");scene.rebuild(service->document(),sketch,{{reference,reference,"Hidden",false,false,{}}});check(!scene.snap({100.2,50.1},10,1,snaps,true).found,"Hidden references produce no snap targets");
+    juce::String box;service->createBox(10,20,30,box,error);gp_Trsf placement;placement.SetTranslation(gp_Vec(100,200,0));scene.rebuild(service->document(),sketch,{{box,box,"Placed body",true,true,placement}});hit=scene.snap({100.1,200.1},10,1,snaps,true);check(hit.found&&hit.reference&&approx(hit.point.x,100)&&approx(hit.point.y,200),"Solid reference vertices respect occurrence transform");
+    const auto revision=service->document().revision();call(R"({"action":"references","value":{"showSketches":true,"showSolids":true,"select":true,"opacity":0.3}})");panel.featureClicked(reference);panel.sketchEntityClicked(reference,refLine,false);check(panel.editingSketchId==sketch&&panel.selectedReference==reference&&service->document().revision()==revision,"Tree reference selection is read-only and retains active sketch");
+    call(R"({"action":"references","value":{"select":false}})");panel.featureClicked(box);panel.sketchEntityClicked(reference,refLine,false);check(panel.editingSketchId==sketch&&service->document().revision()==revision,"References cannot open editing inspectors while reference selection is disabled");
+    call(R"({"action":"snapping","value":{"enabled":true,"grid":false,"vertex":true,"edge":false,"midpoint":false,"center":false,"intersection":false}})");call(R"({"action":"command","command":"line"})");call(R"({"action":"sketch","phase":"begin","x":0.01,"y":0.01})");check(approx((double)panel.sketchCanvas->gestureState()["startX"],0),"Snap feedback drives the drawing preview coordinate");const auto constraints=service->document().findSketch(sketch)->constraints.size();call(R"({"action":"sketch","phase":"commit","x":-10,"y":-10})");check(service->document().findSketch(sketch)->constraints.size()==constraints&&approx(service->document().findSketch(sketch)->entities.back().x1,0),"Snapped coordinates commit without implicit persistent constraints");
+    const auto image=panel.createComponentSnapshot(panel.getLocalBounds());if(auto stream=folder.getChildFile("references-and-toolbars.png").createOutputStream()){stream->setPosition(0);stream->truncate();juce::PNGImageFormat().writeImageToStream(image,*stream);}check(image.isValid(),"Sketch references/toolbars render through actual JUCE components");panel.finishSketch();check(panel.modelView.isVisible()&&!panel.sketchCanvas->isVisible()&&panel.modifyPalette->isVisible(),"Leaving Sketch restores ordinary model display and Modify toolbar");
+    panel.executeUiCommand("hole");CadPick face;face.drawId=face.featureId=box;face.hasPoint=true;face.point={2,3,30};bool foundFace=false;for(int i=0;i<6;++i){face.face=i;auto refined=face;if(panel.refineFaceSnap(refined)){foundFace=true;break;}}check(foundFace&&panel.faceSnapAvailable(),"Face snap refines exact native planar face points only in Drill Press");panel.cancelTask();check(!panel.faceSnapAvailable(),"Face mode disabled outside point-placement context");
+    // Symmetry geometry/transactions/persistence, in all three sketch coordinate systems.
+    for(const auto& plane:juce::StringArray{"XY","XZ","YZ"})
+    {
+        service->newDocument();service->createSketch(plane,0,sketch,error);
+        for(const auto& mode:juce::StringArray{"off","horizontal","vertical","both"})
+        {
+            service->newDocument();service->createSketch(plane,0,sketch,error);check(mutateSym(sketch,"{\"mode\":\""+mode+"\",\"x\":10,\"y\":20}"),plane+" configure symmetry "+mode);service->addSketchLine(sketch,12,23,15,24,first,error);
+            const int expected=mode=="both"?4:mode=="off"?1:2;check((int)service->document().findSketch(sketch)->entities.size()==expected,plane+" live reflected geometry "+mode);
+            if(expected>1){check(service->document().setSketchLineGeometry(sketch,first,12,23,16,25,error)&&approx(service->document().findSketch(sketch)->entities[1].x2,mode=="horizontal"?16:4),plane+" linked source edit regenerates "+mode);const auto generated=service->document().findSketch(sketch)->entities[1].id;check(!service->document().setSketchLineGeometry(sketch,generated,1,1,2,2,error),plane+" generated geometry rejects direct edits");}
+        }
+    }
+    service->newDocument();service->createSketch("XY",0,sketch,error);mutateSym(sketch,R"({"mode":"both","x":10,"y":20})");service->addSketchCircle(sketch,10,20,2,circle,error);check(service->document().findSketch(sketch)->entities.size()==1,"Centre circle is not duplicated in Both mode");service->addSketchLine(sketch,10,20,10,25,first,error);check(service->document().findSketch(sketch)->entities.size()==3,"Axis-coincident reflected entities are deduplicated");
+    service->newDocument();service->createSketch("XY",0,sketch,error);mutateSym(sketch,R"({"mode":"both"})");service->addSketchRectangle(sketch,2,3,4,5,first,error);service->addSketchCircle(sketch,20,20,2,circle,error);service->addSketchBezier(sketch,30,3,32,6,34,6,36,3,curve,error);check(service->document().findSketch(sketch)->entities.size()==24,"Rectangles, circles and Bezier primitives reflect geometrically");
+    check(service->document().editSketchEntity(sketch,circle,true,22,23,true,3,error),"Circle source numeric editing regenerates mirrored centres/radii");
+    check(service->document().moveSketchPoint(sketch,curve+":c1",33,8,error),"Bezier handle edits regenerate reflected control points");
+    mutateSym(sketch,R"({"mode":"off"})");const auto count=service->document().findSketch(sketch)->entities.size();auto relation=service->document().findSketch(sketch)->mirrors.back().id;check(mutateSym(sketch,"{\"operation\":\"delete\",\"id\":\""+relation+"\"}")&&service->document().findSketch(sketch)->entities.size()==count-3,"Linked relationship deletion removes only generated copies");
+    service->document().undo(error);check(service->document().findSketch(sketch)->entities.size()==count,"Undo restores mirror relationship and stable generated identities");service->document().redo(error);check(service->document().findSketch(sketch)->entities.size()==count-3,"Redo removes linked copies again");
+    service->newDocument();service->createSketch("XY",0,sketch,error);service->addSketchLine(sketch,1,2,3,2,first,error);service->addSketchLine(sketch,0,0,10,10,second,error);check(mutateSym(sketch,"{\"operation\":\"construction\",\"entity\":\""+second+"\",\"value\":true}"),"Construction axis uses ordinary sketch line representation");
+    check(mutateSym(sketch,"{\"operation\":\"mirror\",\"axis\":\"line\",\"axisEntity\":\""+second+"\",\"entities\":[\""+first+"\"],\"linked\":true}")&&approx(service->document().findSketch(sketch)->entities.back().x1,2)&&approx(service->document().findSketch(sketch)->entities.back().y1,1),"Linked reflection about selected construction line");
+    check(service->document().setSketchLineGeometry(sketch,second,0,0,10,0,error)&&approx(service->document().findSketch(sketch)->entities.back().y1,-2),"Construction-axis edits regenerate linked mirrors");
+    const auto axisRevision=service->document().revision();check(!service->deleteSketchEntities(sketch,{second},error)&&service->document().revision()==axisRevision,"Deleting a referenced construction axis is refused atomically");
+    check(mutateSym(sketch,"{\"operation\":\"mirror\",\"axis\":\"vertical\",\"entities\":[\""+first+"\"],\"linked\":false}"),"Independent mirror creation");const auto& copyEntities=service->document().findSketch(sketch)->entities;const auto independent=std::find_if(copyEntities.rbegin(),copyEntities.rend(),[&](const auto& entity){return entity.mirrorOwner.isEmpty()&&entity.id!=first&&entity.id!=second;})->id;check(service->document().setSketchLineGeometry(sketch,independent,-5,3,-6,4,error),"Independent reflected geometry remains independently editable");
+    panel.refreshFromDocument(true);panel.enterSketch(sketch);const auto beforeUi=service->document().revision();
+    check((bool)call(R"({"action":"symmetry","value":{"operation":"configure","mode":"both","x":25,"y":35}})")["ok"]&&service->document().revision()==beforeUi+1,"GUI/API symmetry controls commit through the shared service");
+    call(R"({"action":"snapping","value":{"enabled":false}})");panel.sketchCanvas->setTool("line");
+    call(R"({"action":"sketch","phase":"begin","x":26,"y":36})");call(R"({"action":"sketch","phase":"update","x":28,"y":38})");check((bool)panel.sketchCanvas->gestureState()["active"],"Live symmetry drawing retains isolated gesture preview");
+    const auto beforeDraw=service->document().findSketch(sketch)->entities.size();call(R"({"action":"sketch","phase":"commit","x":28,"y":38})");check(service->document().findSketch(sketch)->entities.size()==beforeDraw+4,"Actual sketch drawing commits source and three linked copies together");
+    panel.pickingSymmetryCentre=true;const auto pixel=panel.sketchCanvas->toPoint(8,9);auto event=juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),pixel,juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier),1,0,0,0,0,panel.sketchCanvas.get(),panel.sketchCanvas.get(),juce::Time::getCurrentTime(),pixel,juce::Time::getCurrentTime(),1,true);panel.sketchCanvas->mouseDown(event);
+    check(!panel.pickingSymmetryCentre&&std::abs(service->document().findSketch(sketch)->symmetryX-8)<1e-4&&std::abs(service->document().findSketch(sketch)->symmetryY-9)<1e-4,"Pick centre invokes native JUCE selection callback in local coordinates");
+    // Partial overlaps must be controlled failures, never stacked coincident line segments.
+    juce::String overlapSketch;service->createSketch("XY",0,overlapSketch,error);mutateSym(overlapSketch,R"({"mode":"both"})");const auto overlapRevision=service->document().revision();juce::String rejected;
+    check(!service->addSketchLine(overlapSketch,-5,0,10,0,rejected,error)&&service->document().revision()==overlapRevision&&service->document().findSketch(overlapSketch)->entities.empty(),"Partially overlapping reflection rolls back the complete gesture");
+    const auto beforeInvalid=service->document().revision();check(!mutateSym(sketch,R"({"mode":"invalid"})")&&service->document().revision()==beforeInvalid,"Invalid symmetry settings roll back atomically");
+    for(const auto& ext:juce::StringArray{"djo","djc"})
+    {const auto file=folder.getChildFile("mirror-axis."+ext);const auto before=juce::JSON::toString(service->document().sketchSymmetryState(sketch));check((ext=="djo"?service->save(file,error):service->document().exportJson(file,error)),"Mirror "+ext+" persistence write");CadCommandService loaded;check(loaded.load(file,error)&&juce::JSON::toString(loaded.document().sketchSymmetryState(sketch))==before,"Mirror "+ext+" persistence retains centre, linked state and axis references");}
+    // Four T-slots: one quadrant is authored, other quadrants come from the stored symmetry relationships.
+    service->newDocument();service->createSketch("XY",0,sketch,error);mutateSym(sketch,R"({"mode":"both"})");
+    const double points[][2]{{0,13},{4,13},{4,17},{2.5,17},{2.5,20},{20,20},{20,2.5},{17,2.5},{17,4},{13,4},{13,0}};
+    for(int i=0;i<10;++i)check(service->addSketchLine(sketch,points[i][0],points[i][1],points[i+1][0],points[i+1][1],first,error),"T-slot quadrant segment "+juce::String(i+1));
+    mutateSym(sketch,R"({"mode":"off"})");service->addSketchCircle(sketch,0,0,3,circle,error);juce::String extrusion;check(service->document().findSketch(sketch)->entities.size()==41&&service->document().createExtrude(sketch,50,false,extrusion,error),"One-quadrant T-slot forms a closed profile accepted by existing Extrude");
+    const auto source=service->document().findSketch(sketch)->entities.front().id;check(service->document().setSketchLineGeometry(sketch,source,0,12,4,12,error)&&!service->document().find(extrusion)->shape.IsNull(),"Source quadrant dimension edit rebuilds all quadrants and dependent extrusion");
+    for(const auto& ext:juce::StringArray{"djo","djc"}){const auto file=folder.getChildFile("four-sided-t-slot."+ext);check(ext=="djo"?service->save(file,error):service->document().exportJson(file,error),"T-slot "+ext+" save");CadCommandService loaded;check(loaded.load(file,error)&&loaded.document().findSketch(sketch)->entities.size()==41&&!loaded.document().find(extrusion)->shape.IsNull(),"T-slot "+ext+" reload preserves linked profile and solid");}
+    panel.refreshFromDocument(true);panel.enterSketch(sketch);panel.sketchPalette->restore(juce::JSON::parse(R"({"visible":true,"docked":true,"symmetryExpanded":true})"));panel.updateFloatingTools();panel.resized();panel.sketchCanvas->fitToContent();check(!panel.sketchPalette->getBounds().intersects(panel.snapPalette->getBounds()),"Expanded docked Symmetry toolbox coexists with Snap toolbar");const auto capture=panel.createComponentSnapshot(panel.getLocalBounds());if(auto stream=folder.getChildFile("four-sided-t-slot.png").createOutputStream()){stream->setPosition(0);stream->truncate();juce::PNGImageFormat().writeImageToStream(capture,*stream);}
+    auto* r=new juce::DynamicObject();r->setProperty("checks",checks);r->setProperty("total",checks.size());r->setProperty("failed",failed);r->setProperty("ok",failed==0);r->setProperty("nativePointerInteraction",false);report=r;return failed==0;
 }

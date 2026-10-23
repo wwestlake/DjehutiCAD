@@ -164,3 +164,28 @@ python tools/cad_api/client.py cad_ui --args "{\"action\": \"state\"}"
 - Floating-window layout and dialogs opened by file choosers or alerts aren't driven; use `document` and the
   tools instead.
 - Steps that are already running cannot be cancelled.
+
+## Modeling workflow UI and symmetry
+
+`cad_ui` exposes the same buttons and command handlers as the visible toolbars:
+
+```json
+{"action":"toolbar","field":"modify","command":"revolve"}
+{"action":"toolbar","field":"modify","value":{"visible":true,"horizontal":false,"docked":true,"edge":"right","x":12,"y":12}}
+{"action":"snapping","value":{"enabled":true,"vertex":true,"edge":true,"intersection":true,"grid":false}}
+{"action":"references","value":{"showSketches":true,"showSolids":true,"snap":true,"select":true,"opacity":0.4,"visibility":{"revolve-10":true}}}
+{"action":"snap","x":50.01,"y":13.02}
+{"action":"sketchToolbox","value":{"symmetryExpanded":true}}
+{"action":"symmetry","value":{"operation":"configure","mode":"both","x":10,"y":20}}
+{"action":"symmetry","value":{"operation":"mirror","axis":"vertical","entities":["line-2","line-3"],"linked":true}}
+{"action":"symmetry","value":{"operation":"construction","entity":"line-4","value":true}}
+{"action":"symmetry","value":{"operation":"mirror","axis":"line","axisEntity":"line-4","entities":["line-2"],"linked":false}}
+{"action":"symmetry","value":{"operation":"update","id":"mirror-6","axis":"horizontal","x":0,"y":5}}
+{"action":"symmetry","value":{"operation":"delete","id":"mirror-6"}}
+```
+
+Use real stable ids from state; examples are illustrative. Omit `value` to inspect current settings/state. Toolbar field is `modify` or `snap`. Snap commands are grid/vertex/edge/midpoint/center/intersection/face/off/references; unavailable icon commands fail. Snap toolbar rejects vertical orientation and left/right docking. Modify operations retain their existing task/Apply workflow.
+
+State adds `modifyToolbar`, `snapToolbar`, `snapping`, `references`, `symmetry` and `gesture.snap` (found/type/x/y/source/entity/reference). Sketch entity entries identify `mirrorOwner` and `construction`. `snap` probes placement and feedback without changing geometry. Symmetry acts on the active sketch through the shared command service; configure/mirror/update/delete/construction are atomic document edits. Live sketch drawing uses those same persisted settings. Linked generated ids are stable while that copy exists. Degenerate or incompatible changes fail without committing.
+
+These operations also work through `cad_workspace` action `ui`, FRust `djehuti_cad_workspace(args_json)` and the **CAD Workspace** node's existing nested `ui` object. No separate modeling implementation is used. See [workflow guide](MODELING_WORKFLOW_UI.md) for context restrictions, snap priority and independent-copy behavior. Engineering JSON adds optional `symmetry` data to sketches and `construction`/`mirrorOwner` to entities; older documents default to symmetry Off and ordinary independent geometry.

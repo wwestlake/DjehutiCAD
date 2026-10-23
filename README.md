@@ -48,6 +48,10 @@ and the [Order 6 rendering report](docs/VIEWPORT_RANGE_ORDER6.md).
 
 [Sketch editing](docs/SKETCH_EDITING.md) includes a floating/dockable tool palette,
 expandable entity rows, automatic creation selection and undoable entity deletion.
+[Modeling workflow controls](docs/MODELING_WORKFLOW_UI.md) add persistent Modify/Snap
+toolbars, ghosted read-only sketch/body references, native geometric snapping, and
+linked live symmetry or independent/linked mirroring about movable sketch axes
+and construction lines.
 
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.

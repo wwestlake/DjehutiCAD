@@ -80,7 +80,7 @@ Viewport3D::Viewport3D(int number) : viewNumber(number)
     setOpaque(false); context.setRenderer(this); context.setContinuousRepainting(false); context.setOpenGLVersionRequired(juce::OpenGLContext::openGL4_1); context.attachTo(*this);
 }
 Viewport3D::~Viewport3D() { context.detach(); }
-void Viewport3D::paint(juce::Graphics& g) { drawReferenceGuides(g); g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
+void Viewport3D::paint(juce::Graphics& g) { if(faceSnapMarker&&faceSnapEnabled&&faceSnapEnabled()){g.setColour(juce::Colour(0xffffce73));g.drawRect(juce::Rectangle<float>(faceSnapScreen.x-4,faceSnapScreen.y-4,8,8),1.5f);g.drawText("face",(int)faceSnapScreen.x+9,(int)faceSnapScreen.y-18,55,18,juce::Justification::left);} drawReferenceGuides(g); g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
 void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged && !fitPending) frameScene(); tryPendingFit(); markDirty(); }
 void Viewport3D::timerCallback() {}
 void Viewport3D::mouseDown(const juce::MouseEvent& e)
@@ -125,7 +125,8 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
         for(const auto& [id,point]:pickMarkers){juce::Point<float> screen;if(toScreen(point,screen)&&screen.getDistanceFrom(e.position)<nearest){nearest=screen.getDistanceFrom(e.position);marker=id;}}
         if(marker.isNotEmpty()){onMarkerPicked(marker);return;}
     }
-    const auto picked=pick(e.position,selection!=nullptr && !(wantsBodyPick&&wantsBodyPick())?selection->mode():djehuti::cad::CadSelection::Mode::body);
+    auto picked=pick(e.position,faceSnapEnabled&&faceSnapEnabled()?djehuti::cad::CadSelection::Mode::face:selection!=nullptr && !(wantsBodyPick&&wantsBodyPick())?selection->mode():djehuti::cad::CadSelection::Mode::body);
+    if(faceSnapEnabled&&faceSnapEnabled()&&refineFaceSnap)refineFaceSnap(picked);
     if(selection!=nullptr) selection->setSelected(picked);
     if(picked.face<0 && picked.edge<0)
     {
@@ -282,11 +283,12 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
 }
 void Viewport3D::mouseMove(const juce::MouseEvent& e)
 {
-    if (selection == nullptr || selection->mode() == djehuti::cad::CadSelection::Mode::body) return;
-    selection->setHover(pick(e.position, selection->mode()));
+    faceSnapMarker=false;
+    if(faceSnapEnabled&&faceSnapEnabled()&&refineFaceSnap){auto hit=pick(e.position,djehuti::cad::CadSelection::Mode::face);faceSnapMarker=refineFaceSnap(hit);faceSnapScreen=e.position;if(selection)selection->setHover(faceSnapMarker?hit:djehuti::cad::CadPick{});repaint();}
+    else {if (selection == nullptr || selection->mode() == djehuti::cad::CadSelection::Mode::body) return;selection->setHover(pick(e.position, selection->mode()));}
     if (onFrameRequested) onFrameRequested();
 }
-void Viewport3D::mouseExit(const juce::MouseEvent&) { if (selection != nullptr) selection->setHover({}); }
+void Viewport3D::mouseExit(const juce::MouseEvent&) {faceSnapMarker=false;repaint(); if (selection != nullptr) selection->setHover({}); }
 void Viewport3D::setInspectionLines(std::vector<djehuti::cad::CadOverlayLine> next) { { const juce::SpinLock::ScopedLockType lock(highlightLock); glInspection = std::move(next); } markDirty(); }
 void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { { const juce::SpinLock::ScopedLockType lock(highlightLock); if (highlights == next) return; highlights = std::move(next); } markDirty(); }
 void Viewport3D::mouseDrag(const juce::MouseEvent& e)
