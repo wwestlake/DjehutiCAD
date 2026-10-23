@@ -1,5 +1,8 @@
 # Personal Asset Library
 
+Implementation checkpoint: behavior below awaits build and functional validation.
+See [checkpoint status](ASSET_LIBRARY_CHECKPOINT.md); this is not delivered on main.
+
 The **Component Library** remains the supplied/standardized catalog (including
 legacy custom BRep entries). The separate **Asset Library** stores user designs
 as editable engineering documents. Existing catalog data is not migrated or

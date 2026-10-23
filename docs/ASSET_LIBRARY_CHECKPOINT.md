@@ -17,13 +17,14 @@ Component Library remains intact. See `ASSET_LIBRARY.md` for intended behavior.
 
 Validation is pending. Initial Debug build log: `build/asset-library-build.log`;
 two ambiguous var initializers were corrected after their compilation errors.
-The initial build may still be compiling later translation units. Finish that
-build before starting an incremental build; redirect its output to a new log.
+The initial build has finished with exit code 1. Its reported errors are the
+two ambiguous initializers already corrected in this checkpoint. An incremental
+build has not been run; redirect its output to a new log.
 Do not promote this checkpoint to main without successful functional checks.
 
 Next steps:
 
-1. Finish Debug build and repair any remaining compile errors.
+1. Run the incremental Debug build and repair any remaining compile errors.
 2. Run `--cad-asset-check`; inspect backend and nested `ui` results in
    `build/cad-asset-check.result.json`, including the component capture path.
 3. Run `--cad-workspace-check` (now includes Asset Library docking/visibility),
@@ -47,3 +48,7 @@ has been launched. User files `examples/mechanisms/coil_winder.djo` and
 `motor_test_out/` are pre-existing untracked work and must remain untouched.
 The original work order is attached at
 `C:/Users/wwestlake/.codex/attachments/1fbb0a35-7e0a-49b4-881d-374fc761fc50/Pasted text.txt`.
+
+Checkpoint commit: `d15d635`, pushed to `origin/codex/asset-library`.
+The five-hour allocation reached 99% used; work stopped before verification.
+No builds or CAD test processes were left running. Main remains `ef725a5`.
