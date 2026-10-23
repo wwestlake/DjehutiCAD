@@ -712,13 +712,14 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
             { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
-            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
+            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{56,"Asset Library"}, E{57,"Save to Asset Library...",!sketching}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
         };
     };
     workspaceMenu.invoke = [this](int id)
     {
         const juce::StringArray names { "undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views" };
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
+        else if(id==56)executeUiCommand("assetLibrary");else if(id==57)executeUiCommand("saveAsset");
         else if(id>=53&&id<=55)executeUiCommand(juce::StringArray{"deleteSketchEntities","sketchToolbox","dockSketchToolbox"}[id-53]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
@@ -3861,6 +3862,8 @@ void CadWorkspacePanel::ikTargetDragged(const juce::String& targetId, const std:
 bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
 {
     if (!uiCommandEnabled(command)) return false;
+    if(command=="assetLibrary"){if(onOpenAssets)onOpenAssets();return true;}
+    if(command=="saveAsset"){if(onSaveAsset)onSaveAsset();return true;}
     if(command=="deleteSketchEntities")return deleteSelectedSketchEntities();
     if(command=="sketchToolbox"){sketchPalette->toggleVisible();return true;}
     if(command=="dockSketchToolbox"){sketchPalette->toggleDocked();return true;}
@@ -3890,6 +3893,7 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
 {
     const bool sketch = editingSketchId.isNotEmpty();
     if(command=="deleteSketchEntities")return sketch&&sketchEntityId.isNotEmpty();
+    if(command=="saveAsset")return !sketch;
     if(command=="dockSketchToolbox")return sketch;
     if(djehuti::cad::isModelingType(command)||djehuti::cad::isReplicationType(command))return !sketch;
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;

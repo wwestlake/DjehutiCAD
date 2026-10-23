@@ -318,6 +318,8 @@ public:
     bool setKitMetadata(const kit::CadCraftKitMetadata& meta, juce::String& error);
     juce::var componentData() const;
     const juce::var* componentFor(const juce::String& feature) const;
+    juce::var assetSnapshot(const juce::String& source, juce::String& error) const;
+    bool insertAsset(const juce::var& payload, const juce::String& name, const CadFrame& placement, juce::var& result, juce::String& error);
     bool insertComponent(const juce::var& record,const CadFrame& placement,juce::String& instance,juce::String& error);
     bool updateCraftStock(const juce::String& feature, const juce::var& geometry, juce::String& error);
     bool addCraftCut(const juce::String& feature, const juce::var& cutSpec, juce::String& error);

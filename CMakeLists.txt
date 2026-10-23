@@ -158,6 +158,12 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadManufacturerChecks.cpp
     Source/CadComponentWorkbook.cpp
     Source/CadComponentLibrary.cpp
+    Source/CadAssets.h
+    Source/CadAssets.cpp
+    Source/CadAssetDocument.cpp
+    Source/CadAssetBrowser.h
+    Source/CadAssetBrowser.cpp
+    Source/CadAssetChecks.cpp
     Source/CadComponentDocument.cpp
     Source/CadComponentBrowser.h
     Source/CadComponentBrowser.cpp

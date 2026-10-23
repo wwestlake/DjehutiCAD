@@ -6,6 +6,7 @@
 #include "CadEngineeringUnits.h"
 #include "CadGeometricProperties.h"
 #include "CadComponentBrowser.h"
+#include "CadAssetBrowser.h"
 #include "CadCraftStock.h"
 #include "CadCraftBrowser.h"
 #include "CadInterference.h"
@@ -1374,6 +1375,8 @@ public:
             });
             return;
         }
+        if(commandLine.startsWith("--cad-asset-check"))
+        {juce::MessageManager::callAsync([this]{juce::var report,ui;const bool a=djehuti::cad::runCadAssetCheck(report),b=runCadAssetUiCheck(ui);report.getDynamicObject()->setProperty("ui",ui);report.getDynamicObject()->setProperty("ok",a&&b);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-asset-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(a&&b?0:1);juce::MessageManager::callAsync([this]{quit();});});return;}
         if(commandLine.startsWith("--cad-sketch-usability-check"))
         {
             juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runSketchUsabilityCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-usability-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;

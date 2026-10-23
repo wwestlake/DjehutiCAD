@@ -40,6 +40,7 @@ public:
     void setMotion(std::shared_ptr<djehuti::cad::CadMotionRuntime> runtime, djehuti::motion::MotionLink* link);
     void setSelection(std::shared_ptr<djehuti::cad::CadSelection> shared);
     std::function<void()> onOpenViews;
+    std::function<void()> onOpenAssets, onSaveAsset;
     WorkspaceMenu workspaceMenu;
     juce::String viewState() const;
     void restoreViewState(const juce::String& json);

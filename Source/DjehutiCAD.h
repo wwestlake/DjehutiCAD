@@ -1,4 +1,6 @@
 #pragma once
+namespace djehuti::cad { class CadAssetLibrary; }
+class CadAssetBrowser;
 
 #include <JuceHeader.h>
 
@@ -62,6 +64,8 @@ private:
     ThreeDViewsPanel* viewsPanel = nullptr; // owned by DockManager
     CadWorkspacePanel* cadWorkspace = nullptr; // owned by DockManager
     CadFixturesPanel* fixturesPanel = nullptr; // owned by DockManager
+    std::unique_ptr<djehuti::cad::CadAssetLibrary> assetLibrary;
+    CadAssetBrowser* assetBrowser = nullptr;
     CadComponentBrowser* componentBrowser = nullptr; // owned by DockManager
     CadWorkspacePanel* craftWorkspace = nullptr; // Same authoritative CAD service, owned by DockManager.
     CadCraftBrowser* craftBrowser = nullptr;
