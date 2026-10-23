@@ -61,6 +61,7 @@ private:
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     friend bool runSketchUsabilityCheck(juce::var&);
+    friend bool runSketchLineRepairCheck(juce::var&);
     class SketchEntityItem;
     class FeatureItem;
     class GroupItem;
@@ -91,7 +92,10 @@ private:
     void addConstraint();
     void sketchGeometryAdded(const juce::String& what, const juce::String& entityOrGroup);
     void sketchEntityClicked(const juce::String& sketch, const juce::String& entity, bool second);
-    void showSketchEntityMenu(const juce::String& sketch, const juce::String& entity);
+    void showSketchEntityMenu(const juce::String& sketch, const juce::String& entity, juce::Point<int> screenPosition);
+    juce::PopupMenu::Options sketchEntityMenuOptions(juce::Point<int> screenPosition);
+    void syncLineProperties(bool polar);
+    bool lineAnglesInRadians = false;
     bool deleteSelectedSketchEntities();
     bool handleSketchKey(const juce::KeyPress&);
     // Interactive sketch edits committed by the canvas (one document command each): vertex/handle drag,

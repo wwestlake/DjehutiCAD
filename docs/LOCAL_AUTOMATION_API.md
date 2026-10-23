@@ -91,6 +91,14 @@ All agent tools are available:
 - workspace: `cad_workspace`, `open_*`.
 
 The `cad_ui` tool operates the visible workspace like a person does, so a recording shows the same task panels.
+
+Selected sketch lines expose `u`, `v` (start), `endU`, `endV`, `dimension`
+(length in mm), `direction`, and `angleUnit` (`Degrees` / `Radians`). Coordinate
+edits derive length/direction; length/direction edits derive the endpoint while
+preserving the start. Set fields using the existing `set` action and commit with
+`click` / `apply`; this uses the same atomic sketch command as the GUI. Inspect
+the returned fields for calculated values and `canApply` for input validation.
+Geometric constraint conflicts return an error and leave the document unchanged.
 `command: "revolve"` opens the Revolve task. Its fields are `revolveProfile` (profile
 choice), `axisType` (Sketch U/V, World X/Y/Z, Custom), `angleDegrees`,
 `revolveReverse`, and custom-only `axisX/Y/Z` and `axisDX/DY/DZ`. Select a Revolve body

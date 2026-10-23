@@ -130,10 +130,16 @@ public:
         resized();
     }
     void setCaption(const juce::String& key, const juce::String& text) { for (auto& row : rows) if (row.key == key && row.caption) row.caption->setText(text, juce::dontSendNotification); }
+    void setUnit(const juce::String& key, const juce::String& text) { for (auto& row : rows) if (row.key == key && row.unit) row.unit->setText(text, juce::dontSendNotification); }
     juce::Component* control(const juce::String& key) const { for (const auto& row : rows) if (row.key == key) return row.control.get(); return nullptr; }
     juce::String text(const juce::String& key) const { if (auto* e = dynamic_cast<juce::TextEditor*>(control(key))) return e->getText().trim(); return {}; }
     double number(const juce::String& key) const { return text(key).getDoubleValue(); }
-    bool numberValid(const juce::String& key) const { const auto t = text(key); return t.isNotEmpty() && t.containsAnyOf("0123456789") && std::isfinite(t.getDoubleValue()); }
+    bool numberValid(const juce::String& key) const
+    {
+        const auto value = text(key).toStdString(); char* end = nullptr;
+        const auto number = std::strtod(value.c_str(), &end);
+        return !value.empty() && end == value.c_str() + value.size() && std::isfinite(number);
+    }
     bool toggle(const juce::String& key) const { if (auto* b = dynamic_cast<juce::ToggleButton*>(control(key))) return b->getToggleState(); return false; }
     int choice(const juce::String& key) const { if (auto* b = dynamic_cast<juce::ComboBox*>(control(key))) return b->getSelectedItemIndex(); return -1; }
     juce::String choiceText(const juce::String& key) const { if (auto* b = dynamic_cast<juce::ComboBox*>(control(key))) return b->getText(); return {}; }
@@ -202,7 +208,8 @@ public:
                 const auto text = value.toString().trim().toStdString(); char* end = nullptr;
                 const auto number = std::strtod(text.c_str(), &end);
                 if (text.empty() || end != text.c_str() + text.size() || !std::isfinite(number)) { error = "Expected a finite number for " + key; return false; }
-                e->setText(juce::String(number, 8), false);
+                e->setText(juce::String(number, key=="direction"?15:12), false);
+                if(key=="direction"&&!e->hasKeyboardFocus(true))e->setCaretPosition(0);
             }
             else { if (!value.isString()) { error = "Expected text for " + key; return false; } e->setText(value.toString(), false); }
             changed = e->onTextChange;
@@ -314,7 +321,16 @@ public:
     }
     juce::String getTooltip() override{return id+(tiny?" | Degenerate legacy circle; select and Delete to remove it.":" | Select to edit; Delete removes geometry; Shift-click selects a second entity.");}
     void itemClicked(const juce::MouseEvent& e) override
-    {if(e.mods.isPopupMenu())panel.showSketchEntityMenu(sketchId,id);else panel.sketchEntityClicked(sketchId,id,e.mods.isShiftDown());}
+    {
+        // TreeViewItem receives a row-relative position, but JUCE retains the original event
+        // component and mouse-down position. The latter converts correctly through any dock/peer.
+        if(e.mods.isPopupMenu())
+        {
+            const auto screen=e.getNumberOfClicks()==0 ? panel.tree.localPointToGlobal(getItemPosition(true).getCentre()) : e.getMouseDownScreenPosition();
+            panel.showSketchEntityMenu(sketchId,id,screen);
+        }
+        else panel.sketchEntityClicked(sketchId,id,e.mods.isShiftDown());
+    }
     void itemSelectionChanged(bool selected) override
     {
         if(!selected||panel.updatingTree)return;
@@ -483,7 +499,7 @@ public:
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
-        if (panning) { panning = false; if(e.mods.isPopupMenu()&&!panMoved)owner.showSketchEntityMenu(sketchId,entityAt(fromPoint(e.position))); return; }
+        if (panning) { panning = false; if(e.mods.isPopupMenu()&&!panMoved)owner.showSketchEntityMenu(sketchId,entityAt(fromPoint(e.position)),e.getScreenPosition()); return; }
         if (pointDragActive)
         {
             pointDragActive = false;
@@ -1068,12 +1084,19 @@ void CadWorkspacePanel::sketchEntityClicked(const juce::String& sketch,const juc
     if(treeFocused)tree.grabKeyboardFocus();
 }
 
-void CadWorkspacePanel::showSketchEntityMenu(const juce::String& sketch,const juce::String& entity)
+juce::PopupMenu::Options CadWorkspacePanel::sketchEntityMenuOptions(juce::Point<int> screenPosition)
+{
+    // The target component supplies lifetime/scaling context; the explicit screen area supplies
+    // placement. JUCE then fits the menu to the display's available work area, including floating peers.
+    return juce::PopupMenu::Options().withTargetComponent(this).withTargetScreenArea({screenPosition.x,screenPosition.y,1,1});
+}
+
+void CadWorkspacePanel::showSketchEntityMenu(const juce::String& sketch,const juce::String& entity,juce::Point<int> screenPosition)
 {
     if(entity.isNotEmpty()&&(editingSketchId!=sketch||(sketchEntityId!=entity&&sketchSecondEntityId!=entity)))sketchEntityClicked(sketch,entity,false);
     juce::PopupMenu menu;menu.addItem(1,"Delete selected geometry",sketchEntityId.isNotEmpty());
     menu.addItem(2,"Select tool");
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),[safe=juce::Component::SafePointer<CadWorkspacePanel>(this)](int id)
+    menu.showMenuAsync(sketchEntityMenuOptions(screenPosition),[safe=juce::Component::SafePointer<CadWorkspacePanel>(this)](int id)
     {if(safe!=nullptr){if(id==1)safe->deleteSelectedSketchEntities();else if(id==2)safe->setSketchTool("select");}});
 }
 
@@ -1099,12 +1122,43 @@ bool CadWorkspacePanel::handleSketchKey(const juce::KeyPress& key)
 
 juce::String CadWorkspacePanel::viewState() const
 {
-    auto state=modelView.viewState();state.getDynamicObject()->setProperty("sketchToolbox",sketchPalette->state());return juce::JSON::toString(state);
+    auto state=modelView.viewState();state.getDynamicObject()->setProperty("sketchToolbox",sketchPalette->state());
+    state.getDynamicObject()->setProperty("sketchLineAngleUnit",lineAnglesInRadians?"radians":"degrees");return juce::JSON::toString(state);
 }
 void CadWorkspacePanel::restoreViewState(const juce::String& json)
 {
     const auto state=juce::JSON::parse(json);modelView.restoreViewState(state);
     if(state.hasProperty("sketchToolbox"))sketchPalette->restore(state["sketchToolbox"]);
+    lineAnglesInRadians=state["sketchLineAngleUnit"].toString()=="radians";
+}
+
+void CadWorkspacePanel::syncLineProperties(bool polar)
+{
+    if (form == nullptr) return;
+    const auto set = [this](const char* key,double value)
+    {
+        const bool angle=juce::String(key)=="direction";
+        if(!angle&&std::abs(value)<0.5e-12)value=0; // Avoid displaying negative zero at the coordinate field's precision.
+        if (auto* editor=dynamic_cast<juce::TextEditor*>(form->control(key)))
+        {editor->setText(juce::String(value,angle?15:12),false);if(angle&&!editor->hasKeyboardFocus(true))editor->setCaretPosition(0);}
+    };
+    const bool startValid=form->numberValid("u")&&form->numberValid("v");
+    if (polar)
+    {
+        if (startValid&&form->numberValid("dimension")&&form->numberValid("direction")&&form->number("dimension")>=1.0e-8)
+        {
+            const auto angle=form->number("direction")*(lineAnglesInRadians?1.0:juce::MathConstants<double>::pi/180.0);
+            set("endU",form->number("u")+form->number("dimension")*std::cos(angle));
+            set("endV",form->number("v")+form->number("dimension")*std::sin(angle));
+        }
+    }
+    else if (startValid&&form->numberValid("endU")&&form->numberValid("endV"))
+    {
+        const auto dx=form->number("endU")-form->number("u"),dy=form->number("endV")-form->number("v");
+        set("dimension",std::hypot(dx,dy));
+        set("direction",std::atan2(dy,dx)*(lineAnglesInRadians?1.0:180.0/juce::MathConstants<double>::pi));
+    }
+    validateTask();
 }
 
 void CadWorkspacePanel::featureClicked(const juce::String& id)
@@ -2205,11 +2259,39 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             title = friendlyEntity(entity->id) + "  |  " + plane + " plane"; instruction = "Edit the entity's dimension and position, or add a constraint."; cancel = "Done";
             form->addHeader("Dimension");
             if (circle) form->addNumber("dimension", diameter ? "Diameter" : "Radius", diameter ? entity->radius * 2.0 : entity->radius, "mm", diameter ? "This circle is driven by a diameter constraint." : "Circle radius.", 9);
-            else form->addNumber("dimension", "Length", std::hypot(entity->x2 - entity->x1, entity->y2 - entity->y1), "mm", "Line length.");
+            else form->addNumber("dimension", "Length", std::hypot(entity->x2 - entity->x1, entity->y2 - entity->y1), "mm", "Change length while keeping the start and direction.",12);
             form->addHeader("Position (" + plane + " plane)");
             const juce::String point = circle ? "Centre " : "Start ";
-            form->addNumber("u", point + plane.substring(0, 1), entity->x1, "mm", "Sketch-plane coordinate along " + plane.substring(0, 1) + ".", 9);
-            form->addNumber("v", point + plane.substring(1, 2), entity->y1, "mm", "Sketch-plane coordinate along " + plane.substring(1, 2) + ".", 9);
+            form->addNumber("u", point + plane.substring(0, 1), entity->x1, "mm", "Sketch-plane coordinate along " + plane.substring(0, 1) + ".", circle?9:12);
+            form->addNumber("v", point + plane.substring(1, 2), entity->y1, "mm", "Sketch-plane coordinate along " + plane.substring(1, 2) + ".", circle?9:12);
+            if (!circle)
+            {
+                instruction="Edit start/end coordinates or direction/length, then Apply. Start-coordinate edits keep the endpoint. Existing constraints remain active.";
+                form->addNumber("endU","End "+plane.substring(0,1),entity->x2,"mm","Endpoint along the sketch's positive horizontal axis.",12);
+                form->addNumber("endV","End "+plane.substring(1,2),entity->y2,"mm","Endpoint along the sketch's positive vertical axis.",12);
+                form->addHeader("Direction and length");
+                const auto angle=std::atan2(entity->y2-entity->y1,entity->x2-entity->x1);
+                auto& directionEditor=form->addNumber("direction","Direction",angle*(lineAnglesInRadians?1.0:180.0/juce::MathConstants<double>::pi),lineAnglesInRadians?"rad":"deg","Counterclockwise from the positive horizontal sketch axis. Keeps the start and length.",15);
+                directionEditor.setCaretPosition(0);
+                directionEditor.onFocusLost=[safe=juce::Component::SafePointer<juce::TextEditor>(&directionEditor)]{if(safe!=nullptr)safe->setCaretPosition(0);};
+                auto& unit=form->addChoice("angleUnit","Angle units",{"Degrees","Radians"},lineAnglesInRadians?1:0,"Display/edit direction in degrees or radians; remembered as a workspace preference.");
+                unit.onChange=[this]
+                {
+                    const bool radians=form->choice("angleUnit")==1;
+                    if(radians!=lineAnglesInRadians)
+                    {
+                        if(form->numberValid("direction"))
+                            if(auto* editor=dynamic_cast<juce::TextEditor*>(form->control("direction")))
+                            {editor->setText(juce::String(form->number("direction")*(radians?juce::MathConstants<double>::pi/180.0:180.0/juce::MathConstants<double>::pi),15),false);if(!editor->hasKeyboardFocus(true))editor->setCaretPosition(0);}
+                        lineAnglesInRadians=radians;form->setUnit("direction",radians?"rad":"deg");
+                    }
+                    validateTask();
+                };
+                for(const auto* key:{"u","v","endU","endV"})
+                    if(auto* editor=dynamic_cast<juce::TextEditor*>(form->control(key))) editor->onTextChange=[this]{syncLineProperties(false);};
+                for(const auto* key:{"direction","dimension"})
+                    if(auto* editor=dynamic_cast<juce::TextEditor*>(form->control(key))) editor->onTextChange=[this]{syncLineProperties(true);};
+            }
             form->addHeader("Constraint");
             const auto types = juce::StringArray::fromTokens(applicableConstraintTypes(), ",", {});
             auto& typeBox = form->addChoice("constraintType", "Type", types, 0, "Constraint to add to the selected entity.");
@@ -2453,6 +2535,12 @@ void CadWorkspacePanel::validateTask()
         case Task::sketchEntity:
             requirePositive("dimension", "The dimension");
             requireNumber("u", "Position"); requireNumber("v", "Position");
+            if(form->control("endU")!=nullptr)
+            {
+                for(const auto* key:{"endU","endV","direction"})requireNumber(key,key);
+                if(form->number("dimension")<1.0e-8||std::hypot(form->number("endU")-form->number("u"),form->number("endV")-form->number("v"))<1.0e-8)
+                    problem="Line endpoints must be distinct (length at least 0.00000001 mm).";
+            }
             break;
         case Task::newBox: requirePositive("width", "Width"); requirePositive("depth", "Depth"); requirePositive("height", "Height"); break;
         case Task::newCylinder: requirePositive("radius", "Radius"); requirePositive("height", "Height"); break;
@@ -2635,6 +2723,16 @@ void CadWorkspacePanel::acceptTask()
                 }
                 refreshFromDocument(true); rebuildTaskPanel(false); sketchCanvas->repaint();
                 if (!ok) showError(e); else setMessage(changed ? "Curve updated." : "No changes to apply.", 0);
+                return;
+            }
+            if(entity->type=="line")
+            {
+                const auto u=form->number("u"),v=form->number("v"),endU=form->number("endU"),endV=form->number("endV");
+                const auto sketchId=editingSketchId,entityId=sketchEntityId;
+                const bool changed=std::abs(u-entity->x1)>1.0e-12||std::abs(v-entity->y1)>1.0e-12||std::abs(endU-entity->x2)>1.0e-12||std::abs(endV-entity->y2)>1.0e-12;
+                const bool ok=!changed||service->setSketchLineGeometry(sketchId,entityId,u,v,endU,endV,e);
+                refreshFromDocument(true);rebuildTaskPanel(false);sketchCanvas->repaint();
+                if(!ok)showError(e);else setMessage(changed?"Line updated.":"No changes to apply.",0);
                 return;
             }
             const bool circle = entity->type == "circle", diameter = circle && circleDiameterDriven(*sketch, entity->id);
@@ -4255,4 +4353,118 @@ bool runSketchUsabilityCheck(juce::var& report)
     juce::String dependency,entity,solid;service->createSketch("XY",0,dependency,error);service->addSketchCircle(dependency,0,0,2,entity,error);service->createExtrude(dependency,5,false,solid,error);const auto dependentState=json(service);
     check(!service->deleteSketchEntities(dependency,{entity},error)&&json(service)==dependentState,"Deletion that invalidates an existing solid rolls back through the existing dependency rebuild");
     auto* summary=new juce::DynamicObject();summary->setProperty("ok",failures==0);summary->setProperty("passed",checks.size()-failures);summary->setProperty("failed",failures);summary->setProperty("checks",checks);report=summary;return failures==0;
+}
+
+// Focused integration check: real property widgets/callbacks and native JUCE popup peers.
+// Synthetic mouse events exercise the production callbacks; this is not a pointer-driven test.
+bool runSketchLineRepairCheck(juce::var& report)
+{
+    using namespace djehuti::cad;
+    juce::Array<juce::var> checks; int failures=0; juce::String error;
+    const auto check=[&](bool ok,const juce::String& name)
+    {auto* row=new juce::DynamicObject();row->setProperty("name",name);row->setProperty("ok",ok);if(!ok)row->setProperty("detail",error);checks.add(row);if(!ok)++failures;};
+    const auto folder=juce::File::getCurrentWorkingDirectory().getChildFile("build/sketch-line-repair-check");folder.createDirectory();
+    auto service=std::make_shared<CadCommandService>();CadWorkspacePanel panel(service);panel.setSize(1400,900);
+    const auto call=[&](const juce::String& json){return panel.automation(juce::JSON::parse(json));};
+    const auto set=[&](const char* key,const juce::var& value)
+    {juce::DynamicObject::Ptr args=new juce::DynamicObject();args->setProperty("action","set");args->setProperty("field",key);args->setProperty("value",value);return panel.automation(juce::var(args.get()));};
+    const auto line=[&](const juce::String& sketch,const juce::String& id)->CadSketchEntity
+    {if(const auto* s=service->document().findSketch(sketch))for(const auto& e:s->entities)if(e.id==id)return e;return {};};
+    const auto approximately=[](double a,double b){return std::abs(a-b)<1e-7;};
+    juce::String firstSketch,firstLine;
+    for(const auto* plane:{"XY","XZ","YZ"})
+    {
+        juce::String sketch,id;check(service->createSketch(plane,0,sketch,error)&&service->addSketchLine(sketch,1,2,11,2,id,error),juce::String(plane)+": create line");
+        if(firstSketch.isEmpty()){firstSketch=sketch;firstLine=id;}
+        panel.refreshFromDocument(true);panel.sketchEntityClicked(sketch,id,false);panel.handleUpdateNowIfNeeded();
+        check(panel.form->control("endU")&&panel.form->control("endV")&&panel.form->control("direction"),juce::String(plane)+": both numeric methods available");
+        set("angleUnit","Degrees");set("u",0);set("v",0);set("endU",50);set("endV",0);
+        check(approximately(panel.form->number("dimension"),50)&&approximately(panel.form->number("direction"),0),juce::String(plane)+": endpoints derive 50 mm / 0 degrees");
+        auto revision=service->document().revision();call(R"({"action":"click","button":"apply"})");auto e=line(sketch,id);
+        check(approximately(e.x1,0)&&approximately(e.y1,0)&&approximately(e.x2,50)&&approximately(e.y2,0)&&service->document().revision()==revision+1,juce::String(plane)+": endpoint Apply is one transaction");
+        set("direction",90);check(approximately(panel.form->number("endU"),0)&&approximately(panel.form->number("endV"),50),juce::String(plane)+": 90 degrees computes endpoint before Apply");
+        call(R"({"action":"click","button":"apply"})");set("dimension",25);call(R"({"action":"click","button":"apply"})");e=line(sketch,id);
+        check(approximately(e.x1,0)&&approximately(e.y1,0)&&approximately(e.x2,0)&&approximately(e.y2,25),juce::String(plane)+": length edit preserves start and direction");
+        set("angleUnit","Radians");check(approximately(panel.form->number("direction"),juce::MathConstants<double>::halfPi),juce::String(plane)+": degree to radian conversion");
+        set("direction",juce::MathConstants<double>::pi);call(R"({"action":"click","button":"apply"})");e=line(sketch,id);
+        check(approximately(e.x2,-25)&&approximately(e.y2,0),juce::String(plane)+": radians edit uses the sketch horizontal axis");
+        set("angleUnit","Degrees");check(approximately(std::abs(panel.form->number("direction")),180),juce::String(plane)+": radian to degree conversion");
+        call(R"({"action":"command","command":"undo"})");e=line(sketch,id);check(approximately(e.y2,25),juce::String(plane)+": Undo restores geometry and properties");
+        call(R"({"action":"command","command":"redo"})");e=line(sketch,id);check(approximately(e.x2,-25)&&approximately(panel.form->number("endU"),-25),juce::String(plane)+": Redo synchronizes properties");
+        set("endU",0);set("endV",0);check(!panel.acceptButton.isEnabled(),juce::String(plane)+": degenerate endpoints disable Apply");
+        panel.rebuildTaskPanel(false);auto* editor=dynamic_cast<juce::TextEditor*>(panel.form->control("endU"));editor->setText("1..2",false);editor->onTextChange();
+        check(!panel.acceptButton.isEnabled(),juce::String(plane)+": malformed native numeric input disables Apply");panel.rebuildTaskPanel(false);
+    }
+    const auto snapshot=[&]{const auto file=folder.getChildFile("state.djc");service->document().exportJson(file,error);return file.loadFileAsString();};
+    const auto before=snapshot();const auto revision=service->document().revision();
+    check(!service->setSketchLineGeometry(firstSketch,firstLine,0,0,0,0,error)&&snapshot()==before&&service->document().revision()==revision,"Degenerate command rolls back document and revision");
+    check(!service->setSketchLineGeometry(firstSketch,firstLine,0,0,std::numeric_limits<double>::infinity(),1,error)&&snapshot()==before,"Nonfinite command leaves document unchanged");
+    panel.sketchEntityClicked(firstSketch,firstLine,false);panel.handleUpdateNowIfNeeded();
+    check(!(bool)set("endU","NaN")["ok"]&&!(bool)set("direction","1..2")["ok"],"Automation rejects nonfinite and malformed values");
+    juce::String s,a,b,c;service->createSketch("XY",0,s,error);service->addSketchLine(s,0,0,50,0,a,error);service->addSketchLine(s,50,0,50,20,b,error,a+":p2");
+    service->addSketchConstraint(s,"horizontal",a,{},0,c,error);service->setSketchEntityDimension(s,a,50,error);
+    check(service->setSketchLineGeometry(s,a,0,0,25,0,error)&&approximately(line(s,b).x1,25),"Length driving dimension is updated and joined endpoints follow atomically");
+    const auto constrained=snapshot();const auto rev=service->document().revision();
+    check(!service->setSketchLineGeometry(s,a,0,0,0,25,error)&&error.contains("constraints")&&snapshot()==constrained&&service->document().revision()==rev,"Incompatible horizontal direction is rejected without losing constraints");
+    panel.refreshFromDocument(true);panel.sketchEntityClicked(s,a,false);panel.handleUpdateNowIfNeeded();set("angleUnit","Degrees");set("direction",90);
+    const auto conflict=call(R"({"action":"click","button":"apply"})");
+    check(!(bool)conflict["ok"]&&snapshot()==constrained&&approximately(panel.form->number("endU"),25),"GUI Apply reports a constraint conflict and restores synchronized document values");
+    service->addSketchConstraint(s,"fixed",a,{},0,c,error);
+    check(!service->setSketchLineGeometry(s,a,5,5,30,5,error),"Fixed start rejects translation");
+    check(service->undo(error)&&service->undo(error)&&approximately(line(s,b).x1,50),"Undo restores joined endpoints and the old driving dimension");
+    check(service->redo(error)&&approximately(line(s,b).x1,25),"Redo restores joined edit");
+    juce::String profile,group,body;service->createSketch("XY",0,profile,error);service->addSketchRectangle(profile,0,0,30,20,group,error);service->createExtrude(profile,5,false,body,error);
+    const auto edge=service->document().findSketch(profile)->entities.front().id;
+    const auto volume=[&]{GProp_GProps props;BRepGProp::VolumeProperties(service->document().find(body)->shape,props);return props.Mass();};
+    check(service->setSketchLineGeometry(profile,edge,0,0,40,0,error)&&approximately(volume(),4000),"Line edit rebuilds dependent solid using existing document dependencies");
+    check(service->undo(error)&&approximately(volume(),3000)&&service->redo(error)&&approximately(volume(),4000),"Undo/Redo rebuilds dependent solid with its source line");
+    for(const auto* extension:{"djo","djc"})
+    {
+        const auto path=folder.getChildFile(juce::String("lines.")+extension);CadCommandService reopened;
+        bool ok=service->save(path,error)&&reopened.load(path,error);
+        for(const auto& sketch:service->document().sketchData())
+        {
+            const auto* loaded=reopened.document().findSketch(sketch.id);
+            const bool sizes=loaded&&loaded->entities.size()==sketch.entities.size()&&loaded->constraints.size()==sketch.constraints.size();ok=ok&&sizes;
+            if(sizes)
+            {
+                for(size_t i=0;i<sketch.entities.size();++i){const auto& p=sketch.entities[i];const auto& q=loaded->entities[i];ok=ok&&p.id==q.id&&approximately(p.x1,q.x1)&&approximately(p.y1,q.y1)&&approximately(p.x2,q.x2)&&approximately(p.y2,q.y2);}
+                for(size_t i=0;i<sketch.constraints.size();++i){const auto& p=sketch.constraints[i];const auto& q=loaded->constraints[i];ok=ok&&p.id==q.id&&p.type==q.type&&p.firstEntity==q.firstEntity&&p.secondEntity==q.secondEntity&&approximately(p.value,q.value);}
+            }
+        }
+        check(ok,juce::String("All planes, endpoints, constraints and stable ids save/reopen: ")+extension);
+    }
+    panel.sketchEntityClicked(firstSketch,firstLine,false);panel.handleUpdateNowIfNeeded();set("angleUnit","Radians");
+    auto* angleEditor=dynamic_cast<juce::TextEditor*>(panel.form->control("direction"));angleEditor->setCaretPosition(angleEditor->getText().length());angleEditor->onFocusLost();
+    check(angleEditor->getCaretPosition()==0,"Long radian values show their leading digits after leaving the field");
+    {CadWorkspacePanel restored(service);restored.restoreViewState(panel.viewState());check(restored.lineAnglesInRadians,"Angle unit preference persists in workspace settings");}
+    // Use the actual TreeView content component, reproducing JUCE's row-relative event transformation.
+    juce::Component host;host.setSize(1600,1000);host.addAndMakeVisible(panel);
+    juce::DocumentWindow window("Sketch line repair check",juce::Colours::darkgrey,0);window.setContentNonOwned(&host,false);window.setBounds(80,80,1600,1000);window.setVisible(true);
+    const auto popupCheck=[&](juce::Point<int> requested,const juce::String& label,bool treeEvent)
+    {
+        juce::PopupMenu::dismissAllActiveMenus();
+        if(treeEvent)
+        {
+            auto* item=panel.entityTreeItems.at(firstSketch+"/"+firstLine);auto* content=panel.tree.getViewport()->getViewedComponent();
+            const auto original=content->getLocalPoint(nullptr,requested).toFloat();const auto row=item->getItemPosition(false).getPosition().toFloat();
+            const juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(),original-row,juce::ModifierKeys::rightButtonModifier,1,0,0,0,0,content,content,juce::Time::getCurrentTime(),original,juce::Time::getCurrentTime(),1,false);
+            check(event.getMouseDownScreenPosition()==requested&&event.getScreenPosition()!=requested,label+": tree row translation retains original click");item->itemClicked(event);
+        }
+        else panel.showSketchEntityMenu(firstSketch,firstLine,requested);
+        check(panel.sketchEntityMenuOptions(requested).getTargetScreenArea().getPosition()==requested,label+": explicit screen anchor");
+        bool visible=false,contained=false,nearPointer=false;
+        auto& desktop=juce::Desktop::getInstance();
+        for(int i=0;i<desktop.getNumComponents();++i)if(auto* menu=desktop.getComponent(i);menu->getName()=="menu"&&menu->isVisible())
+        {visible=true;const auto bounds=menu->getScreenBounds();const auto* display=desktop.getDisplays().getDisplayForPoint(requested);contained=display&&display->userArea.contains(bounds);nearPointer=bounds.expanded(12).contains(requested);}
+        check(visible&&contained&&nearPointer,label+": real popup peer is near click and within screen");juce::PopupMenu::dismissAllActiveMenus();
+    };
+    panel.setBounds(160,90,1350,850);popupCheck(panel.tree.localPointToGlobal(juce::Point<int>(110,120)),"Docked / offset parent",true);
+    panel.setBounds(30,25,1000,700);popupCheck(panel.tree.localPointToGlobal(juce::Point<int>(100,140)),"Resized panel",true);
+    window.clearContentComponent();host.removeChildComponent(&panel);window.setContentNonOwned(&panel,false);window.setBounds(220,140,1200,800);
+    popupCheck(panel.tree.localPointToGlobal(juce::Point<int>(100,160)),"Floating native peer",true);
+    if(const auto* display=juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())popupCheck(display->userArea.getBottomRight()-juce::Point<int>(3,3),"Screen boundary",false);
+    window.clearContentComponent();window.setVisible(false);
+    auto image=panel.createComponentSnapshot(panel.getLocalBounds());if(auto stream=folder.getChildFile("line-properties.png").createOutputStream())juce::PNGImageFormat().writeImageToStream(image,*stream);
+    auto* result=new juce::DynamicObject();result->setProperty("ok",failures==0);result->setProperty("failures",failures);result->setProperty("checks",checks);result->setProperty("pointerDriven",false);report=result;return failures==0;
 }

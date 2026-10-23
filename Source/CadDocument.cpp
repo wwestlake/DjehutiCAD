@@ -477,6 +477,72 @@ bool CadDocument::editSketchEntity(const juce::String& sketchId,const juce::Stri
     }, error);
 }
 
+bool CadDocument::setSketchLineGeometry(const juce::String& sketchId,const juce::String& entityId,double x1,double y1,double x2,double y2,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        auto* sketch = mutableSketch(sketchId);
+        if (sketch == nullptr) { e = "Unknown sketch id: " + sketchId; return false; }
+        auto* line = sketchEntity(*sketch, entityId);
+        if (line == nullptr || line->type != "line") { e = "Choose an existing sketch line."; return false; }
+        for (const auto value : { x1, y1, x2, y2 })
+            if (!std::isfinite(value)) { e = "Line coordinates must be finite."; return false; }
+        const auto length = std::hypot(x2 - x1, y2 - y1);
+        if (!std::isfinite(length) || length < 1.0e-8) { e = "Line endpoints must be distinct (length at least 0.00000001 mm)."; return false; }
+        for (const auto& c : sketch->constraints) if (c.firstEntity == entityId)
+        {
+            if ((c.type == "horizontal" && std::abs(y2-y1)>1.0e-7) || (c.type == "vertical" && std::abs(x2-x1)>1.0e-7))
+            { e = "Existing sketch constraints require a " + c.type + " direction for " + entityId + ". Change that constraint before changing direction."; return false; }
+        }
+
+        // Resolve both joins before moving either endpoint. Endpoints remain the only authored geometry;
+        // direction and length in the property editor are derived values, not another representation.
+        const auto startJoin = joinedEndpoints(*sketch, entityId + ":p1");
+        const auto endJoin = joinedEndpoints(*sketch, entityId + ":p2");
+        const auto moveJoin = [&](const juce::StringArray& joined, double x, double y)
+        {
+            for (const auto& ref : joined)
+            {
+                juce::String id, which; if (!splitPointRef(ref, id, which)) continue;
+                auto* entity = sketchEntity(*sketch, id); if (entity == nullptr) continue;
+                const auto dx = x - pointX(*entity, which), dy = y - pointY(*entity, which);
+                pointX(*entity, which) = x; pointY(*entity, which) = y;
+                if (entity->type == "bezier")
+                {
+                    const auto handle = which == "p1" ? juce::String("c1") : juce::String("c2");
+                    pointX(*entity, handle) += dx; pointY(*entity, handle) += dy;
+                }
+            }
+        };
+        moveJoin(startJoin, x1, y1); moveJoin(endJoin, x2, y2);
+        // Editing a line's size edits its existing driving dimension, as the old Length field did.
+        // Do not add a dimension constraint just by editing endpoint coordinates.
+        for (auto& c : sketch->constraints)
+            if (c.firstEntity == entityId && (c.type == "length" || c.type == "distance")) c.value = length;
+        if (!solveSketch(*sketch, e)) return false;
+        const auto joinMatches = [&](const juce::StringArray& joined, double x, double y)
+        {
+            for (const auto& ref : joined)
+            {
+                juce::String id, which; if (!splitPointRef(ref, id, which)) return false;
+                auto* entity = sketchEntity(*sketch, id);
+                if (entity == nullptr || std::hypot(pointX(*entity, which) - x, pointY(*entity, which) - y) > 1.0e-7) return false;
+            }
+            return true;
+        };
+        if (!joinMatches(startJoin, x1, y1) || !joinMatches(endJoin, x2, y2))
+        { e = "Existing sketch constraints prevent these endpoints or direction. Change the driving constraint or use a compatible direction."; return false; }
+        // The existing rectangle solver has a specialized early return. Check fixed references here too.
+        for (const auto& c : sketch->constraints) if (c.type == "fixed")
+        {
+            const auto* entity = sketchEntity(*sketch, c.firstEntity.upToFirstOccurrenceOf(":", false, false));
+            if (entity != nullptr && std::hypot(entity->x1, entity->y1) > 1.0e-7)
+            { e = "A fixed sketch reference prevents this line edit."; return false; }
+        }
+        return true;
+    }, error);
+}
+
 bool CadDocument::moveSketchPoint(const juce::String& sketchId,const juce::String& pointRef,double x,double y,juce::String& error)
 {
     return mutate([&](juce::String& e)

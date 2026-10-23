@@ -226,6 +226,9 @@ public:
     // Interactive editing; each call is one undoable command.
     // Position and dimension of an entity together (the entity panel's Apply).
     bool editSketchEntity(const juce::String& sketchId, const juce::String& entityId, bool move, double x, double y, bool resize, double value, juce::String& error);
+    // Atomically edits both line endpoints, carries their joins, updates an existing length driver and
+    // rejects incompatible constraints. Length/direction editors derive these same sketch-local endpoints.
+    bool setSketchLineGeometry(const juce::String& sketchId, const juce::String& entityId, double x1, double y1, double x2, double y2, juce::String& error);
     // Moves a point "<entity>:p1|p2|c1|c2". An endpoint carries every endpoint joined to it (coincident constraints,
     // transitively, and endpoints at exactly the same position) and a Bezier endpoint carries its control point;
     // a rectangle corner reshapes the rectangle about the opposite corner. Refused if constraints cannot hold.
@@ -461,6 +464,7 @@ public:
     bool setSketchEntityPosition(const juce::String& sketchId, const juce::String& entityId, double x, double y, juce::String& error) { return model.setSketchEntityPosition(sketchId, entityId, x, y, error); }
     bool addSketchConstraint(const juce::String& sketchId, const juce::String& type, const juce::String& firstEntity, const juce::String& secondEntity, double value, juce::String& constraintId, juce::String& error) { return model.addSketchConstraint(sketchId, type, firstEntity, secondEntity, value, constraintId, error); }
     bool editSketchEntity(const juce::String& sketchId, const juce::String& entityId, bool move, double x, double y, bool resize, double value, juce::String& error) { return model.editSketchEntity(sketchId, entityId, move, x, y, resize, value, error); }
+    bool setSketchLineGeometry(const juce::String& sketchId, const juce::String& entityId, double x1, double y1, double x2, double y2, juce::String& error) { return model.setSketchLineGeometry(sketchId, entityId, x1, y1, x2, y2, error); }
     bool moveSketchPoint(const juce::String& sketchId, const juce::String& pointRef, double x, double y, juce::String& error) { return model.moveSketchPoint(sketchId, pointRef, x, y, error); }
     bool insertSketchVertex(const juce::String& sketchId, const juce::String& lineId, double x, double y, juce::String& newLineId, juce::StringArray& removed, juce::String& error) { return model.insertSketchVertex(sketchId, lineId, x, y, newLineId, removed, error); }
     bool addSketchBezier(const juce::String& sketchId, double x1, double y1, double cx1, double cy1, double cx2, double cy2, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {}) { return model.addSketchBezier(sketchId, x1, y1, cx1, cy1, cx2, cy2, x2, y2, entityId, error, firstConnection, secondConnection); }

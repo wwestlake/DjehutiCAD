@@ -19,6 +19,33 @@ for repeated construction, such as concentric circles. Use the pointer icon,
 Sketch > Select, the properties panel's **Return to Select**, or Escape to stop
 drawing.
 
+For a selected **line**, both numerical methods are always available:
+
+- **Start / End** coordinates set its two endpoints. Changing a start coordinate
+  keeps the endpoint fixed and recalculates length and direction.
+- **Length / Direction** keep the start fixed and calculate the endpoint.
+
+Values update together before **Apply**, which commits one undoable document
+command. Direction is counterclockwise from the sketch's positive horizontal
+axis: +X in XY/XZ, +Y in YZ, or +U on a face sketch. **Angle units** switches
+between degrees and radians without changing the geometry. This choice is
+remembered in workspace preferences; it defaults to degrees, matching the other
+CAD angle editors. There is currently no application-wide angular-unit setting.
+
+An existing driving length constraint follows the edited length; other
+constraints stay active. Joined endpoints and attached curve handles move
+together. Incompatible orientation/fixed/connected constraints reject the whole
+edit with a message, preserving the document and undo history. For rectangle
+edges, the rectangle's existing width/height drivers remain authoritative; use
+its driving edge or selected-vertex controls when another edge is held by them.
+Malformed/nonfinite values and lines shorter than 0.00000001 mm are rejected.
+Endpoint geometry and constraints persist in native and JSON documents; direction
+is calculated from those endpoints rather than stored separately.
+
+Tree and canvas context menus open at the click in screen coordinates. The menu
+uses JUCE's monitor-aware placement to stay within the available screen area,
+including when the CAD panel is floating or resized.
+
 Escape works in stages:
 
 1. Cancel an unfinished drawing gesture or point drag, keeping completed geometry.
