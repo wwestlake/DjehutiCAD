@@ -70,8 +70,14 @@ juce::var pipeParameters(const juce::var& p,const juce::String& method)
 }
 void nameFaces(const TopoDS_Shape& s,const juce::String& id,CadFaceOrigins& names)
 {
-    int i=0;for(TopExp_Explorer e(s,TopAbs_FACE);e.More();e.Next(),++i)
-    {bool present=false;for(const auto& n:names)if(n.first.IsSame(e.Current()))present=true;if(!present)names.push_back({e.Current(),{id+"/surface:"+juce::String(i)}});}
+    // Preserve unique construction origins. Split/offset images can inherit the
+    // same token; give each such face its own result role instead of exposing an
+    // ambiguous token to face selection and downstream tools.
+    CadFaceOrigins canonical;std::map<juce::String,int> uses;
+    for(TopExp_Explorer e(s,TopAbs_FACE);e.More();e.Next())
+    {juce::StringArray tokens;for(const auto& n:names)if(n.first.IsSame(e.Current()))for(const auto& t:n.second)tokens.addIfNotAlreadyThere(t);for(const auto& t:tokens)++uses[t];canonical.push_back({e.Current(),tokens});}
+    int index=0;for(auto& n:canonical)
+    {juce::StringArray tokens;for(const auto& t:n.second)if(uses[t]==1)tokens.addIfNotAlreadyThere(t);tokens.addIfNotAlreadyThere(id+"/surface:"+juce::String(index++));for(const auto& t:n.second)tokens.addIfNotAlreadyThere(t);n.second=tokens;}names=std::move(canonical);
 }
 template<class Operation,class History>
 void track(Operation& operation,const TopoDS_Shape& source,const CadFaceOrigins& sourceNames,
@@ -171,7 +177,7 @@ bool validateSurface(const juce::String& type,const juce::var& p,juce::String& e
         if(!p["sides"].isArray()||p["sides"].size()!=4)return fail("Extension sides are four booleans: U min, U max, V min, V max.");
         bool any=false;for(const auto& v:*p["sides"].getArray()){if(!v.isBool())return fail("Extension sides must be booleans.");any=any||(bool)v;}if(!any)return fail("Choose at least one boundary to extend.");
     }
-    if(type=="surface_thicken"&&(!number(p["thickness"])||(double)p["thickness"]<1e-6||(double)p["thickness"]>1e5||!juce::StringArray{"positive","negative","symmetric"}.contains(p["direction"].toString())))return fail("Thickness must be positive (0.000001Ã¢â‚¬â€œ100000 mm); direction is positive, negative or symmetric.");
+    if(type=="surface_thicken"&&(!number(p["thickness"])||(double)p["thickness"]<1e-6||(double)p["thickness"]>1e5||!juce::StringArray{"positive","negative","symmetric"}.contains(p["direction"].toString())))return fail("Thickness must be positive (0.000001ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“100000 mm); direction is positive, negative or symmetric.");
     return true;
 }
 

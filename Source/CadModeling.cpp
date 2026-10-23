@@ -31,6 +31,7 @@
 #include <Bnd_Box.hxx>
 #include <gp_Ax3.hxx>
 #include <atomic>
+#include <Standard_Failure.hxx>
 #include <cmath>
 
 namespace djehuti::cad
@@ -354,6 +355,8 @@ juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var&
         if(!validateModeling(type,p,error))return fail("invalid_arguments",error);
         if(type=="surface_trim"&&(action=="create"||p["regionReference"]["face"].toString().isEmpty()||p["target"]!=f->modeling["target"]||p["face"]!=f->modeling["face"]||juce::JSON::toString(p["seed"],true)!=juce::JSON::toString(f->modeling["seed"],true)))
         {
+            try
+            {
             const auto* source=find(p["target"].toString());if(source==nullptr)return fail("invalid_reference","Missing trim source.");const auto selectedFace=p["face"].toString();
             const auto vertex=BRepBuilderAPI_MakeVertex(point(p["seed"])).Vertex();int count=0;auto anchor=object();
             for(TopExp_Explorer e(source->shape,TopAbs_FACE);e.More();e.Next())
@@ -363,12 +366,14 @@ juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var&
                 double u=0,v=0;distance.ParOnFaceS2(1,u,v);anchor.getDynamicObject()->setProperty("face",token);anchor.getDynamicObject()->setProperty("u",u);anchor.getDynamicObject()->setProperty("v",v);++count;
             }
             if(count!=1)return fail("invalid_reference","Trim region point must lie inside one uniquely named source face. Pick the region again.");p.getDynamicObject()->setProperty("regionReference",anchor);
+            }
+            catch(const Standard_Failure& failure){return fail("invalid_reference",juce::String("Cannot locate the trim region: ")+failure.GetMessageString());}
         }
         for(const auto& dependency:modelingDependencies(p))if(dependency==id||find(dependency)==nullptr)return fail("invalid_reference","Missing or self-referencing source: "+dependency);
         auto created=id;const auto ok=mutate([&](juce::String&)
         {
             if(action=="create"){CadFeature value;value.id=newId(type.toRawUTF8(),nextNumber++);value.type=type;value.name=modelingLabel(type)+" "+juce::String(nextNumber-1);items.push_back(value);created=value.id;}
-            for(auto& value:items)if(value.id==created){value.modeling=p;value.firstOperand=modelingDependencies(p).isEmpty()?juce::String():modelingDependencies(p)[0];value.targetFeatureId=p["target"].toString();}
+            for(auto& value:items)if(value.id==created){value.modeling=p;value.firstOperand=isSurfaceType(type)?(modelingDependencies(p).isEmpty()?juce::String():modelingDependencies(p)[0]):type=="loft"?p["sections"][0].toString():type=="sweep"?p["profile"].toString():p["target"].toString();value.targetFeatureId=p["target"].toString();}
             for(auto& value:items)
             {
                 const bool target=value.id==p["target"].toString();
