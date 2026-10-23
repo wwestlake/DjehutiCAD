@@ -311,7 +311,7 @@ TopoDS_Shape CadDocument::evaluateModeling(const CadFeature& feature,CadFaceOrig
 std::shared_ptr<const CadRenderSnapshot> CadDocument::modelingPreview(const juce::String& type,const juce::var& args,juce::var& result,juce::String& error) const
 {
     CadDocument draft;draft.geometryCache=geometryCache;if(!draft.deserialize(serialize(),error))return {};auto request=copyJson(args);request.getDynamicObject()->setProperty("action",args["id"].toString().isEmpty()?"create":"update");result=draft.modelingCommand(type,request);if(!(bool)result["ok"]){error=result["error"].toString();return {};}
-    result.getDynamicObject()->setProperty("volume_mm3",volume(draft.find(result["id"].toString())->shape));result.getDynamicObject()->setProperty("preview",true);result.getDynamicObject()->setProperty("committed",false);if(args["id"].toString().isEmpty())result.getDynamicObject()->removeProperty("id");static std::atomic<std::uint64_t> serial{0};auto view=std::make_shared<CadRenderSnapshot>(*draft.snapshot());view->documentInstance=instanceId;view->revision=(std::uint64_t(1)<<63)|++serial;return view;
+    result.getDynamicObject()->setProperty("volume_mm3",volume(draft.find(result["id"].toString())->shape));result.getDynamicObject()->setProperty("preview",true);result.getDynamicObject()->setProperty("committed",false);if(args["id"].toString().isEmpty())result.getDynamicObject()->removeProperty("id");static std::atomic<std::uint64_t> serial{0};auto view=std::make_shared<CadRenderSnapshot>(*draft.snapshot());view->documentInstance=instanceId;view->revision=(std::uint64_t(1)<<63)|(std::uint64_t(1)<<60)|++serial;return view;
 }
 
 juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var& args)
