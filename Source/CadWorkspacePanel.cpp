@@ -3997,6 +3997,7 @@ juce::var CadWorkspacePanel::automation(const juce::var& args)
     refreshFromDocument(); handleUpdateNowIfNeeded();
     juce::String error;
     const auto action = args.getProperty("action", "state").toString();
+    if(action=="sketchToolbox"){commandMessage.clear();commandSeverity=0;}
     if (!args.isObject()) error = "Arguments must be an object.";
     else if (action == "state") {}
     else if (action == "command")
@@ -4223,6 +4224,7 @@ bool runSketchUsabilityCheck(juce::var& report)
     const auto serialized=json(service);const auto revision=service->document().revision();result=draw(0);
     check(!(bool)result["ok"]&&service->document().revision()==revision&&json(service)==serialized,"Zero-radius gesture is rejected without a document edit or allocated identifier");
     result=draw(minimumSketchCircleRadius*.1);check(!(bool)result["ok"],"Near-zero radius is rejected at the documented geometric tolerance");
+    check((bool)call(R"({"action":"sketchToolbox"})")["ok"],"Toolbox presentation can recover normally after a rejected gesture");
     juce::String rejected;check(!service->addSketchCircle(sketch,std::numeric_limits<double>::infinity(),0,1,rejected,error),"Nonfinite circle centres fail through the same model command");
     draw(5);const auto fourth=panel.sketchEntityId;
     check(fourth.fromLastOccurrenceOf("-",false,false).getIntValue()>third.fromLastOccurrenceOf("-",false,false).getIntValue()+1,"Constraint allocation/deletion explains identifier gaps without hidden entities");

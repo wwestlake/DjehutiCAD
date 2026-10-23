@@ -104,8 +104,9 @@ or zero-based index.
 | `command` | `command` | A toolbar or menu command: `sketch`, `box`, `cylinder`, `extrude`, `cut`, `subtract`, `union`, `intersect`, `line`, `rectangle`, `circle`, `sketchSelect`, `constrain`, `fitSketch`, `finishSketch`, `instance`, `joint`, `coupling`, `link`, `ik`, `fit`, `reset`, `views`, `pointer`, `boxSelect`, `circleSelect`, `bodyMode`, `faceMode`, `edgeMode`, `undo`, `redo`. |
 | `set` | `field`, `value` | Sets a visible, enabled task field: numbers must be finite; choices must be listed options. |
 | `click` | `button` | A task-panel button by id, or `apply` / `cancel`. |
-| `select` | `id`, or `entity` [`second`] | Selects a tree item (body, sketch, instance, joint, coupling, IK task), or an entity of the open sketch. |
+| `select` | `id`, or `entity` [`second`]; `id` + `entity` | Selects a tree item or an entity of the active sketch. Combining sketch `id` and `entity` uses the entity-tree selection handler, opening that sketch and its shared properties editor in Select mode. `second` preserves the existing two-entity selection. |
 | `sketch` | `phase`, `x`, `y` (sketch mm) | `begin` starts a gesture with the active Line, Rectangle or Circle tool. `update` moves the preview, which stays on screen without changing the document. `commit` adds the geometry. `cancel` drops it. |
+| `sketchToolbox` | optional `value`: `visible`, `docked`, `x`, `y`; or `operation: capture`, PNG `path`, `overwrite` | Inspects or changes the sketch toolbox using the same layout state as the GUI. Capture synchronously writes a JUCE component render of the sketch workspace; it requires an active sketch and an existing output directory. It does not establish native pointer testing. |
 | `camera` | `operation`: `set`/`fit`/`fitSelection`/`reset`/`state`/`capture`; `yawDeg`, `pitchDeg`, `distance`, `panX`, `panY`; `view` (-1 = model view, 0.. = 3D view); capture `path` | Moves only that view's camera, within the same bounds as mouse navigation. `fitSelection` frames selected bodies or instances and fails if no visible selection exists. `capture` queues a PNG of the application-owned GPU viewport at an absolute path in an existing directory; wait for the file before reading it. The document is not changed. |
 | `document` | `operation`: `new`/`open`/`save`; `path`; `discard`; `overwrite` | Same code as the File menu. New and open refuse a modified document unless `discard` is true; save refuses an existing file unless `overwrite` is true. |
 
@@ -117,6 +118,14 @@ GPU captures exclude native window chrome and do not establish pointer-driven
 GUI verification. An accepted asynchronous capture does not guarantee successful
 file writing; callers should check the resulting PNG. See the
 [viewport range report](VIEWPORT_RANGE_ORDER6.md) for validation boundaries.
+
+Sketch commands also include `deleteSketchEntities`, `sketchToolbox` and
+`dockSketchToolbox`. Entity deletion uses the same OCAF command as the Delete
+key and context menu, including attached-constraint cleanup and rollback on a
+failed dependency rebuild. Completed drawing gestures automatically select the
+new entity and expose its properties; circles below 0.000001 mm radius fail
+without a committed edit. UI state reports actual entity-tree selection and
+toolbox settings. See [sketch editing](SKETCH_EDITING.md).
 
 ## Paced demonstrations
 

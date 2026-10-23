@@ -103,7 +103,7 @@ private:
             else {g.drawLine(x,y+h*.3f,x+w,y+h*.3f,2);g.drawLine(x,y+h*.7f,x+w,y+h*.7f,2);}
         }
     };
-    void changed(){setTooltipText();if(layoutChanged)layoutChanged();}
+    void changed(){dock.setButtonText(docked?"Float":"Dock");setTooltipText();if(layoutChanged)layoutChanged();}
     void setTooltipText(){setMouseCursor(juce::MouseCursor::DraggingHandCursor);}
     bool preferredVisible=true,docked=true,dragging=false;
     juce::Point<int> floating{12,12};juce::ComponentDragger dragger;

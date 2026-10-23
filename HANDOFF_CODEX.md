@@ -1,6 +1,26 @@
 # DjehutiCAD Architecture Handoff
 
-Latest viewport update (October 23, 2026): **Order 6 is complete**. The finite
+Latest sketch update (October 23, 2026): **Sketch Editor usability and entity
+management are complete**. The workspace now has a compact floating/dockable
+sketch toolbox with persistent View-menu visibility. Completed geometry selects
+its shared properties; expandable sketch rows include all stored entities and
+synchronize primary/secondary canvas selection. Delete key, tree/canvas context
+menus, properties and toolbox use one undoable OCAF entity-delete operation,
+including constraint cleanup and dependent-rebuild rollback. Escape cancels a
+gesture, returns to Select, then clears selection. New circles require finite
+centres and radius >= 0.000001 mm; legacy degenerate entities remain deletable.
+
+Commit `856e7e5` was pushed before live validation. The follow-up fixes a stale
+Float/Dock label and presentation error recovery. Debug delivery passed: 36 new
+checks, 20 sketch-edit, 20 workspace, 83 modeling and 22 live API/restart checks
+(181 total). Native/JSON, legacy deletion, actual preference restart and saved
+scene reopen passed. Component captures were visually inspected; mouse/key
+callbacks were invoked programmatically. Native pointer/menu/tooltip interaction
+and Release remain unverified. Native control was not acquired in this batch;
+the owned app was closed with its scene saved. See `docs/SKETCH_USABILITY_REPORT.md`
+and `docs/SKETCH_EDITING.md`. Stop after this sketch assignment.
+
+Previous viewport update (October 23, 2026): **Order 6 is complete**. The finite
 floor patch and model clipping both caused the short grid range. A procedural
 world-XY floor now blends 1/2/5 spacing across the visible plane; model clipping
 follows posed bounds and uses logarithmic depth only for wide depth ranges.

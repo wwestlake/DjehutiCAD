@@ -51,6 +51,11 @@ Right-click a 3D view for Fit all, Fit selection, Reset and its guide visibility
 
 ## Reference geometry
 
+While editing a sketch, a compact toolbox can dock beside or float over the
+canvas. Its View-menu visibility, docking and position persist. Sketches expand
+to show their actual entities, with shared canvas/tree properties and undoable
+entity deletion. See [sketch editing and entity management](SKETCH_EDITING.md).
+
 - Floor: the XY world plane at Z=0, visible by default. A procedural shader covers the visible plane without a finite line-patch edge. World-aligned 1/2/5 millimeter levels blend continuously with pixel scale; major lines occur every five intervals. The grid fades toward the horizon and stays behind model geometry. The HUD spacing is approximate because perspective changes the scale across the floor.
 - Camera: world Z is up; the default/reset isometric view looks down onto the XY floor. Orbit changes the view around the shared model. Pan scales with viewing distance, and wheel zoom retains its exponential response. Clipping follows visible posed model bounds; unusually wide depth ranges use logarithmic depth to reduce Z-fighting. Fit respects the viewport aspect ratio. Selection framing permits inspecting a small component within a large assembly.
 - World planes: optional bounded XY/XZ/YZ grids and labeled axes at the world origin.

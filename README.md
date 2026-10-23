@@ -46,6 +46,9 @@ The 3D viewport uses a procedural XY floor, adaptive model clipping and
 selection framing. See [viewport controls](docs/WORKSPACE_TOOLS_AND_GUIDES.md)
 and the [Order 6 rendering report](docs/VIEWPORT_RANGE_ORDER6.md).
 
+[Sketch editing](docs/SKETCH_EDITING.md) includes a floating/dockable tool palette,
+expandable entity rows, automatic creation selection and undoable entity deletion.
+
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 
