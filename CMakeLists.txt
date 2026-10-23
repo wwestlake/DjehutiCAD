@@ -92,6 +92,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/DjehutiAgent.cpp
     Source/FrameResourceRing.h
     Source/Viewport3D.h
+    Source/ViewportRangeChecks.cpp
+    Source/ViewportRange.cpp
     Source/Viewport3D.cpp
     Source/CadReferenceGuides.cpp
     Source/CadRegionSelection.cpp

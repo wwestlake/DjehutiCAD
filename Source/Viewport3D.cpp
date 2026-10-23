@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 using namespace juce::gl;
 
 namespace
@@ -23,27 +24,22 @@ M4 camera(float yaw, float pitch, float distance, float targetX, float targetY, 
     const auto cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
     const V3 target {targetX, targetY, targetZ};
     // CAD coordinates are Z-up: yaw turns about world Z and pitch is elevation above XY.
-    const V3 eye = add(target, {distance * cp * sy, -distance * cp * cy, distance * sp});
-    const auto forward = normalized(sub(target, eye));
-    const auto referenceUp = V3 {0.0f, 0.0f, 1.0f};
-    const auto right = normalized(cross(forward, referenceUp));
-    const auto up = cross(right, forward);
+    const V3 forward {-cp*sy,cp*cy,-sp};
+    const V3 right {cy,sy,0};
+    const auto up = cross(right,forward);
     M4 m = identity();
     m.v[0] = right.x; m.v[4] = right.y; m.v[8] = right.z;
     m.v[1] = up.x; m.v[5] = up.y; m.v[9] = up.z;
     m.v[2] = -forward.x; m.v[6] = -forward.y; m.v[10] = -forward.z;
-    m.v[12] = -dot(right, eye) + panX;
-    m.v[13] = -dot(up, eye) + panY;
-    m.v[14] = dot(forward, eye);
+    m.v[12] = (float)(-(double)right.x*target.x-(double)right.y*target.y-(double)right.z*target.z+panX);
+    m.v[13] = (float)(-(double)up.x*target.x-(double)up.y*target.y-(double)up.z*target.z+panY);
+    m.v[14] = (float)((double)forward.x*target.x+(double)forward.y*target.y+(double)forward.z*target.z-distance);
     return m;
 }
-M4 projectionFor(int width, int height, float distance, float sceneRadius)
+M4 projectionFor(int width,int height,const std::array<float,2>& clip)
 {
-    const auto aspect = height > 0 ? juce::jmax(0.01f, (float) width / (float) height) : 1.0f;
-    const auto depthRadius = juce::jmax(0.001f, sceneRadius);
-    const auto nearZ = juce::jmax(0.001f, distance - depthRadius * 1.5f);
-    const auto farZ = juce::jmax(nearZ + 1.0f, distance + depthRadius * 1.5f);
-    return perspective(0.85f, aspect, nearZ, farZ);
+    const auto aspect=height>0?juce::jmax(0.01f,(float)width/(float)height):1.0f;
+    return perspective(0.85f,aspect,clip[0],clip[1]);
 }
 M4 rotation(float a) { M4 m = identity(); m.v[0] = std::cos(a); m.v[2] = std::sin(a); m.v[8] = -std::sin(a); m.v[10] = std::cos(a); return m; }
 }
@@ -139,58 +135,27 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
     markDirty();
 
 }
-// World ray (mm) through a component position, from the inverse of the current view-projection.
+// Analytic world ray avoids precision loss when a remote far plane becomes infinite in float projection.
 bool Viewport3D::rayThrough(juce::Point<float> position, std::array<float, 3>& origin, std::array<float, 3>& direction) const
 {
     if (getWidth() <= 0 || getHeight() <= 0) return false;
-    const auto vp = mul(projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
-    // General 4x4 inverse (column-major), cofactor expansion.
-    const float* a = vp.v; float inv[16];
-    inv[0] = a[5]*a[10]*a[15] - a[5]*a[11]*a[14] - a[9]*a[6]*a[15] + a[9]*a[7]*a[14] + a[13]*a[6]*a[11] - a[13]*a[7]*a[10];
-    inv[4] = -a[4]*a[10]*a[15] + a[4]*a[11]*a[14] + a[8]*a[6]*a[15] - a[8]*a[7]*a[14] - a[12]*a[6]*a[11] + a[12]*a[7]*a[10];
-    inv[8] = a[4]*a[9]*a[15] - a[4]*a[11]*a[13] - a[8]*a[5]*a[15] + a[8]*a[7]*a[13] + a[12]*a[5]*a[11] - a[12]*a[7]*a[9];
-    inv[12] = -a[4]*a[9]*a[14] + a[4]*a[10]*a[13] + a[8]*a[5]*a[14] - a[8]*a[6]*a[13] - a[12]*a[5]*a[10] + a[12]*a[6]*a[9];
-    inv[1] = -a[1]*a[10]*a[15] + a[1]*a[11]*a[14] + a[9]*a[2]*a[15] - a[9]*a[3]*a[14] - a[13]*a[2]*a[11] + a[13]*a[3]*a[10];
-    inv[5] = a[0]*a[10]*a[15] - a[0]*a[11]*a[14] - a[8]*a[2]*a[15] + a[8]*a[3]*a[14] + a[12]*a[2]*a[11] - a[12]*a[3]*a[10];
-    inv[9] = -a[0]*a[9]*a[15] + a[0]*a[11]*a[13] + a[8]*a[1]*a[15] - a[8]*a[3]*a[13] - a[12]*a[1]*a[11] + a[12]*a[3]*a[9];
-    inv[13] = a[0]*a[9]*a[14] - a[0]*a[10]*a[13] - a[8]*a[1]*a[14] + a[8]*a[2]*a[13] + a[12]*a[1]*a[10] - a[12]*a[2]*a[9];
-    inv[2] = a[1]*a[6]*a[15] - a[1]*a[7]*a[14] - a[5]*a[2]*a[15] + a[5]*a[3]*a[14] + a[13]*a[2]*a[7] - a[13]*a[3]*a[6];
-    inv[6] = -a[0]*a[6]*a[15] + a[0]*a[7]*a[14] + a[4]*a[2]*a[15] - a[4]*a[3]*a[14] - a[12]*a[2]*a[7] + a[12]*a[3]*a[6];
-    inv[10] = a[0]*a[5]*a[15] - a[0]*a[7]*a[13] - a[4]*a[1]*a[15] + a[4]*a[3]*a[13] + a[12]*a[1]*a[7] - a[12]*a[3]*a[5];
-    inv[14] = -a[0]*a[5]*a[14] + a[0]*a[6]*a[13] + a[4]*a[1]*a[14] - a[4]*a[2]*a[13] - a[12]*a[1]*a[6] + a[12]*a[2]*a[5];
-    inv[3] = -a[1]*a[6]*a[11] + a[1]*a[7]*a[10] + a[5]*a[2]*a[11] - a[5]*a[3]*a[10] - a[9]*a[2]*a[7] + a[9]*a[3]*a[6];
-    inv[7] = a[0]*a[6]*a[11] - a[0]*a[7]*a[10] - a[4]*a[2]*a[11] + a[4]*a[3]*a[10] + a[8]*a[2]*a[7] - a[8]*a[3]*a[6];
-    inv[11] = -a[0]*a[5]*a[11] + a[0]*a[7]*a[9] + a[4]*a[1]*a[11] - a[4]*a[3]*a[9] - a[8]*a[1]*a[7] + a[8]*a[3]*a[5];
-    inv[15] = a[0]*a[5]*a[10] - a[0]*a[6]*a[9] - a[4]*a[1]*a[10] + a[4]*a[2]*a[9] + a[8]*a[1]*a[6] - a[8]*a[2]*a[5];
-    const auto d = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
-    if (std::abs(d) < 1.0e-20f) return false;
-    const float ndcX = position.x / (float) getWidth() * 2.0f - 1.0f, ndcY = 1.0f - position.y / (float) getHeight() * 2.0f;
-    auto unproject = [&](float z, std::array<float, 3>& out)
-    {
-        float w = 0.0f;
-        for (int row = 0; row < 4; ++row)
-        {
-            const auto value = (inv[row] * ndcX + inv[4 + row] * ndcY + inv[8 + row] * z + inv[12 + row]) / d;
-            if (row < 3) out[(size_t) row] = value; else w = value;
-        }
-        if (std::abs(w) < 1.0e-20f) return false;
-        for (auto& c : out) c /= w;
-        return true;
-    };
-    std::array<float, 3> nearPoint {}, farPoint {};
-    if (!unproject(-1.0f, nearPoint) || !unproject(1.0f, farPoint)) return false;
-    origin = nearPoint;
-    for (size_t k = 0; k < 3; ++k) direction[k] = farPoint[k] - nearPoint[k];
-    return true;
+    const double cp=std::cos(pitch),sp=std::sin(pitch),cy=std::cos(yaw),sy=std::sin(yaw);
+    const double right[]{cy,sy,0},up[]{-sp*sy,sp*cy,cp},back[]{cp*sy,-cp*cy,sp},target[]{targetX,targetY,targetZ};
+    const double x=(2.0*position.x/getWidth()-1.0)*std::tan(.425)*getWidth()/getHeight(),y=(1.0-2.0*position.y/getHeight())*std::tan(.425);
+    double norm=0;for(int i=0;i<3;++i){origin[i]=(float)(target[i]+distance*back[i]-panX*right[i]-panY*up[i]);direction[i]=(float)(right[i]*x+up[i]*y-back[i]);norm+=(double)direction[i]*direction[i];}
+    norm=std::sqrt(norm);for(auto& c:direction)c=(float)(c/norm);return true;
 }
 bool Viewport3D::toScreen(const std::array<float, 3>& p, juce::Point<float>& screen) const
 {
     if (getWidth() <= 0 || getHeight() <= 0) return false;
-    const auto vp = mul(projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
-    float clip[4];
-    for (int row = 0; row < 4; ++row) clip[row] = vp.v[row] * p[0] + vp.v[4 + row] * p[1] + vp.v[8 + row] * p[2] + vp.v[12 + row];
-    if (clip[3] <= 1.0e-6f) return false;
-    screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * (float) getWidth(), (1.0f - clip[1] / clip[3]) * 0.5f * (float) getHeight() };
+    // Screen X/Y need no depth range. Region selection projects many vertices;
+    // avoid rescanning all assembly bounds for each of them.
+    const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY);
+    double eye[3];
+    for (int row = 0; row < 3; ++row) eye[row] = (double)v.v[row]*p[0]+(double)v.v[4+row]*p[1]+(double)v.v[8+row]*p[2]+v.v[12+row];
+    if (-eye[2] <= 1.0e-12) return false;
+    const double factor=1.0/std::tan(.425),aspect=(double)getWidth()/getHeight();
+    screen = { (float)((eye[0]*factor/aspect/-eye[2]+1)*.5*getWidth()), (float)((1-eye[1]*factor/-eye[2])*.5*getHeight()) };
     return true;
 }
 // Intersection of the view ray with the drag plane captured at the press.
@@ -212,9 +177,10 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
     using Mode = djehuti::cad::CadSelection::Mode;
     djehuti::cad::CadPick result;
     if (pickSnapshot == nullptr || getWidth() <= 0 || getHeight() <= 0) return result;
-    const auto viewProjection = mul(projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
+    const auto pickClip=clippingPlanes();
+    const auto viewProjection = mul(projectionFor(getWidth(), getHeight(), pickClip), camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY));
     const auto w = (float) getWidth(), h = (float) getHeight();
-    float bestDepth = 2.0f;
+    float bestDepth = std::numeric_limits<float>::infinity();
     struct Draw { const djehuti::cad::CadMesh* mesh; M4 model; juce::String id; };
     std::vector<Draw> draws;
     for (const auto& mesh : pickSnapshot->meshes)
@@ -233,8 +199,8 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
             const auto* v = mesh.vertices.data() + index * 6u;
             float clip[4];
             for (int row = 0; row < 4; ++row) clip[row] = mvp.v[row] * v[0] + mvp.v[4 + row] * v[1] + mvp.v[8 + row] * v[2] + mvp.v[12 + row];
-            if (clip[3] <= 1.0e-6f) return false;
-            screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * w, (1.0f - clip[1] / clip[3]) * 0.5f * h }; depth = clip[2] / clip[3];
+            if (clip[3] <= 1.0e-12f) return false;
+            screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * w, (1.0f - clip[1] / clip[3]) * 0.5f * h }; depth = clip[3];
             return true;
         };
         for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
@@ -247,8 +213,8 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
             const auto v = ((c.x - position.x) * (a.y - position.y) - (a.x - position.x) * (c.y - position.y)) / area;
             const auto t = 1.0f - u - v;
             if (u < 0.0f || v < 0.0f || t < 0.0f) continue;
-            const auto depth = u * da + v * db + t * dc;
-            if (depth >= -1.0f && depth < bestDepth)
+            const auto depth = 1.0f/(u/da+v/db+t/dc);
+            if (depth>=pickClip[0] && depth<=pickClip[1] && depth < bestDepth)
             {
                 bestDepth = depth; result.drawId = draw.id; result.featureId = mesh.featureId; result.face = mesh.faceIndex;
                 double weights[3]{u,v,t},sum=0;
@@ -273,8 +239,8 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
             {
                 const auto* v = line.points.data() + i * 3u; float clip[4];
                 for (int row = 0; row < 4; ++row) clip[row] = mvp.v[row] * v[0] + mvp.v[4 + row] * v[1] + mvp.v[8 + row] * v[2] + mvp.v[12 + row];
-                if (clip[3] <= 1.0e-6f) return false;
-                screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * w, (1.0f - clip[1] / clip[3]) * 0.5f * h }; depth = clip[2] / clip[3];
+                if (clip[3] <= 1.0e-12f) return false;
+                screen = { (clip[0] / clip[3] + 1.0f) * 0.5f * w, (1.0f - clip[1] / clip[3]) * 0.5f * h }; depth = clip[3];
                 return true;
             };
             for (size_t i = 0; i + 1 < line.points.size() / 3; ++i)
@@ -284,8 +250,8 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
                 const auto ab = b - a; const auto len2 = ab.x * ab.x + ab.y * ab.y;
                 const auto t = len2 > 0.0f ? juce::jlimit(0.0f, 1.0f, ((position.x - a.x) * ab.x + (position.y - a.y) * ab.y) / len2) : 0.0f;
                 const auto closest = a + ab * t; const auto distanceToEdge = closest.getDistanceFrom(position);
-                const auto depth = da + (db - da) * t;
-                if (distanceToEdge < bestDistance && (bestDepth > 1.5f || depth <= bestDepth + 0.002f)) { bestDistance = distanceToEdge; edgePick = { id, line.featureId, -1, line.edgeIndex }; }
+                const auto depth = 1.0f/((1.0f-t)/da+t/db);
+                if (distanceToEdge < bestDistance && (!std::isfinite(bestDepth) || depth <= bestDepth + juce::jmax(depth*1e-5f,4*distance*std::tan(.425f)/juce::jmax(1,getHeight())))) { bestDistance = distanceToEdge; edgePick = { id, line.featureId, -1, line.edgeIndex }; }
             }
         }
     }
@@ -310,11 +276,10 @@ void Viewport3D::mouseDrag(const juce::MouseEvent& e)
         if (onFrameRequested) onFrameRequested();
         return;
     }
-    const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { panX += d.x * 0.01f; panY -= d.y * 0.01f; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } dragStart = now; cameraChanged(); }
+    const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { const auto unitsPerPixel=2.0f*distance*std::tan(0.425f)/(float)juce::jmax(1,getHeight()); panX += d.x * unitsPerPixel; panY -= d.y * unitsPerPixel; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } dragStart = now; cameraChanged(); }
 void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w)
 {
-    const auto minimumDistance = juce::jmax(0.001f, sceneRadius * 0.02f);
-    const auto maximumDistance = juce::jmax(1000.0f, sceneRadius * 100000.0f);
+    const auto range=navigationRange();const auto minimumDistance=range[0], maximumDistance=range[1];
     distance = juce::jlimit(minimumDistance, maximumDistance, distance * std::exp(-w.deltaY * 0.5f)); cameraChanged();
 }
 
@@ -324,22 +289,26 @@ juce::var Viewport3D::cameraState() const
     o->setProperty("yawDeg", (double)juce::radiansToDegrees(yaw)); o->setProperty("pitchDeg", (double)juce::radiansToDegrees(pitch));
     o->setProperty("distance", distance); o->setProperty("panX", panX); o->setProperty("panY", panY);
     o->setProperty("targetX", targetX); o->setProperty("targetY", targetY); o->setProperty("targetZ", targetZ);
+    const auto clip=clippingPlanes();o->setProperty("nearPlane",clip[0]);o->setProperty("farPlane",clip[1]);o->setProperty("depthMode",clip[1]/clip[0]>50000?"logarithmic":"linear");
+    o->setProperty("gridRenderer","adaptive_shader");o->setProperty("floorReady",floorReady.load());o->setProperty("gridVertices",showFloor?3:0);o->setProperty("gridSpacing",gridSpacing);o->setProperty("floorGpuMs",(double)floorGpuNs.load()/1e6);o->setProperty("renderedFrames",(juce::int64)renderedFrames.load());o->setProperty("geometryUploads",(juce::int64)geometryUploads.load());
     o->setProperty("showing", isShowing()); return o;
 }
 bool Viewport3D::controlCamera(const juce::var& args, juce::String& error)
 {
     const auto op = args.getProperty("operation", "set").toString();
     if (op == "fit") { fitAll(); return true; }
+    if(op=="fitSelection"){if(fitSelection())return true;error="Select visible model geometry to frame.";return false;}
+    if(op=="capture"){if(!juce::File::isAbsolutePath(args["path"].toString())){error="Capture needs an absolute PNG path.";return false;}return captureViewport(juce::File(args["path"].toString()),error);}
     if (op == "reset") { resetCamera(); return true; }
     if (op == "state") return true;
-    if (op != "set") { error = "Camera operation must be set, fit, reset or state."; return false; }
+    if (op != "set") { error = "Camera operation must be set, fit, fitSelection, reset, state or capture."; return false; }
     for (const auto* key : { "yawDeg", "pitchDeg", "distance", "panX", "panY" }) if (args.hasProperty(key))
     {
         const auto value = args[key];
-        if (!(value.isDouble() || value.isInt() || value.isInt64()) || !std::isfinite((double)value) || std::abs((double)value) > 1.0e9)
-        { error = juce::String(key) + " must be a finite camera value within +/- 1e9."; return false; }
+        if (!(value.isDouble() || value.isInt() || value.isInt64()) || !std::isfinite((double)value) || std::abs((double)value) > std::numeric_limits<float>::max()/1024.0)
+        { error = juce::String(key) + " must be a finite, representable camera value."; return false; }
     }
-    const auto minimum = juce::jmax(0.001f, sceneRadius * 0.02f), maximum = juce::jmax(1000.0f, sceneRadius * 100000.0f);
+    const auto range=navigationRange();const auto minimum=range[0],maximum=range[1];
     const auto nextDistance = (double)args.getProperty("distance", distance);
     const auto nextPitch = (double)args.getProperty("pitchDeg", juce::radiansToDegrees(pitch));
     if (nextDistance < minimum || nextDistance > maximum || std::abs(nextPitch) > juce::radiansToDegrees(1.4))
@@ -386,19 +355,21 @@ void Viewport3D::updateSceneBounds(const std::shared_ptr<const djehuti::cad::Cad
 // Posed scene bounds drive the initial framing and the clipping range; motion never refits the user's camera.
 void Viewport3D::updatePosedBounds()
 {
-    bool found = false;
+    posedBoxes.clear();bool found = false;
     float minX = 0.0f, minY = 0.0f, minZ = 0.0f, maxX = 0.0f, maxY = 0.0f, maxZ = 0.0f;
     std::vector<V3> corners;
     auto addBox = [&](const Bounds& b, const float* matrix)
     {
+        std::array<std::array<float,3>,8> box;
         for (int c = 0; c < 8; ++c)
         {
             const V3 local { (c & 1) ? b.max[0] : b.min[0], (c & 2) ? b.max[1] : b.min[1], (c & 4) ? b.max[2] : b.min[2] };
             const V3 p = matrix == nullptr ? local : V3 { matrix[0] * local.x + matrix[4] * local.y + matrix[8] * local.z + matrix[12], matrix[1] * local.x + matrix[5] * local.y + matrix[9] * local.z + matrix[13], matrix[2] * local.x + matrix[6] * local.y + matrix[10] * local.z + matrix[14] };
-            corners.push_back(p);
+            corners.push_back(p);box[(size_t)c]={p.x,p.y,p.z};
             if (!found) { minX = maxX = p.x; minY = maxY = p.y; minZ = maxZ = p.z; found = true; }
             else { minX = juce::jmin(minX, p.x); minY = juce::jmin(minY, p.y); minZ = juce::jmin(minZ, p.z); maxX = juce::jmax(maxX, p.x); maxY = juce::jmax(maxY, p.y); maxZ = juce::jmax(maxZ, p.z); }
         }
+        posedBoxes.push_back(box);
     };
     for (const auto& [id, b] : featureBounds) if (pose == nullptr || pose->instancedFeatures.count(id) == 0) addBox(b, nullptr);
     if (pose != nullptr) for (const auto& instance : pose->instances) if (const auto b = featureBounds.find(instance.featureId); b != featureBounds.end()) addBox(b->second, instance.matrix.data());
@@ -407,7 +378,7 @@ void Viewport3D::updatePosedBounds()
     {
         sceneCenterX = (minX + maxX) * 0.5f; sceneCenterY = (minY + maxY) * 0.5f; sceneCenterZ = (minZ + maxZ) * 0.5f;
         const auto dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
-        sceneRadius = juce::jmax(0.001f, 0.5f * std::sqrt(dx * dx + dy * dy + dz * dz));
+        sceneRadius = juce::jmax(1.0e-6f, 0.5f * std::sqrt(dx * dx + dy * dy + dz * dz));
         tryPendingFit();
     }
     else if (fitPending) { targetX = targetY = targetZ = 0.0f; sceneRadius = emptySceneRadius; distance = homeDistance; }   // empty document: millimetre-scale working area
@@ -420,9 +391,9 @@ void Viewport3D::frameScene()
     const auto verticalHalfFov = 0.85f * 0.5f;
     const auto horizontalHalfFov = std::atan(std::tan(verticalHalfFov) * aspect);
     const auto limitingHalfFov = juce::jmin(verticalHalfFov, horizontalHalfFov);
-    const auto margin = juce::jmax(0.001f, sceneRadius) * 1.25f;
+    const auto margin = juce::jmax(1.0e-6f, sceneRadius) * 1.25f;
     targetX = sceneCenterX; targetY = sceneCenterY; targetZ = sceneCenterZ;
-    distance = juce::jmax(0.001f, margin / std::tan(limitingHalfFov));
+    distance = juce::jmax(1.0e-6f, margin / std::tan(limitingHalfFov));
     panX = panY = 0.0f;
 }
 void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { pickSnapshot = next; updateSceneBounds(next); pendingSnapshot = std::move(next); markDirty(); }
@@ -450,12 +421,12 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
         renderDirty = true;
     }
     tryPendingFit();
-    const auto p = projectionFor(getWidth(), getHeight(), distance, juce::jmax(sceneRadius, clipRadius)); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
+    const auto p = projectionFor(getWidth(), getHeight(), clippingPlanes()); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
     std::array<float, 32> cameraState {};
     std::memcpy(cameraState.data(), p.v, sizeof(p.v)); std::memcpy(cameraState.data() + 16, v.v, sizeof(v.v));
     if (!renderDirty.exchange(false) && hasPublished && cameraState == lastCamera) return false;   // nothing changed: no frame, no render
     updateReferenceGuides();
-    DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle;
+    DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle;const auto clip=clippingPlanes();packet.nearPlane=clip[0];packet.farPlane=clip[1];packet.floorVisible=showFloor;
     if (frames.publish(packet)) { lastCamera = cameraState; hasPublished = true; }
     else renderDirty = true;   // every slot is still in flight: the render below retires fences, then retry next tick
     context.triggerRepaint();
@@ -464,10 +435,16 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 
 void Viewport3D::newOpenGLContextCreated()
 {
-    const char* vertex = "#version 410 core\nlayout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(std140) uniform FrameData { mat4 uMVP; mat4 uModel; }; uniform mat4 uInstance; out vec3 n; void main(){ n=mat3(uModel)*mat3(uInstance)*normal; gl_Position=uMVP*uInstance*vec4(position,1.0); }";
-    const char* fragment = "#version 410 core\nin vec3 n; uniform vec3 uColour; out vec4 colour; void main(){ vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(gl_FrontFacing?n:-n),l),0.0); colour=vec4(uColour*(0.25+0.75*d),1.0); }";
+    const char* vertex = "#version 410 core\nlayout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(std140) uniform FrameData { mat4 uMVP; mat4 uModel; }; uniform mat4 uInstance; out vec3 n; out float viewDepth; void main(){ n=mat3(uModel)*mat3(uInstance)*normal; gl_Position=uMVP*uInstance*vec4(position,1.0); viewDepth=gl_Position.w; }";
+    const char* fragment = "#version 410 core\nin vec3 n; in float viewDepth; uniform vec3 uColour; uniform vec2 uClip; uniform float uDepthBias; out vec4 colour; void main(){ if(viewDepth<uClip.x || viewDepth>uClip.y)discard; gl_FragDepth=(uClip.y/uClip.x>50000.0 ? log2(1.0+viewDepth/uClip.x)/log2(1.0+uClip.y/uClip.x) : gl_FragCoord.z)+uDepthBias; vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(gl_FrontFacing?n:-n),l),0.0); colour=vec4(uColour*(0.25+0.75*d),1.0); }";
     shader = std::make_unique<juce::OpenGLShaderProgram>(context);
-    if (!shader->addVertexShader(vertex) || !shader->addFragmentShader(fragment) || !shader->link()) { glStatus = "Shader error: " + shader->getLastError(); juce::Logger::writeToLog(glStatus); shader.reset(); repaint(); return; }
+    const char* regular=R"(#version 410 core
+in vec3 n; uniform vec3 uColour; out vec4 colour;
+void main(){vec3 l=normalize(vec3(.4,.8,.6));float d=max(dot(normalize(gl_FrontFacing?n:-n),l),0.0);colour=vec4(uColour*(.25+.75*d),1.0);})";
+    if (!shader->addVertexShader(vertex) || !shader->addFragmentShader(regular) || !shader->link()) { glStatus = "Shader error: " + shader->getLastError(); juce::Logger::writeToLog(glStatus); shader.reset(); repaint(); return; }
+    rangeShader=std::make_unique<juce::OpenGLShaderProgram>(context);
+    if(!rangeShader->addVertexShader(vertex)||!rangeShader->addFragmentShader(fragment)||!rangeShader->link()){glStatus="Range shader error: "+rangeShader->getLastError();juce::Logger::writeToLog(glStatus);rangeShader.reset();return;}
+    const auto rangeBlock=glGetUniformBlockIndex(rangeShader->getProgramID(),"FrameData");if(rangeBlock!=GL_INVALID_INDEX)glUniformBlockBinding(rangeShader->getProgramID(),rangeBlock,0);
     positionAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "position"); normalAttribute = std::make_unique<juce::OpenGLShaderProgram::Attribute>(*shader, "normal");
     glGenVertexArrays(1, &vao); glBindVertexArray(vao); glGenBuffers(1, &vbo); glBindBuffer(GL_ARRAY_BUFFER, vbo); glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW); glGenBuffers(1, &ibo); glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo); glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW); glGenBuffers(3, frameBuffers.data());
     for (auto b : frameBuffers) { glBindBuffer(GL_UNIFORM_BUFFER, b); glBufferData(GL_UNIFORM_BUFFER, sizeof(DjehutiMat4) * 2, nullptr, GL_STREAM_DRAW); }
@@ -476,6 +453,7 @@ void Viewport3D::newOpenGLContextCreated()
     // Joint axis indications share the shader: same vertex layout, drawn as lines.
     glGenVertexArrays(1, &axisVao); glBindVertexArray(axisVao); glGenBuffers(1, &axisVbo); glBindBuffer(GL_ARRAY_BUFFER, axisVbo); glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(positionAttribute->attributeID); glVertexAttribPointer(positionAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr); glEnableVertexAttribArray(normalAttribute->attributeID); glVertexAttribPointer(normalAttribute->attributeID, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float))); glBindVertexArray(0);
+    createFloorRenderer();
     const auto* version = reinterpret_cast<const char*>(glGetString(GL_VERSION)); const auto* shading = reinterpret_cast<const char*>(glGetString(GL_SHADING_LANGUAGE_VERSION)); glStatus = juce::String("OpenGL ") + (version != nullptr ? version : "version unavailable") + " / GLSL " + (shading != nullptr ? shading : "unavailable") + " / 3 UBO frames"; glReady = true; renderDirty = true;   // a new context needs a fresh frame
 }
 void Viewport3D::renderOpenGL()
@@ -499,10 +477,11 @@ void Viewport3D::renderOpenGL()
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size() * sizeof(std::uint32_t)), indices.data(), GL_DYNAMIC_DRAW);
         geometryIndexCount = static_cast<GLsizei>(indices.size());
-        uploadedGeometryRevision = pendingSnapshot->revision; uploadedGeometryDocument=pendingSnapshot->documentInstance;
+        ++geometryUploads;uploadedGeometryRevision = pendingSnapshot->revision; uploadedGeometryDocument=pendingSnapshot->documentInstance;
     }
     DjehutiFramePacket packet; int slot = -1; if (frames.consumeNewest(packet, slot)) { lastFrame = packet; hasFrame = true; lastSlot = slot; }
     if (!hasFrame) return;
+    const bool wideDepth=lastFrame.farPlane/lastFrame.nearPlane>50000;auto* drawShader=wideDepth?rangeShader.get():shader.get();if(drawShader==nullptr)return;
     // JUCE paints the component overlay after renderOpenGL() and leaves GL_DEPTH_TEST disabled, so restore the
     // 3D pipeline state every frame; otherwise parts are layered by draw order instead of depth while orbiting.
     glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS); glDepthMask(GL_TRUE); glEnable(GL_CULL_FACE); glCullFace(GL_BACK); glFrontFace(GL_CCW); glDisable(GL_BLEND);
@@ -513,7 +492,8 @@ void Viewport3D::renderOpenGL()
         DjehutiMat4 matrices[2]; std::memcpy(matrices[0].v, finalMvp.v, sizeof(finalMvp.v)); matrices[1] = lastFrame.model;
         glBindBuffer(GL_UNIFORM_BUFFER, frameBuffers[activeSlot]); glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(matrices), matrices);
     }
-    glBindBufferBase(GL_UNIFORM_BUFFER, 0, frameBuffers[activeSlot]); shader->use();
+    renderFloor(lastFrame);++renderedFrames;
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, frameBuffers[activeSlot]); drawShader->use();if(wideDepth){drawShader->setUniform("uClip",lastFrame.nearPlane,lastFrame.farPlane);drawShader->setUniform("uDepthBias",0.0f);}
     if (geometryIndexCount > 0)
     {
         std::vector<std::pair<juce::String, juce::Colour>> colours;
@@ -527,8 +507,8 @@ void Viewport3D::renderOpenGL()
         {
             if(range.doubleSided)glDisable(GL_CULL_FACE);else glEnable(GL_CULL_FACE);
             const auto colour = colourOf(id);
-            shader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
-            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+            drawShader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
+            drawShader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
             glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));
         };
         const auto unit = identity();
@@ -559,8 +539,8 @@ void Viewport3D::renderOpenGL()
             glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(float)), data.data(), GL_DYNAMIC_DRAW);
             glDisable(GL_DEPTH_TEST);
             glBindVertexArray(axisVao);
-            shader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
-            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+            drawShader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
+            drawShader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
             glDrawArrays(strip ? GL_LINE_STRIP : GL_LINES, 0, static_cast<GLsizei>(points.size() / 3));
             glBindVertexArray(0);
             glEnable(GL_DEPTH_TEST);
@@ -573,15 +553,15 @@ void Viewport3D::renderOpenGL()
             if (!p.valid() || !matrixFor(p, m)) continue;
             if (p.face >= 0)
             {
-                glDepthFunc(GL_LEQUAL); glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0f, -1.0f);
+                if(wideDepth)drawShader->setUniform("uDepthBias",-2.0e-6f);glDepthFunc(GL_LEQUAL); glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0f, -1.0f);
                 glBindVertexArray(vao);
-                shader->setUniformMat4("uInstance", m.v, 1, GL_FALSE);
-                shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+                drawShader->setUniformMat4("uInstance", m.v, 1, GL_FALSE);
+                drawShader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
                 for (const auto& range : meshRanges)
                     if (range.featureId == p.featureId && range.faceIndex == p.face)
                     {if(range.doubleSided)glDisable(GL_CULL_FACE);else glEnable(GL_CULL_FACE);glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));}
                 glBindVertexArray(0);
-                glDisable(GL_POLYGON_OFFSET_FILL); glDepthFunc(GL_LESS);
+                if(wideDepth)drawShader->setUniform("uDepthBias",0.0f);glDisable(GL_POLYGON_OFFSET_FILL); glDepthFunc(GL_LESS);
             }
             if (p.edge >= 0 && geometry != nullptr)
                 for (const auto& line : geometry->edges) if (line.featureId == p.featureId && line.edgeIndex == p.edge) drawLines(line.points, true, m.v, colour);
@@ -599,11 +579,11 @@ void Viewport3D::renderOpenGL()
             glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(float)), lines.data(), GL_DYNAMIC_DRAW);
             glDisable(GL_DEPTH_TEST);
             glBindVertexArray(axisVao);
-            shader->setUniformMat4("uInstance", unit.v, 1, GL_FALSE);
+            drawShader->setUniformMat4("uInstance", unit.v, 1, GL_FALSE);
             for (size_t i = 0; i < posed->overlay.size(); ++i)
             {
                 const juce::Colour colour(posed->overlay[i].argb);
-                shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+                drawShader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
                 glDrawArrays(GL_LINES, static_cast<GLint>(i * 2), 2);
             }
             glBindVertexArray(0);
@@ -622,9 +602,9 @@ void Viewport3D::renderOpenGL()
             glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(float)), lines.data(), GL_DYNAMIC_DRAW);
             glDisable(GL_DEPTH_TEST);
             glBindVertexArray(axisVao);
-            shader->setUniformMat4("uInstance", unit.v, 1, GL_FALSE);
+            drawShader->setUniformMat4("uInstance", unit.v, 1, GL_FALSE);
             const juce::Colour colour(inspection.front().argb);
-            shader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
+            drawShader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
             glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(inspection.size() * 2));
             glBindVertexArray(0);
             glEnable(GL_DEPTH_TEST);
@@ -636,10 +616,10 @@ void Viewport3D::renderOpenGL()
     std::map<juce::uint32,std::vector<float>> batches;
     for(const auto& line:guides) for(const auto& p:{line.a,line.b}) { auto& v=batches[line.argb]; v.insert(v.end(),{p[0],p[1],p[2],.3714f,.7428f,.5571f}); }
     glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL); glDepthMask(GL_FALSE); glBindVertexArray(axisVao);
-    const auto unit=identity(); shader->setUniformMat4("uInstance",unit.v,1,GL_FALSE);
+    const auto unit=identity(); drawShader->setUniformMat4("uInstance",unit.v,1,GL_FALSE);
     for(const auto& [argb,vertices]:batches)
     {
-        const juce::Colour colour(argb); shader->setUniform("uColour",colour.getFloatRed(),colour.getFloatGreen(),colour.getFloatBlue());
+        const juce::Colour colour(argb); drawShader->setUniform("uColour",colour.getFloatRed(),colour.getFloatGreen(),colour.getFloatBlue());
         glBindBuffer(GL_ARRAY_BUFFER,axisVbo); glBufferData(GL_ARRAY_BUFFER,(GLsizeiptr)(vertices.size()*sizeof(float)),vertices.data(),GL_DYNAMIC_DRAW);
         glDrawArrays(GL_LINES,0,(GLsizei)(vertices.size()/6));
     }
@@ -647,7 +627,7 @@ void Viewport3D::renderOpenGL()
     if (slot >= 0) fences[activeSlot] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 }
 void Viewport3D::drawCube(const float*) {}
-void Viewport3D::releaseGL() { uploadedGeometryRevision=0; uploadedGeometryDocument=0; for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); if (axisVao != 0) glDeleteVertexArrays(1, &axisVao); if (axisVbo != 0) glDeleteBuffers(1, &axisVbo); frameBuffers.fill(0); vao = vbo = ibo = axisVao = axisVbo = 0; frames.reset(); lastSlot = -1; hasFrame = false; renderDirty = true; uploadedGeometryRevision = 0; geometryIndexCount = 0; meshRanges.clear(); shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
+void Viewport3D::releaseGL() { if(floorVao)glDeleteVertexArrays(1,&floorVao);floorVao=0;glDeleteQueries(3,floorQueries);std::fill(std::begin(floorQueries),std::end(floorQueries),0);std::fill(std::begin(floorQueryPending),std::end(floorQueryPending),false);floorShader.reset();rangeShader.reset();floorReady=false; uploadedGeometryRevision=0; uploadedGeometryDocument=0; for (auto& f : fences) if (f != nullptr) { glDeleteSync(f); f = nullptr; } glDeleteBuffers(3, frameBuffers.data()); if (vao != 0) glDeleteVertexArrays(1, &vao); if (vbo != 0) glDeleteBuffers(1, &vbo); if (ibo != 0) glDeleteBuffers(1, &ibo); if (axisVao != 0) glDeleteVertexArrays(1, &axisVao); if (axisVbo != 0) glDeleteBuffers(1, &axisVbo); frameBuffers.fill(0); vao = vbo = ibo = axisVao = axisVbo = 0; frames.reset(); lastSlot = -1; hasFrame = false; renderDirty = true; uploadedGeometryRevision = 0; geometryIndexCount = 0; meshRanges.clear(); shader.reset(); positionAttribute.reset(); normalAttribute.reset(); glReady = false; }
 void Viewport3D::openGLContextClosing() { releaseGL(); }
 
 class ThreeDViewsPanel::ViewTile final : public juce::Component
@@ -734,6 +714,7 @@ void ThreeDViewsPanel::restoreViewState(const juce::String& json)
 bool Viewport3D::keyPressed(const juce::KeyPress& key)
 {
     if(key==juce::KeyPress::escapeKey) { selectingRegion=false; if(selection!=nullptr) selection->setTool(djehuti::cad::CadSelection::Tool::pointer); markDirty(); repaint(); return true; }
+    if((key.getTextCharacter()=='F'||key.getTextCharacter()=='f')&&key.getModifiers().isShiftDown()){fitSelection();return true;}
     if(key.getTextCharacter()=='f' && !key.getModifiers().isAnyModifierKeyDown()) { fitAll(); return true; }
     return false;
 }

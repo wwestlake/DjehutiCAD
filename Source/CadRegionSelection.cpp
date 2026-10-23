@@ -106,8 +106,7 @@ bool runViewportInteractionCheck(juce::String& detail)
     selection->setMode(CadSelection::Mode::face);
     if(!check(view.pickRegion({0,0},{640,480},false).size()==2,"Face area selection must preserve subshape identity")) return false;
     view.updateReferenceGuides();
-    if(!check(!view.glGuides.empty(),"Default world floor must have visible reference lines")) return false;
-    for(const auto& line:view.glGuides) if(!check(line.a[2]==0 && line.b[2]==0,"World floor must remain at world Z=0")) return false;
+    if(!check(view.guideEnabled("floor") && view.gridSpacing>0,"Default shader floor must have valid world spacing")) return false;
     const auto saved=view.viewState(); view.toggleGuide("floor"); view.restoreViewState(saved);
     if(!check(view.guideEnabled("floor"),"Guide visibility must round-trip")) return false;
     ThreeDViewsPanel views(nullptr);

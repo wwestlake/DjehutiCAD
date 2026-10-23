@@ -1435,6 +1435,10 @@ public:
             juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-analysis-check.result.json").replaceWithText(juce::JSON::toString(report, false));
             std::exit(ok ? 0 : 1);
         }
+        if(commandLine.startsWith("--cad-viewport-range-check"))
+        {
+            juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runViewportRangeCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-viewport-range-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
+        }
         if (commandLine.startsWith("--cad-surface-check"))
         {
             juce::MessageManager::callAsync([this]{juce::var report;const bool ok=djehuti::cad::runCadSurfaceCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-surface-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;

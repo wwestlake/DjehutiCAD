@@ -10,6 +10,7 @@
 #include <atomic>
 
 bool runViewportCameraCheck(juce::String& detail);
+bool runViewportRangeCheck(juce::var& report);
 bool runViewportInteractionCheck(juce::String& detail);
 
 class Viewport3D final : public juce::Component,
@@ -50,6 +51,7 @@ public:
     std::function<void()> onFrameRequested;
     void setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next);
     void fitAll();
+    bool fitSelection();
     juce::String diagnostics() const;
     void setTitle(const juce::String& text) { title = text; repaint(); }
     void setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next);
@@ -70,6 +72,19 @@ public:
 
 private:
     friend bool runViewportInteractionCheck(juce::String&);
+    friend bool runViewportRangeCheck(juce::var&);
+    std::array<float,2> clippingPlanes() const;
+    std::array<float,2> navigationRange() const;
+    void renderFloor(const DjehutiFramePacket&);
+    void createFloorRenderer();
+    bool captureViewport(const juce::File&,juce::String&);
+    std::vector<std::array<std::array<float,3>,8>> posedBoxes;
+    std::unique_ptr<juce::OpenGLShaderProgram> floorShader,rangeShader;
+    std::atomic<bool> floorReady{false};
+    GLuint floorVao=0, floorQueries[3]{};
+    int floorQueryCursor=0;
+    bool floorQueryPending[3]{};
+    std::atomic<std::uint64_t> floorGpuNs{0}, renderedFrames{0}, geometryUploads{0};
     void drawReferenceGuides(juce::Graphics&);
     void updateReferenceGuides();
     std::vector<djehuti::cad::CadOverlayLine> glGuides;

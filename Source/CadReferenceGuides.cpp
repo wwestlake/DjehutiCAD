@@ -57,22 +57,11 @@ void Viewport3D::updateReferenceGuides()
         }
         triad(frame,size*1.2f,false);
     };
-    // 1/2/5 spacing in model millimetres; lines stay on exact world coordinates as the camera changes.
-    const double desired=juce::jmax(0.001,(double)distance/24.0);
-    const double decade=std::pow(10.0,std::floor(std::log10(desired)));
-    const double fraction=desired/decade;
+    // Readout at the camera target depth. The shader selects/blends world-aligned
+    // 1/2/5 levels per pixel, including the distant floor near the horizon.
+    const double desired=juce::jmax(1e-9,32.0*distance*std::tan(.425)/juce::jmax(1,getHeight()));
+    const double decade=std::pow(10.0,std::floor(std::log10(desired))),fraction=desired/decade;
     gridSpacing=(float)(decade*(fraction<2?1:fraction<5?2:5));
-    if(showFloor)
-    {
-        const float extent=gridSpacing*24, cx=std::floor(targetX/gridSpacing)*gridSpacing,cy=std::floor(targetY/gridSpacing)*gridSpacing;
-        for(int i=-24;i<=24;++i)
-        {
-            const float x=cx+(float)i*gridSpacing,y=cy+(float)i*gridSpacing;
-            const auto colour=(i%5==0)?0xff3e505b:0xff283943;
-            add({x,cy-extent,0},{x,cy+extent,0},std::abs(x)<gridSpacing*0.01f?0xff4f8665:colour);
-            add({cx-extent,y,0},{cx+extent,y,0},std::abs(y)<gridSpacing*0.01f?0xffa35e59:colour);
-        }
-    }
     if(showWorld) planes(unitFrame(),juce::jmax(1.0f,sceneRadius*0.65f));
     if(showLocal && pickSnapshot!=nullptr && selection!=nullptr)
     {
@@ -127,7 +116,7 @@ void Viewport3D::updateReferenceGuides()
 void Viewport3D::drawReferenceGuides(juce::Graphics& g)
 {
     g.setFont(juce::Font(11.0f)); g.setColour(juce::Colour(0xff9ab5c4));
-    if(showFloor) g.drawText("XY floor | grid "+juce::String(gridSpacing,gridSpacing<1?3:1)+" mm",10,30,280,18,juce::Justification::left);
+    if(showFloor) g.drawText("XY floor | adaptive grid ~ "+juce::String(gridSpacing,gridSpacing<1?3:1)+" mm",10,30,280,18,juce::Justification::left);
     const auto labelFrame=[&](const djehuti::cad::CadLocalFrame& frame)
     {
         juce::Point<float> p;
@@ -180,14 +169,14 @@ void Viewport3D::showContextMenu(const juce::MouseEvent& e)
         else if(hit.edge<0) { menu.addItem(3,"Export selected..."); if(hit.drawId==hit.featureId) { menu.addItem(4,"Hide selected"); menu.addItem(5,"Delete selected"); } }
         menu.addSeparator();
     }
-    menu.addItem(10,"Fit all"); menu.addItem(11,"Reset camera"); menu.addSeparator();
+    menu.addItem(12,"Fit selection",hit.valid());menu.addItem(10,"Fit all"); menu.addItem(11,"Reset camera"); menu.addSeparator();
     const juce::StringArray labels{"Floor grid","World reference planes","Selected local planes","Joint frames and limits"};
     const juce::StringArray keys{"floor","world","local","joints"};
     for(int i=0;i<4;++i) menu.addItem(20+i,labels[i],true,guideEnabled(keys[i]));
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),[safe=juce::Component::SafePointer<Viewport3D>(this),hit](int id)
     {
         if(safe==nullptr || id==0) return;
-        if(id==10) safe->fitAll(); else if(id==11) safe->resetCamera();
+        if(id==12) safe->fitSelection();else if(id==10) safe->fitAll(); else if(id==11) safe->resetCamera();
         else if(id>=20 && id<24) safe->toggleGuide(juce::StringArray{"floor","world","local","joints"}[id-20]);
         else if(safe->onContextCommand) safe->onContextCommand(juce::StringArray{"inspect","sketch","export","hide","delete"}[id-1],hit);
     });

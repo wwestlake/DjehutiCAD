@@ -10,6 +10,8 @@ struct DjehutiFramePacket
     DjehutiMat4 model, view, projection;
     std::uint64_t serial = 0;
     float angle = 0.0f;
+    float nearPlane = 0.01f, farPlane = 1000.0f;
+    bool floorVisible = true;
 };
 
 // Three bounded application-owned frame resources. A slot remains in-flight
