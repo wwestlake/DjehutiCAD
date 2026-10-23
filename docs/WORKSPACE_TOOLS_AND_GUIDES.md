@@ -44,22 +44,22 @@ The dockable Toolbox chooses persistent interaction tools for the shared CAD doc
 - Pointer click selects the geometry under the cursor. Dragging still orbits; Shift/right-drag pans. Wheel zooms.
 - Box left to right encloses projected geometry; box right to left crosses geometry. Circle crosses projected geometry. These area tools include obscured geometry, rather than only visible surfaces. Ctrl adds to an area selection.
 - Area selection is a model-view operation in this milestone. The existing sketch editor retains its entity selection behavior.
-- Esc in a 3D view cancels the area gesture and returns to Pointer. F fits that view.
+- Esc in a 3D view cancels the area gesture and returns to Pointer. F fits that view; Shift+F frames the selected geometry.
 - Selection highlights are shared across views; cameras remain independent. The primary selected item drives the inspector and local-plane display. Right-click actions target the item under the pointer; multi-selection does not imply a bulk Delete or bulk modeling operation.
 
-Right-click a 3D view for Fit/Reset and its guide visibility. A selected solid body also offers inspect/export/hide/delete; an instance offers inspect/export; a face offers Create Sketch (the existing service checks planarity and persistent support). Right-drag remains navigation and does not open a menu after a drag.
+Right-click a 3D view for Fit all, Fit selection, Reset and its guide visibility. Selection framing uses the selected bodies' bounds, including solved instance positions. A selected solid body also offers inspect/export/hide/delete; an instance offers inspect/export; a face offers Create Sketch (the existing service checks planarity and persistent support). Right-drag remains navigation and does not open a menu after a drag.
 
 ## Reference geometry
 
-- Floor: a fixed XY world grid at Z=0, with adaptive 1/2/5 millimeter spacing. It is visible by default.
-- Camera: world Z is up; the default/reset isometric view looks down onto the XY floor. Orbit changes the view around the shared model.
+- Floor: the XY world plane at Z=0, visible by default. A procedural shader covers the visible plane without a finite line-patch edge. World-aligned 1/2/5 millimeter levels blend continuously with pixel scale; major lines occur every five intervals. The grid fades toward the horizon and stays behind model geometry. The HUD spacing is approximate because perspective changes the scale across the floor.
+- Camera: world Z is up; the default/reset isometric view looks down onto the XY floor. Orbit changes the view around the shared model. Pan scales with viewing distance, and wheel zoom retains its exponential response. Clipping follows visible posed model bounds; unusually wide depth ranges use logarithmic depth to reduce Z-fighting. Fit respects the viewport aspect ratio. Selection framing permits inspecting a small component within a large assembly.
 - World planes: optional bounded XY/XZ/YZ grids and labeled axes at the world origin.
 - Selected local planes: optional grids and XYZ axes at the selected part's authored local origin, or the selected instance's solved local frame. A local origin is not a computed geometric center.
 - Joint frames and limits: optional parent/reference and moving XYZ triads, a local rotation-plane grid, current coordinate and role, and configured limits. Revolute joints show an angular guide and current radial direction. Prismatic joints show the travel axis and limit ticks. Labels distinguish hard from advisory limits. Selected joints are emphasized by showing their guides; otherwise all supported moving joints are shown.
 
 Coordinates and frames come from the same solved pose as the rendered assembly. The muted triad is the parent/reference joint frame; the bright triad is the moving frame. Reference angles are respected, and linear display converts runtime meters to millimeters. Angular labels use degrees. Very large angular spans are visually bounded to two revolutions; numerical limits retain their full values.
 
-Each view has its own visibility settings, available from its right-click menu. The 3D Views reference menu changes all views together. Settings and the number of open 3D views persist between ordinary application sessions. Guide geometry uses the shader/depth pipeline and is excluded from geometry selection, Fit All bounds, document history and manufacturing exports. Grid visibility does not change snapping.
+Each view has its own visibility settings, available from its right-click menu. The 3D Views reference menu changes all views together. Settings and the number of open 3D views persist between ordinary application sessions. The floor is a background pass independent of model clipping; world/local/joint guides retain their depth-tested overlays. Guides are excluded from geometry selection, Fit All bounds, document history and manufacturing exports. Grid visibility does not change snapping.
 
 ## Automation
 
@@ -81,5 +81,7 @@ Workspace identifiers: cad, frust, nodes, views, agent, toolbox. Guide operation
 ## Verification boundary
 
 `--cad-workspace-check` is a focused application diagnostic for local menu ownership, floating/redocking, persistent tool state, guide commands and independent settings, unchanged document revision, region picking and floor geometry. It uses an isolated in-memory workspace and does not save its preferences. Results are written to `build/cad-workspace-check.result.json`.
+
+`--cad-viewport-range-check` checks adaptive clipping, scale extremes, aspect-aware fit, posed selection framing, camera callbacks and picking. Results are written to `build/cad-viewport-range-check.result.json`. See [Order 6 validation and limitations](VIEWPORT_RANGE_ORDER6.md).
 
 This diagnostic establishes service/component behavior. It does not substitute for observing native pointer interaction, rendered guides or menus in the running application. Actual build/check/GUI results are recorded in the handoff at closeout.

@@ -42,6 +42,10 @@ These share GUI previews, APIs, FRust hosts, CAD nodes and
 The [Order 5 completion report](docs/PROFESSIONAL_MODELING_ORDER5.md) records
 verified behavior, test counts and geometric limits.
 
+The 3D viewport uses a procedural XY floor, adaptive model clipping and
+selection framing. See [viewport controls](docs/WORKSPACE_TOOLS_AND_GUIDES.md)
+and the [Order 6 rendering report](docs/VIEWPORT_RANGE_ORDER6.md).
+
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
 

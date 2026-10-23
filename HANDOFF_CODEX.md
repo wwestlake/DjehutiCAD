@@ -1,6 +1,28 @@
 # DjehutiCAD Architecture Handoff
 
-Latest expansion update (October 23, 2026): **Order 5 is complete**. Surface
+Latest viewport update (October 23, 2026): **Order 6 is complete**. The finite
+floor patch and model clipping both caused the short grid range. A procedural
+world-XY floor now blends 1/2/5 spacing across the visible plane; model clipping
+follows posed bounds and uses logarithmic depth only for wide depth ranges.
+Orbit conventions are preserved, pan scales with distance, and Shift+F/context
+Fit selection frames selected bodies/instances. Picking uses analytic rays and
+positive depth. OCCT/OCAF, modeling and engineering history are unchanged.
+
+Commits `29d18b0` and `57a4f2b` implement and validate the viewport changes.
+Debug passed: 59 viewport checks, 20 workspace checks, 83 modeling regressions
+and 23 live API/GPU checks (185 total). Floor rendering was verified out to
+5,000,000 mm distance and through large pans; a 0.01 mm part remained visible
+in a widely separated assembly. Floor GPU cost at 1036x764 was 0.134 ms median,
+0.271 ms maximum over 20 warmed samples. No controlled baseline benchmark was
+performed. See `docs/VIEWPORT_RANGE_ORDER6.md` for details and reproduction.
+
+Native pointer/visual interaction remains unverified after two capture-helper
+timeouts. Native control is released; the owned app was closed with its test
+document saved. Float mesh precision at extreme absolute offsets, Release,
+other drivers and production-scale assembly performance remain limitations or
+unverified behavior. Stop after Order 6; no later batch is authorized.
+
+Previous expansion update (October 23, 2026): **Order 5 is complete**. Surface
 Creation (planar/extrude/revolve/sweep/loft), Trim/Extend, Sew/Solidify and Thicken
 use the existing modeling command/OCAF architecture. Commits `f855c2e` and
 `5b8eb9b` implement and validate the tools; `a5eb63a` rejects periodic-extension

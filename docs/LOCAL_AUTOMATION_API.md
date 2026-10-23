@@ -106,8 +106,17 @@ or zero-based index.
 | `click` | `button` | A task-panel button by id, or `apply` / `cancel`. |
 | `select` | `id`, or `entity` [`second`] | Selects a tree item (body, sketch, instance, joint, coupling, IK task), or an entity of the open sketch. |
 | `sketch` | `phase`, `x`, `y` (sketch mm) | `begin` starts a gesture with the active Line, Rectangle or Circle tool. `update` moves the preview, which stays on screen without changing the document. `commit` adds the geometry. `cancel` drops it. |
-| `camera` | `operation`: `set`/`fit`/`reset`/`state`; `yawDeg`, `pitchDeg`, `distance`, `panX`, `panY`; `view` (-1 = model view, 0.. = 3D view) | Moves only that view's camera, within the same bounds as mouse navigation. The document is not changed. |
+| `camera` | `operation`: `set`/`fit`/`fitSelection`/`reset`/`state`/`capture`; `yawDeg`, `pitchDeg`, `distance`, `panX`, `panY`; `view` (-1 = model view, 0.. = 3D view); capture `path` | Moves only that view's camera, within the same bounds as mouse navigation. `fitSelection` frames selected bodies or instances and fails if no visible selection exists. `capture` queues a PNG of the application-owned GPU viewport at an absolute path in an existing directory; wait for the file before reading it. The document is not changed. |
 | `document` | `operation`: `new`/`open`/`save`; `path`; `discard`; `overwrite` | Same code as the File menu. New and open refuse a modified document unless `discard` is true; save refuses an existing file unless `overwrite` is true. |
+
+Camera state also reports `nearPlane`, `farPlane`, `depthMode` (`linear` or
+`logarithmic`), `gridRenderer`, `floorReady`, `gridVertices`, approximate
+`gridSpacing` in mm, last completed `floorGpuMs`, `renderedFrames` and
+`geometryUploads`. These are viewport diagnostics, not document parameters.
+GPU captures exclude native window chrome and do not establish pointer-driven
+GUI verification. An accepted asynchronous capture does not guarantee successful
+file writing; callers should check the resulting PNG. See the
+[viewport range report](VIEWPORT_RANGE_ORDER6.md) for validation boundaries.
 
 ## Paced demonstrations
 
