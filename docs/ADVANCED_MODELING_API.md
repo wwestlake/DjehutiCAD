@@ -51,3 +51,9 @@ Apply/Cancel; `state.modelingPreview` reports displayed preview state.
 `build/cad-modeling-check.result.json`. Programmatic GUI controls/selection
 callbacks are distinct from actual native pointer/visual verification. Verification
 counts and remaining limitations are recorded after completing the checks.
+
+Verified October 22, 2026: Debug build and 83/83 new checks, 191/191 existing
+modeling regressions and 28/28 live HTTP/GUI-control checks passed. FRust hosts
+and generated CAD-node programs were actually compiled and executed. Native
+pointer/visual interaction was not verified. See the
+[Order 4 completion report](PROFESSIONAL_MODELING_ORDER4.md).

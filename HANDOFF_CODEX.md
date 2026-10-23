@@ -1,6 +1,24 @@
 # DjehutiCAD Architecture Handoff
 
-Latest expansion update (October 22, 2026): **Order 3 is complete**. Commit
+Latest expansion update (October 22, 2026): **Order 4 is complete**. Sweep, Loft
+and Virtual Router/Mill use the shared GUI/API/FRust/CAD-node command architecture.
+Commits `202512a` and `5609b53` implement and validate these features. See
+`docs/PROFESSIONAL_MODELING_ORDER4.md`, `docs/SWEEP.md`, `docs/LOFT.md`,
+`docs/VIRTUAL_ROUTER_MILL.md` and `docs/ADVANCED_MODELING_API.md`.
+OCAF feature child 28 stores definitions; engineering JSON is version 13.
+The existing OCCT `TKOffset` toolkit is now linked and its Debug library was built;
+see `deps/README.md` for provisioning (Release needs its own toolkit build).
+
+Debug build passed; 83/83 new checks, 191/191 existing modeling checks and 28/28
+live HTTP/GUI-control checks passed. Real FRust and compiled CAD-node execution,
+native/JSON, dependency rebuilding, Undo/Redo and controlled invalid geometry
+were verified. Native pointer/visual interaction remains unverified. The owned
+test instance was closed with its generated document saved. Limits include one
+contour per section, straight-path controlled twist, equal-count manual Loft
+correspondence and conservative exterior-plane milling access. Stop after these
+three tools; this order does not authorize another batch.
+
+Previous expansion update (October 22, 2026): **Order 3 is complete**. Commit
 `2f7d1aa` implements parametric Mirror, Linear Pattern and Circular Pattern through
 the shared GUI/structured API/FRust/CAD-node commands. See
 `docs/PROFESSIONAL_MODELING_ORDER3.md` for the consolidated report and limits.
