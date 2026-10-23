@@ -10,7 +10,7 @@ Revolve supports full/partial angles, selectable/custom axes, editable parameter
 sketch-driven rebuilding, and shared GUI/agent/API commands. Editable NURBS
 surfaces remain future work.
 
-[Virtual Lathe](docs/VIRTUAL_LATHE.md) adds outside/bore station editing for turned
+[Virtual Lathe](docs/VIRTUAL_LATHE.md) turns selected closed sketch contours into
 parts, shoulders and grooves using the same parametric Revolve implementation.
 
 [Chamfer](docs/CHAMFER.md) adds editable equal-distance, multi-edge bevels and

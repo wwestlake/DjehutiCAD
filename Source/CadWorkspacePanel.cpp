@@ -828,6 +828,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
     modelView.onFrameRequested = [this] { wakeFrames(); };
     modelView.wantsBodyPick = [this] { return isCommandTask(); };
+    modelView.wantsSketchPick=[this]{return task==Task::lathe;};
     modelView.onTargetDragged = [this](const juce::String& targetId, const std::array<float, 3>& point, bool finished) { ikTargetDragged(targetId, point, finished); };
 
     side.addAndMakeVisible(taskTitle); side.addAndMakeVisible(taskInstruction); side.addAndMakeVisible(taskViewport); side.addAndMakeVisible(messageLabel);
@@ -1075,6 +1076,7 @@ void CadWorkspacePanel::syncTreeSelection()
 
 void CadWorkspacePanel::sketchEntityClicked(const juce::String& sketch,const juce::String& entity,bool second)
 {
+    if(task==Task::lathe){chooseLatheProfile(sketch,entity);return;}
     const auto* source=service->document().findSketch(sketch);bool found=false;
     if(source)for(const auto& e:source->entities)if(e.id==entity)found=true;
     if(!found)return;
@@ -1163,6 +1165,7 @@ void CadWorkspacePanel::syncLineProperties(bool polar)
 
 void CadWorkspacePanel::featureClicked(const juce::String& id)
 {
+    if(task==Task::lathe){chooseLatheProfile(id);return;}
     if (isCommandTask() && task != Task::link) { assignRole(id); return; }
     if (selection != nullptr)
     {
@@ -1176,6 +1179,7 @@ void CadWorkspacePanel::featureClicked(const juce::String& id)
 
 void CadWorkspacePanel::bodyPicked(const juce::String& id)
 {
+    if(task==Task::lathe){if(id.isNotEmpty()&&service->document().findSketch(id)!=nullptr)chooseLatheProfile(id);return;}
     if (task == Task::ik && ikDraft != nullptr && isInstance(id) && juce::isPositiveAndBelow(ikTargetIndex, (int) ikDraft->targets.size()))
     {
         readIkForm();
@@ -1188,7 +1192,7 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
     selectFeature(id);
 }
 
-bool CadWorkspacePanel::isCommandTask() const { return task == Task::modeling || task == Task::replication || task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::hole || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isCommandTask() const { return task == Task::lathe || task == Task::modeling || task == Task::replication || task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::hole || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
 // "face <token> of <body>" for a face-attached sketch.
 juce::String CadWorkspacePanel::supportText(const djehuti::cad::CadSketch& sketch) const { return "face " + sketch.supportFace + " of " + featureName(sketch.supportFeature); }
 bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
@@ -1207,6 +1211,7 @@ void CadWorkspacePanel::setSelection(std::shared_ptr<djehuti::cad::CadSelection>
 // A face or edge picked in any view opens its inspector; clearing it returns to the model.
 void CadWorkspacePanel::selectionChanged()
 {
+    if(task==Task::lathe){if(selection!=nullptr)pickLatheProfile(selection->selected());return;}
     if(modelingPreviewActive){clearModelingView();showModelingSources();return;}
     if(task==Task::modeling){if(selection!=nullptr)pickModeling(selection->selected());return;}
     if(replicationPreviewActive){clearReplicationView();showReplicationSources();return;}
@@ -1347,7 +1352,7 @@ void CadWorkspacePanel::linkChanged()
 void CadWorkspacePanel::selectFeature(const juce::String& id)
 {
     if (editingSketchId.isNotEmpty() && id != editingSketchId) finishSketch();
-    clearModelingView();clearReplicationView();
+    clearLatheView();clearModelingView();clearReplicationView();
     selectedId = id;
     commandMessage.clear(); validationMessage.clear();
     const auto* f = service->document().find(id);
@@ -1407,7 +1412,7 @@ void CadWorkspacePanel::selectSketchEntity(const juce::String& id, bool second)
 void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
 {
     if (editingSketchId.isNotEmpty() && next != Task::sketchEdit) finishSketch();
-    clearModelingView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
+    clearLatheView();clearModelingView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
     const auto* selected = service->document().find(selectedId);
     task = next; booleanKind = kind;
     if(next==Task::modeling)
@@ -1436,7 +1441,7 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
         }
         if(selection!=nullptr)selection->setMode(djehuti::cad::CadSelection::Mode::body);
     }
-    if(next==Task::lathe)editingLatheId=selected!=nullptr&&selected->lathe?selectedId:juce::String();
+    if(next==Task::lathe){editingLatheId=selected!=nullptr&&selected->lathe?selectedId:juce::String();latheSettings=editingLatheId.isEmpty()?djehuti::cad::CadRevolveParameters():selected->revolve;if(editingLatheId.isEmpty())latheSettings.axisType="worldZ";else if(latheSettings.axisType=="sketchU"||latheSettings.axisType=="sketchV"){const auto* source=service->document().findSketch(selected->sketchId);if(source&&!source->onFace()&&source->offset==0)latheSettings.axisType=latheSettings.axisType=="sketchU"?(source->plane=="YZ"?"worldY":"worldX"):(source->plane=="XY"?"worldY":"worldZ");}lathePreviewWanted=false;}
     commandMessage.clear(); validationMessage.clear();
     profileId.clear(); targetId.clear(); toolId.clear(); activeRole = 0; sketchPlane.clear();
     filletEdges.clear();
@@ -1477,7 +1482,7 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
         else if(picked.valid()&&picked.face>=0)chooseHoleFace(picked);
     }
     if (next == Task::createSketch) { djehuti::cad::CadFaceInfo support; juce::String reason; if (selectedSupport(support, reason)) sketchPlane = "FACE"; }
-    if (next == Task::extrude || next == Task::revolve || next == Task::cut) { if (selected != nullptr && selected->type == "sketch") profileId = selectedId; }
+    if (next == Task::extrude || next == Task::revolve || next == Task::cut || next==Task::lathe) { if (selected != nullptr && selected->type == "sketch") profileId = selectedId; else if(next==Task::lathe&&selected!=nullptr&&selected->lathe)profileId=selected->sketchId; }
     if (next == Task::boolean && isSolid(selectedId)) { targetId = selectedId; activeRole = 1; }
     instanceBodyId.clear(); jointParentId.clear(); jointChildId.clear();
     if (next == Task::newInstance && isSolid(selectedId)) instanceBodyId = selectedId;
@@ -1486,6 +1491,7 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
     if (next == Task::newCoupling) { activeRole = 0; if (isJoint(selectedId)) { couplingJointA = selectedId; activeRole = 1; } }
     syncTreeSelection(); updateHighlights(); updateToolbar();
     rebuildTaskPanel(false);
+    if(next==Task::lathe)updateLatheView();
     if(next==Task::modeling)showModelingSources();
     if(next==Task::replication)showReplicationSources();
 }
@@ -1954,32 +1960,118 @@ juce::var CadWorkspacePanel::readHoleForm(juce::String& error) const
     auto result=djehuti::cad::holeParametersToJson(p);result.getDynamicObject()->setProperty("target",body?feature->targetFeatureId:targetId);return result;
 }
 
+void CadWorkspacePanel::clearLatheView()
+{
+    if(!latheViewActive)return;latheViewActive=false;lathePreviewWanted=false;modelView.setSnapshot(service->snapshot());wakeFrames();
+}
+
+void CadWorkspacePanel::chooseLatheProfile(const juce::String& sketch,const juce::String& entity)
+{
+    if(service->document().findSketch(sketch)==nullptr)return;
+    juce::String ignored;const auto draft=readLatheForm(ignored);if(draft.isObject())djehuti::cad::readRevolveParameters(draft,latheSettings,ignored);
+    if(profileId!=sketch){profileId=sketch;latheSettings.entities.clear();}
+    const auto contours=service->document().latheContours(sketch);
+    if(entity.isNotEmpty())
+    {
+        int found=-1,matches=0;for(int i=0;i<contours.size();++i)for(const auto& id:*contours[i]["entities"].getArray())if(id.toString()==entity){found=i;++matches;break;}
+        if(matches>0)latheSettings.entities.clear();if(matches==1)for(const auto& member:*contours[found]["entities"].getArray())latheSettings.entities.add(member.toString());
+    }
+    rebuildTaskPanel(false);updateLatheView();
+}
+
+void CadWorkspacePanel::pickLatheProfile(const djehuti::cad::CadPick& pick)
+{
+    const auto* sketch=service->document().findSketch(pick.featureId);if(sketch==nullptr)return;juce::String nearest;
+    if(pick.hasPoint)
+    {
+        djehuti::cad::CadSketchFrame frame;if(service->document().sketchFrame(sketch->id,frame))
+        {
+            const gp_Vec d(frame.origin,gp_Pnt(pick.point[0],pick.point[1],pick.point[2]));const auto u=d.Dot(gp_Vec(frame.u)),v=d.Dot(gp_Vec(frame.v));double best=1e100;
+            for(const auto& e:sketch->entities)
+            {
+                double distance=1e100;
+                if(e.type=="circle")distance=std::abs(std::hypot(u-e.x1,v-e.y1)-e.radius);
+                else
+                {
+                    auto x=e.x1,y=e.y1;const int steps=e.type=="bezier"?64:1;
+                    for(int i=1;i<=steps;++i){const auto t=(double)i/steps,a=1-t;const auto nx=e.type=="bezier"?a*a*a*e.x1+3*a*a*t*e.cx1+3*a*t*t*e.cx2+t*t*t*e.x2:e.x2,ny=e.type=="bezier"?a*a*a*e.y1+3*a*a*t*e.cy1+3*a*t*t*e.cy2+t*t*t*e.y2:e.y2;const auto dx=nx-x,dy=ny-y,den=dx*dx+dy*dy,q=den>0?juce::jlimit(0.0,1.0,((u-x)*dx+(v-y)*dy)/den):0;distance=std::min(distance,std::hypot(u-x-q*dx,v-y-q*dy));x=nx;y=ny;}
+                }
+                if(distance<best){best=distance;nearest=e.id;}
+            }
+        }
+    }
+    chooseLatheProfile(sketch->id,nearest);
+}
+
 void CadWorkspacePanel::addLatheFields()
 {
-    juce::var data;bool editable=true;double angle=360;bool reverse=false;
-    if(editingLatheId.isNotEmpty())
+    juce::StringArray names;latheSketchIds.clear();for(const auto& f:service->document().features())if(f.type=="sketch"){latheSketchIds.add(f.id);names.add(f.name+" ["+f.id+"]");}
+    auto& profile=form->addChoice("latheProfile","Sketch",names,latheSketchIds.indexOf(profileId),"Choose an existing sketch, or pick its contour in the model tree or viewport.");
+    profile.onChange=[this]{const auto i=form->choice("latheProfile");if(juce::isPositiveAndBelow(i,latheSketchIds.size())){const auto id=latheSketchIds[i];postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),id]{if(safe!=nullptr)safe->chooseLatheProfile(id);});}};
+    latheContourChoices=service->document().latheContours(profileId);juce::StringArray labels;int selected=-1;
+    for(int i=0;i<latheContourChoices.size();++i)
     {
-        auto* a=new juce::DynamicObject();a->setProperty("action","get");a->setProperty("id",editingLatheId);data=service->latheCommand(a);
-        editable=(bool)data["profileEditable"];angle=(double)data["parameters"]["angleDegrees"];reverse=(bool)data["parameters"]["reverse"];
+        const auto c=latheContourChoices[i];labels.add(c["label"].toString());juce::StringArray ids;for(const auto& id:*c["entities"].getArray())ids.add(id.toString());
+        auto stored=latheSettings.entities;stored.sort(false);if(stored==ids)selected=i;
     }
-    if(editable)
-    {
-        form->addMultiline("latheOuter","Outside profile",editingLatheId.isEmpty()?"0, 20\n30, 20":djehuti::cad::latheStationsText(data["parameters"]["outer"]),"One axial position, outside diameter per line, in mm. Repeat a position for a shoulder.");
-        form->addMultiline("latheInner","Bore profile",editingLatheId.isEmpty()?"0, 0\n30, 0":djehuti::cad::latheStationsText(data["parameters"]["inner"]),"One axial position, bore diameter per line, in mm. Zero diameter gives solid material down to the axis.");
-    }
-    else form->addNote({},"This profile has custom sketch edits or constraints. Edit the source sketch to preserve them; the turning angle remains editable here.",3);
-    form->addNumber("latheAngle","Angle",angle,"deg","360 for a complete turned part; partial angles remain supported.",12);
-    form->addToggle("latheReverse","Reverse rotation",reverse,"Reverse the Revolve direction.");
-    form->addNote({},"Axial positions run along sketch V (world Z for new profiles); diameters are converted to radial X. Outside and bore ends must match. Station edits and turning are one Undo step.",4);
-    if(editingLatheId.isNotEmpty())form->addButton("latheSketch","Edit 2D profile",[this,sketch=data["sketch"].toString()]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr)safe->enterSketch(sketch);});},"Use the normal sketch editor for freeform profile edits.");
+    if(selected<0&&latheContourChoices.size()==1)selected=0;
+    auto& contour=form->addChoice("latheContour","Closed contour",labels,selected,"Only the selected contour is revolved; other sketch entities remain unchanged.");
+    contour.onChange=[this]{if(form!=nullptr){juce::String e;const auto p=readLatheForm(e);if(p.isObject())djehuti::cad::readRevolveParameters(p,latheSettings,e);validateTask();updateLatheView();}};
+    auto& axis=form->addChoice("latheAxis","Rotation axis",{"X-axis","Y-axis","Z-axis","Sketch line"},juce::StringArray{"worldX","worldY","worldZ","sketchLine"}.indexOf(latheSettings.axisType),"World axes pass through the document origin; a line axis follows its referenced sketch geometry.");
+    juce::StringArray lines;latheAxisSketchIds.clear();latheAxisEntityIds.clear();int chosen=-1;
+    for(const auto& f:service->document().features())if(const auto* sketch=service->document().findSketch(f.id))for(const auto& e:sketch->entities)if(e.type=="line")
+    {if(f.id==latheSettings.axisSketch&&e.id==latheSettings.axisEntity)chosen=lines.size();lines.add(f.name+" / "+e.id);latheAxisSketchIds.add(f.id);latheAxisEntityIds.add(e.id);}
+    auto& line=form->addChoice("latheAxisLine","Axis line",lines,chosen,"A nonzero straight sketch/construction line, coplanar with the profile.");
+    const auto changed=[this]{if(form==nullptr)return;form->setRowVisible("latheAxisLine",form->choice("latheAxis")==3);validateTask();updateLatheView();resized();};axis.onChange=changed;line.onChange=changed;
+    form->setRowVisible("latheAxisLine",latheSettings.axisType=="sketchLine");
+    form->addNumber("latheAngle","Angle",latheSettings.angleDegrees,"deg","Greater than 0, up to 360 degrees. A partial turn includes its end faces.",12);
+    form->addToggle("latheReverse","Reverse rotation",latheSettings.reverse,"Reverse the right-hand rotation about the selected axis.");
+    form->addButton("lathePreview","Preview",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr){safe->lathePreviewWanted=true;safe->updateLatheView();}});},"Evaluate the shared command in an isolated document. Axis/angle changes update an active preview.");
+    form->addButton("latheClearPreview","Clear preview",[this]{lathePreviewWanted=false;updateLatheView();},"Show the source sketch and axis without the candidate solid.");
+    form->addNote("latheAxisStatus","The displayed axis is in document coordinates. The source sketch remains editable.",2);
+    if(editingLatheId.isNotEmpty())form->addButton("latheSketch","Edit source sketch",[this,sketch=profileId]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr){safe->clearLatheView();safe->enterSketch(sketch);}});},"Edit the authoritative source profile; the lathe regenerates through its dependencies.");
 }
 
 juce::var CadWorkspacePanel::readLatheForm(juce::String& error) const
 {
-    auto p=form->control("latheOuter")!=nullptr?djehuti::cad::latheProfileFromText(form->text("latheOuter"),form->text("latheInner"),error):juce::var(new juce::DynamicObject());
-    if(!p.isObject())return {};
+    if(form==nullptr||profileId.isEmpty()){error="Select an existing sketch profile.";return {};}
+    auto p=latheSettings;const auto contour=form->choice("latheContour");
+    if(!juce::isPositiveAndBelow(contour,latheContourChoices.size())){error="Select one closed contour in the sketch.";return {};}
+    p.entities.clear();for(const auto& id:*latheContourChoices[contour]["entities"].getArray())p.entities.add(id.toString());
     if(!form->numberValid("latheAngle")||form->number("latheAngle")<=0||form->number("latheAngle")>360){error="Lathe angle must be greater than 0 and no greater than 360 degrees.";return {};}
-    p.getDynamicObject()->setProperty("angleDegrees",form->number("latheAngle"));p.getDynamicObject()->setProperty("reverse",form->toggle("latheReverse"));return p;
+    p.angleDegrees=form->number("latheAngle");p.reverse=form->toggle("latheReverse");
+    const auto axis=form->choice("latheAxis");if(!juce::isPositiveAndBelow(axis,4)){error="Choose a document axis or sketch line.";return {};}
+    p.axisType=juce::StringArray{"worldX","worldY","worldZ","sketchLine"}[axis];
+    if(axis==3){const auto i=form->choice("latheAxisLine");if(!juce::isPositiveAndBelow(i,latheAxisEntityIds.size())){error="Choose a straight sketch line as the axis.";return {};}p.axisSketch=latheAxisSketchIds[i];p.axisEntity=latheAxisEntityIds[i];}
+    gp_Pnt origin;gp_Dir direction;if(!service->document().revolveAxis(profileId,p,origin,direction,error))return {};
+    auto result=djehuti::cad::revolveParametersToJson(p);result.getDynamicObject()->setProperty("sketch",profileId);return result;
+}
+
+void CadWorkspacePanel::updateLatheView()
+{
+    if(task!=Task::lathe)return;juce::String error;const auto p=readLatheForm(error);
+    auto view=std::make_shared<djehuti::cad::CadRenderSnapshot>(*service->snapshot());
+    std::erase_if(view->meshes,[&](const auto& m){return m.featureId==editingLatheId;});std::erase_if(view->edges,[&](const auto& e){return e.featureId==editingLatheId;});
+    if(p.isObject())
+    {
+        djehuti::cad::readRevolveParameters(p,latheSettings,error);
+        if(lathePreviewWanted)
+        {
+            auto* args=new juce::DynamicObject();args->setProperty("action","preview");args->setProperty("id",editingLatheId);args->setProperty("parameters",p);juce::var details;
+            if(const auto preview=service->document().lathePreview(args,details,error))view=std::make_shared<djehuti::cad::CadRenderSnapshot>(*preview);
+        }
+        gp_Pnt origin;gp_Dir direction;if(service->document().revolveAxis(profileId,latheSettings,origin,direction,error))
+        {
+            double span=1;if(const auto* sketch=service->document().findSketch(profileId))for(const auto& e:sketch->entities)span=std::max({span,std::abs(e.x1),std::abs(e.y1),std::abs(e.x2),std::abs(e.y2),e.radius});
+            gp_Pnt centre=origin;djehuti::cad::CadSketchFrame frame;if(service->document().sketchFrame(profileId,frame))
+            {double u=0,v=0,count=0;if(const auto* sketch=service->document().findSketch(profileId))for(const auto& e:sketch->entities)if(latheSettings.entities.contains(e.id)){u+=e.x1+e.x2;v+=e.y1+e.y2;count+=2;}if(count>0){const auto profileCentre=frame.origin.Translated(gp_Vec(frame.u)*(u/count)+gp_Vec(frame.v)*(v/count));centre=origin.Translated(gp_Vec(direction)*gp_Vec(origin,profileCentre).Dot(gp_Vec(direction)));}}
+            const auto a=centre.Translated(gp_Vec(direction)*(-1.2*span)),b=centre.Translated(gp_Vec(direction)*(1.2*span));djehuti::cad::CadPolyline axis;axis.featureId="__lathe_axis";axis.points={(float)a.X(),(float)a.Y(),(float)a.Z(),(float)b.X(),(float)b.Y(),(float)b.Z()};view->sketchOutlines.push_back(std::move(axis));
+        }
+    }
+    const auto all=service->document().snapshot(true);for(const auto& outline:all->sketchOutlines)if(std::none_of(view->sketchOutlines.begin(),view->sketchOutlines.end(),[&](const auto& e){return e.featureId==outline.featureId;}))view->sketchOutlines.push_back(outline);
+    view->documentInstance=service->document().documentInstance();view->revision=(std::uint64_t(1)<<61)|++latheViewSerial;modelView.setSnapshot(view);latheViewActive=true;wakeFrames();
+    if(error.isNotEmpty()&&lathePreviewWanted)showError(error);
+    else if(lathePreviewWanted)setMessage("Preview updated. Turn part commits; Cancel leaves the document unchanged.",0);
 }
 
 void CadWorkspacePanel::addRevolveFields(const djehuti::cad::CadRevolveParameters& p, const juce::String& sketchId)
@@ -2034,7 +2126,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
     formContext = context;
     taskViewport.setViewedComponent(nullptr, false);
     form = std::make_unique<TaskForm>();
-    form->onChange = [this] { if(modelingPreviewActive){clearModelingView();showModelingSources();} if(replicationPreviewActive){clearReplicationView();showReplicationSources();} clearChamferPreview(true); validateTask(); };
+    form->onChange = [this] { if(task==Task::lathe){validateTask();updateLatheView();return;} if(modelingPreviewActive){clearModelingView();showModelingSources();} if(replicationPreviewActive){clearReplicationView();showReplicationSources();} clearChamferPreview(true); validateTask(); };
     const auto& document = service->document();
     const auto* f = document.find(selectedId);
     if ((task == Task::body || task == Task::sketch) && f == nullptr) task = Task::none;
@@ -2096,8 +2188,8 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             else if (f->type == "revolve")
             {
                 form->addHeader("Revolve");
-                addRevolveFields(f->revolve, f->sketchId);
-                if(f->lathe)form->addButton("latheProfile","Lathe profile...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::lathe);});},"Edit outside and bore stations.");
+                if(!f->lathe)addRevolveFields(f->revolve, f->sketchId);
+                if(f->lathe)form->addButton("latheProfile","Lathe profile...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::lathe);});},"Edit the source contour, rotation axis and angle; preview before applying.");
                 form->addButton("revolveSketch","Edit source sketch",[this,sketch=f->sketchId]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch]{if(safe!=nullptr)safe->enterSketch(sketch);});},"Edit the authoritative 2D profile.");
             }
             else if(djehuti::cad::isModelingType(f->type))
@@ -2351,7 +2443,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addSlot("holeTarget","Support face",targetId.isEmpty()?juce::String("Pick a planar face"):featureName(targetId),targetColour,true,[this]{if(selection!=nullptr)selection->setMode(djehuti::cad::CadSelection::Mode::face);setMessage("Pick a planar face on the target body.",0);},"Select the planar entry face in Face mode.");
             addHoleFields(holeSettings,targetId);break;
         case Task::lathe:
-            title = "Virtual Lathe"; instruction = "Enter axial positions and outside/bore diameters in mm. Repeated positions make shoulders and grooves."; accept = editingLatheId.isEmpty()?"Turn part":"Update turned part";
+            title = "Virtual Lathe"; instruction = "Select a sketch and closed contour, choose a document axis, then Preview and Turn part."; accept = editingLatheId.isEmpty()?"Turn part":"Update turned part";
             addLatheFields(); break;
         case Task::revolve:
             title = "Revolve"; instruction = "Choose a closed sketch and an axis in its plane. Set the rotation angle."; accept = "Revolve";
@@ -2655,7 +2747,7 @@ void CadWorkspacePanel::acceptTask()
             const auto h = form->control("height") ? form->number("height") : f->height, r = form->control("radius") ? form->number("radius") : f->radius;
             const auto x = form->number("x"), y = form->number("y"), z = form->number("z");
             bool ok = true;
-            if (f->type == "revolve")
+            if (f->type == "revolve" && !f->lathe)
             {
                 const auto p = readRevolveForm(); const auto sketch = revolveFormSketch();
                 if (sketch != f->sketchId || juce::JSON::toString(djehuti::cad::revolveParametersToJson(p),false,17) != juce::JSON::toString(djehuti::cad::revolveParametersToJson(f->revolve),false,17))
@@ -2840,7 +2932,7 @@ void CadWorkspacePanel::acceptTask()
 
 void CadWorkspacePanel::cancelTask()
 {
-    clearModelingView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
+    clearLatheView();clearModelingView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
     switch (task)
     {
         case Task::body: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;

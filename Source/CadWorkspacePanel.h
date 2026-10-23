@@ -13,6 +13,7 @@
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
 class SketchToolPalette;
 bool runSketchUsabilityCheck(juce::var& report);
+namespace djehuti::cad { bool runCadLatheCheck(juce::var&); }
 
 class CadWorkspacePanel final : public juce::Component,
                                 private juce::KeyListener,
@@ -61,6 +62,7 @@ private:
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     friend bool runSketchUsabilityCheck(juce::var&);
+    friend bool djehuti::cad::runCadLatheCheck(juce::var&);
     friend bool runSketchLineRepairCheck(juce::var&);
     class SketchEntityItem;
     class FeatureItem;
@@ -227,6 +229,15 @@ private:
     djehuti::cad::CadRevolveParameters revolveSettings;
     juce::StringArray revolveProfileIds;
     juce::String editingLatheId;
+    djehuti::cad::CadRevolveParameters latheSettings;
+    juce::StringArray latheSketchIds,latheAxisSketchIds,latheAxisEntityIds;
+    juce::var latheContourChoices;
+    bool latheViewActive=false,lathePreviewWanted=false;
+    std::uint64_t latheViewSerial=0;
+    void chooseLatheProfile(const juce::String& sketch,const juce::String& entity = {});
+    void pickLatheProfile(const djehuti::cad::CadPick&);
+    void updateLatheView();
+    void clearLatheView();
     void addLatheFields();
     juce::var readLatheForm(juce::String& error) const;
     void addRevolveFields(const djehuti::cad::CadRevolveParameters&, const juce::String& sketchId);

@@ -223,6 +223,29 @@ djehuti::cad::CadPick Viewport3D::pick(juce::Point<float> position, djehuti::cad
             }
         }
     }
+    if(wantsSketchPick&&wantsSketchPick())
+    {
+        float nearest=7.0f;
+        for(const auto& outline:pickSnapshot->sketchOutlines)if(!outline.featureId.startsWith("__lathe_"))
+        for(size_t i=0;i+5<outline.points.size();i+=6)
+        {
+            juce::Point<float> screen[2];float depth[2];bool visible=true;
+            for(int end=0;end<2;++end)
+            {
+                const auto* p=outline.points.data()+i+(size_t)end*3;float clip[4];
+                for(int row=0;row<4;++row)clip[row]=viewProjection.v[row]*p[0]+viewProjection.v[4+row]*p[1]+viewProjection.v[8+row]*p[2]+viewProjection.v[12+row];
+                depth[end]=clip[3];if(clip[3]<=pickClip[0]||clip[3]>=pickClip[1]){visible=false;break;}
+                screen[end]={(clip[0]/clip[3]+1)*.5f*w,(1-clip[1]/clip[3])*.5f*h};
+            }
+            if(!visible)continue;const auto delta=screen[1]-screen[0];const auto length=delta.x*delta.x+delta.y*delta.y;
+            const auto fraction=length>0?juce::jlimit(0.0f,1.0f,((position.x-screen[0].x)*delta.x+(position.y-screen[0].y)*delta.y)/length):0;
+            const auto distance=(screen[0]+delta*fraction).getDistanceFrom(position);if(distance>=nearest)continue;nearest=distance;
+            const auto denominator=(1-fraction)/depth[0]+fraction/depth[1];const auto t=(fraction/depth[1])/denominator;
+            result={outline.featureId,outline.featureId,-1,-1};result.hasPoint=true;
+            for(int k=0;k<3;++k)result.point[(size_t)k]=outline.points[i+(size_t)k]*(1-t)+outline.points[i+3+(size_t)k]*t;
+        }
+        if(result.hasPoint&&result.face<0&&result.edge<0)return result;
+    }
     if (mode == Mode::body) { result.face = -1; return result; }
     if (mode == Mode::face) return result;
     // Edge mode: the nearest edge within 7 px whose depth there is not behind the surface under the cursor.

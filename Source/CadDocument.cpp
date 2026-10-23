@@ -1630,7 +1630,7 @@ juce::String CadDocument::geometrySignature(const juce::String& id,juce::StringA
     juce::String sig="F:"+f->id+"|"+f->type+"|"+exact(f->width)+"|"+exact(f->depth)+"|"+exact(f->height)+"|"+exact(f->radius)+"|"+exact(f->x)+"|"+exact(f->y)+"|"+exact(f->z)
                     +"|"+exact(f->rx)+"|"+exact(f->ry)+"|"+exact(f->rz)+"|"+(f->reverse?"r":"-")+(f->throughAll?"t":"-")+"|"+f->firstOperand+"|"+f->secondOperand+"|"+f->sketchId+"|"+f->targetFeatureId;
     if(f->type=="component"){if(const auto* record=componentFor(f->id))sig<<"|component:"<<components::digest(juce::JSON::toString(*record));}
-    else if(f->type=="revolve"){sig<<"|revolve:"<<f->revolve.axisType<<"|"<<exact(f->revolve.angleDegrees)<<"|"<<(f->revolve.reverse?"reverse":"forward");for(const auto v:f->revolve.origin)sig<<"|"<<exact(v);for(const auto v:f->revolve.direction)sig<<"|"<<exact(v);sig<<"|("<<sketchSignature(f->sketchId,visiting)<<")";}
+    else if(f->type=="revolve"){sig<<"|revolve:"<<f->revolve.axisType<<"|"<<exact(f->revolve.angleDegrees)<<"|"<<(f->revolve.reverse?"reverse":"forward");for(const auto v:f->revolve.origin)sig<<"|"<<exact(v);for(const auto v:f->revolve.direction)sig<<"|"<<exact(v);sig<<"|("<<sketchSignature(f->sketchId,visiting)<<")|parameters:"<<juce::JSON::toString(revolveParametersToJson(f->revolve),false,17);if(f->revolve.axisType=="sketchLine"&&f->revolve.axisSketch.isNotEmpty()&&f->revolve.axisSketch!=f->sketchId)sig<<"|axis:("<<sketchSignature(f->revolve.axisSketch,visiting)<<")";}
     else if(f->type=="extrude")sig<<"|("<<sketchSignature(f->sketchId.isEmpty()?f->firstOperand:f->sketchId,visiting)<<")";
     else if(f->type=="cut")sig<<"|("<<geometrySignature(f->targetFeatureId.isEmpty()?f->firstOperand:f->targetFeatureId,visiting)<<")("<<sketchSignature(f->sketchId.isEmpty()?f->secondOperand:f->sketchId,visiting)<<")";
     else if(isModelingType(f->type)){sig<<"|modeling:"<<juce::JSON::toString(f->modeling,false,17);for(const auto& dependency:modelingDependencies(f->modeling))sig<<"|("<<(findSketch(dependency)!=nullptr?sketchSignature(dependency,visiting):geometrySignature(dependency,visiting))<<")";}
@@ -1704,6 +1704,7 @@ TopoDS_Shape CadDocument::evaluate(const juce::String& id,juce::String& error,ju
         {
             CadSketchFrame frame; const auto* sketch=sketchFor(f->sketchId,frame);
             if(sketch==nullptr){if(error.isEmpty())error=f->name+": Missing source sketch "+f->sketchId;return{};}
+            if(f->revolve.axisType=="sketchLine"&&f->revolve.axisSketch.isNotEmpty()&&f->revolve.axisSketch!=f->sketchId){CadSketchFrame axisFrame;if(sketchFor(f->revolve.axisSketch,axisFrame)==nullptr){if(error.isEmpty())error="Missing axis sketch.";return {};}}
             result=revolveSketch(*f,*sketch,frame,local,error);
             if(result.IsNull()){error=f->name+": "+error;return{};}
         }
@@ -2103,7 +2104,7 @@ bool sameDefinition(const CadFeature& a,const CadFeature& b)
 {
     return a.id==b.id&&a.name==b.name&&a.type==b.type&&a.firstOperand==b.firstOperand&&a.secondOperand==b.secondOperand&&a.sketchId==b.sketchId
         &&a.targetFeatureId==b.targetFeatureId&&a.width==b.width&&a.depth==b.depth&&a.height==b.height&&a.radius==b.radius
-        &&a.x==b.x&&a.y==b.y&&a.z==b.z&&a.rx==b.rx&&a.ry==b.ry&&a.rz==b.rz&&a.visible==b.visible&&a.reverse==b.reverse&&a.throughAll==b.throughAll&&a.hole.face==b.hole.face&&a.hole.style==b.hole.style&&a.hole.u==b.hole.u&&a.hole.v==b.hole.v&&a.hole.diameter==b.hole.diameter&&a.hole.depth==b.hole.depth&&a.hole.throughAll==b.hole.throughAll&&a.hole.headDiameter==b.hole.headDiameter&&a.hole.headDepth==b.hole.headDepth&&a.hole.countersinkAngleDegrees==b.hole.countersinkAngleDegrees&&juce::JSON::toString(a.replication,false,17)==juce::JSON::toString(b.replication,false,17)&&juce::JSON::toString(a.modeling,false,17)==juce::JSON::toString(b.modeling,false,17)&&a.lathe==b.lathe&&a.edges==b.edges&&a.revolve.axisType==b.revolve.axisType&&a.revolve.origin==b.revolve.origin&&a.revolve.direction==b.revolve.direction&&a.revolve.angleDegrees==b.revolve.angleDegrees&&a.revolve.reverse==b.revolve.reverse;
+        &&a.x==b.x&&a.y==b.y&&a.z==b.z&&a.rx==b.rx&&a.ry==b.ry&&a.rz==b.rz&&a.visible==b.visible&&a.reverse==b.reverse&&a.throughAll==b.throughAll&&a.hole.face==b.hole.face&&a.hole.style==b.hole.style&&a.hole.u==b.hole.u&&a.hole.v==b.hole.v&&a.hole.diameter==b.hole.diameter&&a.hole.depth==b.hole.depth&&a.hole.throughAll==b.hole.throughAll&&a.hole.headDiameter==b.hole.headDiameter&&a.hole.headDepth==b.hole.headDepth&&a.hole.countersinkAngleDegrees==b.hole.countersinkAngleDegrees&&juce::JSON::toString(a.replication,false,17)==juce::JSON::toString(b.replication,false,17)&&juce::JSON::toString(a.modeling,false,17)==juce::JSON::toString(b.modeling,false,17)&&a.lathe==b.lathe&&a.edges==b.edges&&a.revolve.axisType==b.revolve.axisType&&a.revolve.origin==b.revolve.origin&&a.revolve.direction==b.revolve.direction&&a.revolve.angleDegrees==b.revolve.angleDegrees&&a.revolve.reverse==b.revolve.reverse&&a.revolve.entities==b.revolve.entities&&a.revolve.axisSketch==b.revolve.axisSketch&&a.revolve.axisEntity==b.revolve.axisEntity;
 }
 }
 

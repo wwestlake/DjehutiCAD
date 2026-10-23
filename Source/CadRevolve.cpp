@@ -29,7 +29,7 @@ void nameFace(CadFaceOrigins& names, const TopoDS_Shape& s, const juce::String& 
 }
 bool validParameters(const CadRevolveParameters& p, juce::String& error)
 {
-    if (!juce::StringArray{"sketchU", "sketchV", "worldX", "worldY", "worldZ", "custom"}.contains(p.axisType))
+    if (!juce::StringArray{"sketchU", "sketchV", "worldX", "worldY", "worldZ", "custom", "sketchLine"}.contains(p.axisType))
         error = "Revolve axis type must be sketchU, sketchV, worldX, worldY, worldZ or custom.";
     else if (!std::isfinite(p.angleDegrees) || p.angleDegrees <= 0 || p.angleDegrees > 360)
         error = "Revolve angle must be finite, greater than 0 and no greater than 360 degrees.";
@@ -37,11 +37,22 @@ bool validParameters(const CadRevolveParameters& p, juce::String& error)
     {
         for (const auto v : p.origin) if (!std::isfinite(v)) { error = "Revolve axis origin must contain finite numbers in millimetres."; return false; }
         for (const auto v : p.direction) if (!std::isfinite(v)) { error = "Revolve axis direction must contain finite numbers."; return false; }
+        if(p.axisType=="sketchLine"&&p.axisEntity.isEmpty()) {error="Choose an existing straight sketch line as the rotation axis.";return false;}
         if (p.axisType == "custom" && std::hypot(p.direction[0], p.direction[1], p.direction[2]) < 1e-12)
             error = "Revolve axis direction must be nonzero.";
         else return true;
     }
     return false;
+}
+bool profileSubset(const CadSketch& sketch,const CadRevolveParameters& p,CadSketch& selected,juce::String& error)
+{
+    selected=sketch;
+    if(p.entities.isEmpty())return true;
+    for(const auto& id:p.entities)if(std::none_of(sketch.entities.begin(),sketch.entities.end(),[&](const auto& e){return e.id==id;}))
+    {error="Selected contour entity is missing: "+id+". Reselect the closed contour.";return false;}
+    std::erase_if(selected.entities,[&](const auto& e){return !p.entities.contains(e.id);});
+    selected.constraints.clear(); // Coordinates have already been solved in the authoritative full sketch.
+    return true;
 }
 }
 
@@ -52,8 +63,10 @@ juce::var revolveParametersToJson(const CadRevolveParameters& p)
     for (auto v : p.origin) origin.add(v);
     for (auto v : p.direction) direction.add(v);
     axis->setProperty("origin", origin); axis->setProperty("direction", direction);
+    if(p.axisType=="sketchLine"){axis->setProperty("sketch",p.axisSketch);axis->setProperty("entity",p.axisEntity);}
     auto* o = new juce::DynamicObject(); o->setProperty("axis", axis);
     o->setProperty("angleDegrees", p.angleDegrees); o->setProperty("reverse", p.reverse);
+    if(!p.entities.isEmpty()){juce::Array<juce::var> ids;for(const auto& id:p.entities)ids.add(id);o->setProperty("entities",ids);}
     return o;
 }
 
@@ -62,7 +75,7 @@ bool readRevolveParameters(const juce::var& value, CadRevolveParameters& p, juce
     if (!value.isObject()) { error = "Revolve parameters must be an object."; return false; }
     auto copy = p;
     for (const auto& property : value.getDynamicObject()->getProperties())
-        if (!juce::StringArray{"sketch", "axis", "angleDegrees", "reverse"}.contains(property.name.toString()))
+        if (!juce::StringArray{"sketch", "entities", "axis", "angleDegrees", "reverse"}.contains(property.name.toString()))
         { error = "Unknown Revolve parameter: " + property.name.toString(); return false; }
     if (value.hasProperty("angleDegrees"))
     {
@@ -79,13 +92,15 @@ bool readRevolveParameters(const juce::var& value, CadRevolveParameters& p, juce
         const auto axis = value["axis"];
         if (!axis.isObject()) { error = "axis must be an object."; return false; }
         for (const auto& property : axis.getDynamicObject()->getProperties())
-            if (!juce::StringArray{"type", "origin", "direction"}.contains(property.name.toString()))
+            if (!juce::StringArray{"type", "origin", "direction", "sketch", "entity"}.contains(property.name.toString()))
             { error = "Unknown Revolve axis parameter: " + property.name.toString(); return false; }
         if (axis.hasProperty("type"))
         {
             if (!axis["type"].isString()) { error = "axis.type must be a string."; return false; }
             copy.axisType = axis["type"].toString();
         }
+        for(const auto* key:{"sketch","entity"})if(axis.hasProperty(key))
+        {if(!axis[key].isString()){error="Axis sketch and entity references must be strings.";return false;}(juce::String(key)=="sketch"?copy.axisSketch:copy.axisEntity)=axis[key].toString();}
         for (const auto* key : {"origin", "direction"}) if (axis.hasProperty(key))
         {
             const auto* a = axis[key].getArray();
@@ -97,6 +112,11 @@ bool readRevolveParameters(const juce::var& value, CadRevolveParameters& p, juce
                 target[(size_t)i] = (double)(*a)[i];
             }
         }
+    }
+    if(value.hasProperty("entities"))
+    {
+        const auto* ids=value["entities"].getArray();if(ids==nullptr||ids->isEmpty()){error="entities must be a nonempty array of contour entity identifiers.";return false;}
+        copy.entities.clear();for(const auto& id:*ids){if(!id.isString()||id.toString().isEmpty()||copy.entities.contains(id.toString())){error="Contour entity identifiers must be nonempty and unique.";return false;}copy.entities.add(id.toString());}
     }
     if (!validParameters(copy, error)) return false;
     p = copy; return true;
@@ -111,9 +131,9 @@ bool CadDocument::createRevolve(const juce::String& sketchId, const CadRevolvePa
     {
         const auto* sketch = findSketch(sketchId);
         if (sketch == nullptr) { e = "Revolve requires an existing closed sketch profile."; return false; }
-        if (!validateSketch(*sketch, e)) return false;
+        CadSketch selected;if(!profileSubset(*sketch,p,selected,e)||!validateSketch(selected,e))return false;
         CadFeature f; f.id = newId("revolve", nextNumber++); f.name = "Revolve " + juce::String(nextNumber - 1);
-        f.type = "revolve"; f.sketchId = sketchId; f.firstOperand = sketchId; f.revolve = p;
+        f.type = "revolve"; f.sketchId = sketchId; f.firstOperand = sketchId; f.revolve = p;f.secondOperand=p.axisType=="sketchLine"?p.axisSketch:juce::String();
         created = f.id; items.push_back(f);
         for (auto& source : items) if (source.id == sketchId) source.visible = false;
         return true;
@@ -132,30 +152,46 @@ bool CadDocument::updateRevolve(const juce::String& id, const juce::String& sket
         if (feature == items.end()) { e = "Unknown Revolve feature: " + id; return false; }
         const auto* sketch = findSketch(sketchId);
         if (sketch == nullptr) { e = "Revolve requires an existing closed sketch profile."; return false; }
-        if (!validateSketch(*sketch, e)) return false;
+        CadSketch selected;if(!profileSubset(*sketch,p,selected,e)||!validateSketch(selected,e))return false;
         feature->sketchId = sketchId; feature->firstOperand = sketchId; feature->revolve = p;
+        feature->secondOperand=p.axisType=="sketchLine"?p.axisSketch:juce::String();
         for (auto& source : items) if (source.id == sketchId) source.visible = false;
         return true;
     }, error);
+}
+
+bool CadDocument::revolveAxis(const juce::String& sketchId,const CadRevolveParameters& p,gp_Pnt& origin,gp_Dir& direction,juce::String& error) const
+{
+    if(!validParameters(p,error))return false;
+    CadSketchFrame frame;if(!sketchFrame(sketchId,frame)){error="The profile sketch frame is unavailable.";return false;}
+    origin=gp_Pnt(0,0,0);
+    if(p.axisType=="sketchU"||p.axisType=="sketchV"){origin=frame.origin;direction=p.axisType=="sketchU"?frame.u:frame.v;}
+    else if(p.axisType=="custom"){origin=gp_Pnt(p.origin[0],p.origin[1],p.origin[2]);direction=gp_Dir(p.direction[0],p.direction[1],p.direction[2]);}
+    else if(p.axisType=="sketchLine")
+    {
+        const auto id=p.axisSketch.isEmpty()?sketchId:p.axisSketch;const auto* source=findSketch(id);CadSketchFrame axisFrame;
+        if(source==nullptr||!sketchFrame(id,axisFrame)){error="Axis sketch is missing: "+id;return false;}
+        const auto it=std::find_if(source->entities.begin(),source->entities.end(),[&](const auto& e){return e.id==p.axisEntity;});
+        if(it==source->entities.end()||it->type!="line"||std::hypot(it->x2-it->x1,it->y2-it->y1)<1e-8){error="The rotation axis must reference a non-degenerate straight sketch line.";return false;}
+        origin=axisFrame.origin.Translated(gp_Vec(axisFrame.u)*it->x1+gp_Vec(axisFrame.v)*it->y1);
+        direction=gp_Dir(gp_Vec(axisFrame.u)*(it->x2-it->x1)+gp_Vec(axisFrame.v)*(it->y2-it->y1));
+    }
+    else direction=p.axisType=="worldX"?gp_Dir(1,0,0):p.axisType=="worldY"?gp_Dir(0,1,0):gp_Dir(0,0,1);
+    if(std::abs(gp_Vec(direction).Dot(gp_Vec(frame.normal)))>1e-9||std::abs(gp_Vec(frame.origin,origin).Dot(gp_Vec(frame.normal)))>1e-7)
+    {error="The rotation axis must lie in the profile's sketch plane. Choose a coplanar world axis or sketch line.";return false;}
+    return true;
 }
 
 TopoDS_Shape CadDocument::revolveSketch(const CadFeature& feature, const CadSketch& sketch, const CadSketchFrame& frame, CadFaceOrigins& origins, juce::String& error)
 {
     const auto& p = feature.revolve;
     if (!validParameters(p, error)) return {};
-    gp_Pnt origin; gp_Dir direction;
-    if (p.axisType == "sketchU" || p.axisType == "sketchV")
-    { origin = frame.origin; direction = p.axisType == "sketchU" ? frame.u : frame.v; }
-    else if (p.axisType == "custom")
-    { origin = gp_Pnt(p.origin[0], p.origin[1], p.origin[2]); direction = gp_Dir(p.direction[0], p.direction[1], p.direction[2]); }
-    else direction = p.axisType == "worldX" ? gp_Dir(1,0,0) : p.axisType == "worldY" ? gp_Dir(0,1,0) : gp_Dir(0,0,1);
-    if (std::abs(gp_Vec(direction).Dot(gp_Vec(frame.normal))) > 1e-9
-        || std::abs(gp_Vec(frame.origin, origin).Dot(gp_Vec(frame.normal))) > 1e-7)
-    { error = "Revolve axis must lie in the sketch plane. Choose sketch U/V or a coplanar custom axis."; return {}; }
+    gp_Pnt origin; gp_Dir direction;if(!revolveAxis(sketch.id,p,origin,direction,error))return {};
     const gp_Ax1 axis(origin, p.reverse ? direction.Reversed() : direction);
     std::vector<TopoDS_Face> faces;
     std::vector<std::pair<TopoDS_Shape, juce::String>> edgeEntities;
-    if (!sketchProfiles(sketch, frame, faces, error, &edgeEntities) || faces.empty())
+    CadSketch selected;if(!profileSubset(sketch,p,selected,error))return {};
+    if (!sketchProfiles(selected, frame, faces, error, &edgeEntities) || faces.empty())
     { if (error.isEmpty()) error = "Revolve needs at least one closed profile."; return {}; }
 
     // Classify nested closed loops as material/hole/island. Reject ambiguous overlapping or touching loops.
@@ -251,6 +287,7 @@ TopoDS_Shape CadDocument::revolveSketch(const CadFeature& feature, const CadSket
         ++solids;
     }
     if (solids == 0) { error = "Revolve did not produce a solid. Check that the profile has area and the axis lies in its plane."; return {}; }
+    if(feature.lathe&&solids!=1){error="Virtual Lathe requires one selected closed contour producing a single solid.";return {};}
     operationHistory.push_back(std::move(history));
     return result;
 }

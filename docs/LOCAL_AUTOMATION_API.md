@@ -76,8 +76,9 @@ All agent tools are available:
   countersinks and through-all behavior.
 - Chamfer: `cad_chamfer` supports edge inspection, CRUD and read-only preview;
   see [Chamfer](CHAMFER.md) for selection, distance and preview semantics.
-- Virtual Lathe: `cad_lathe` supports `create`, `get`, `update`, `delete`; see
-  [Virtual Lathe](VIRTUAL_LATHE.md) for outside/bore station profiles and GUI fields.
+- Virtual Lathe: `cad_lathe` supports `create`, `get`, `update`, `delete`,
+  `profiles` and isolated `preview`; see [Virtual Lathe](VIRTUAL_LATHE.md) for
+  sketch/contour selection, world or line axes, editable angles and GUI fields.
 - Revolve: `cad_revolve` supports `create`, `get`, `update` and `delete` using stable
   feature IDs and structured parameters. See [Parametric Revolve](PARAMETRIC_REVOLVE.md)
   for axis choices, degree/mm conventions, examples and error responses.

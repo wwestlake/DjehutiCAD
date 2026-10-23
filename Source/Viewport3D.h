@@ -62,6 +62,7 @@ public:
     std::function<void(const juce::String& featureId)> onBodyPicked;
     // True while the owner needs whole bodies (a command choosing its target): clicks pick bodies in any mode.
     std::function<bool()> wantsBodyPick;
+    std::function<bool()> wantsSketchPick; // Enabled by the sketch-driven Virtual Lathe selector only.
     // IK target dragging. Only while enabled, and only when a press lands on the published drag handle, does a
     // drag move the target within its drag plane; every other press keeps orbit, pan and picking unchanged.
     void setTargetDragEnabled(bool enabled) { targetDragEnabled = enabled; if (!enabled) draggingTarget = false; }

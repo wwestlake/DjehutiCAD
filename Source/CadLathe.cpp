@@ -2,6 +2,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <queue>
+#include <atomic>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 
 namespace djehuti::cad
 {
@@ -87,13 +91,50 @@ juce::String latheStationsText(const juce::var& stations)
     return result;
 }
 
+juce::var CadDocument::latheContours(const juce::String& sketchId) const
+{
+    juce::Array<juce::var> contours;const auto* sketch=findSketch(sketchId);if(sketch==nullptr)return contours;
+    struct Edge{int a,b;juce::String id;};std::vector<Edge> edges;std::vector<std::pair<double,double>> vertices;
+    const auto vertex=[&](double x,double y){for(size_t i=0;i<vertices.size();++i)if(std::hypot(vertices[i].first-x,vertices[i].second-y)<1e-7)return (int)i;vertices.push_back({x,y});return (int)vertices.size()-1;};
+    juce::StringArray keys;
+    const auto append=[&](juce::StringArray ids)
+    {ids.sort(false);const auto key=ids.joinIntoString("|");if(keys.contains(key))return;keys.add(key);auto* c=new juce::DynamicObject();c->setProperty("label","Contour "+juce::String(contours.size()+1)+" ("+juce::String(ids.size())+" entities)");juce::Array<juce::var> list;for(const auto& id:ids)list.add(id);c->setProperty("entities",list);contours.add(c);};
+    for(const auto& e:sketch->entities)
+    {if(e.type=="circle")append({e.id});else if(e.type=="line"||e.type=="bezier")edges.push_back({vertex(e.x1,e.y1),vertex(e.x2,e.y2),e.id});}
+    // Each edge plus a shortest alternate path gives a bounded set of closed-contour choices,
+    // even when open construction geometry is attached to a contour vertex.
+    std::vector<std::vector<int>> adjacent(vertices.size());for(size_t i=0;i<edges.size();++i){adjacent[edges[i].a].push_back((int)i);adjacent[edges[i].b].push_back((int)i);}
+    for(size_t excluded=0;excluded<edges.size();++excluded)
+    {
+        const auto& edge=edges[excluded];if(edge.a==edge.b)continue;std::vector<int> previous(vertices.size(),-1);std::queue<int> pending;pending.push(edge.a);previous[edge.a]=-2;
+        while(!pending.empty()&&previous[edge.b]==-1)
+        {const auto a=pending.front();pending.pop();for(const auto index:adjacent[a])if(index!=(int)excluded){const auto& next=edges[(size_t)index];const auto b=next.a==a?next.b:next.a;if(previous[b]==-1){previous[b]=index;pending.push(b);}}}
+        if(previous[edge.b]==-1)continue;juce::StringArray ids{edge.id};auto at=edge.b;
+        while(at!=edge.a){const auto& step=edges[(size_t)previous[at]];ids.add(step.id);at=step.a==at?step.b:step.a;}
+        if(ids.size()>=2)append(ids);
+    }
+    return contours;
+}
+
+std::shared_ptr<const CadRenderSnapshot> CadDocument::lathePreview(const juce::var& args,juce::var& result,juce::String& error) const
+{
+    CadDocument draft;draft.geometryCache=geometryCache;if(!draft.deserialize(serialize(),error))return {};
+    auto request=juce::JSON::parse(juce::JSON::toString(args,false,17));request.getDynamicObject()->setProperty("action",args["id"].toString().isEmpty()?"create":"update");
+    result=draft.latheCommand(request);if(!(bool)result["ok"]){error=result["error"].toString();return {};}
+    const auto* feature=draft.find(result["id"].toString());GProp_GProps props;BRepGProp::VolumeProperties(feature->shape,props);result.getDynamicObject()->setProperty("volumeMm3",props.Mass());result.getDynamicObject()->setProperty("preview",true);
+    result.getDynamicObject()->setProperty("committed",false);if(args["id"].toString().isEmpty())result.getDynamicObject()->removeProperty("id");
+    static std::atomic<std::uint64_t> serial{0};auto view=std::make_shared<CadRenderSnapshot>(*draft.snapshot());view->documentInstance=instanceId;view->revision=(std::uint64_t(1)<<62)|++serial;return view;
+}
+
 juce::var CadDocument::latheCommand(const juce::var& args)
 {
     auto* reply=new juce::DynamicObject();juce::var result(reply);juce::String error;
     const auto fail=[&](const char* code,const juce::String& text){reply->setProperty("ok",false);reply->setProperty("code",code);reply->setProperty("error",text);return result;};
     if(!args.isObject())return fail("invalid_arguments","Lathe arguments must be an object.");
     const auto action=args.getProperty("action","get").toString();auto id=args.getProperty("id","").toString();
-    if(!juce::StringArray{"create","get","update","delete"}.contains(action))return fail("invalid_arguments","Lathe action must be create, get, update or delete.");
+    if(action=="profiles"){const auto sketch=args["sketch"].toString();if(findSketch(sketch)==nullptr)return fail("not_found","Unknown sketch: "+sketch);reply->setProperty("ok",true);reply->setProperty("contours",latheContours(sketch));return result;}
+    if(action=="preview"){juce::var details;if(lathePreview(args,details,error)==nullptr)return fail("modeling_failed",error);return details;}
+    if(!juce::StringArray{"create","get","update","delete"}.contains(action))return fail("invalid_arguments","Lathe action must be create, get, update, delete, profiles or preview.");
     const auto* feature=find(id);
     if(action!="create"&&(feature==nullptr||feature->type!="revolve"||!feature->lathe))return fail("not_found","Unknown lathe feature: "+id);
     if(action=="delete")
@@ -102,6 +143,28 @@ juce::var CadDocument::latheCommand(const juce::var& args)
     {
         const auto params=args.getProperty("parameters",juce::var());
         if(!params.isObject())return fail("invalid_arguments","Lathe parameters must be an object.");
+        if(!params.hasProperty("outer")&&!params.hasProperty("inner"))
+        {
+            const auto sketchId=params.getProperty("sketch",feature!=nullptr?feature->sketchId:juce::String()).toString();
+            if(findSketch(sketchId)==nullptr)return fail("invalid_arguments","Choose an existing closed sketch profile; no station table is required.");
+            auto p=action=="update"?feature->revolve:CadRevolveParameters();
+            if(!readRevolveParameters(params,p,error))return fail("invalid_arguments",error);
+            if(p.axisType=="sketchLine"&&p.axisSketch.isEmpty())p.axisSketch=sketchId;
+            if(p.entities.isEmpty())
+            {const auto contours=latheContours(sketchId);if(contours.size()!=1)return fail("ambiguous_profile","Select one closed contour explicitly with parameters.entities.");for(const auto& v:*contours[0]["entities"].getArray())p.entities.add(v.toString());}
+            const bool ok=mutate([&](juce::String& e)
+            {
+                CadFeature* turn=nullptr;
+                if(action=="create"){CadFeature f;f.id=newId("revolve",nextNumber++);f.name="Virtual Lathe "+juce::String(nextNumber-1);f.type="revolve";f.lathe=true;items.push_back(f);turn=&items.back();id=turn->id;}
+                else for(auto& f:items)if(f.id==id)turn=&f;
+                turn->sketchId=sketchId;turn->firstOperand=sketchId;turn->secondOperand=p.axisType=="sketchLine"?p.axisSketch:juce::String();turn->revolve=p;
+                for(auto& f:items)if(f.id==sketchId)f.visible=false;
+                return true;
+            },error);
+            if(!ok)return fail("modeling_failed",error);feature=find(id);
+        }
+        else
+        {
         Stations outer,inner;bool replace=params.hasProperty("outer")||params.hasProperty("inner");
         if(action=="create"&&!params.hasProperty("outer"))return fail("invalid_arguments","Lathe creation requires an outer profile.");
         if(replace)
@@ -135,6 +198,7 @@ juce::var CadDocument::latheCommand(const juce::var& args)
         auto revolved=juce::JSON::parse(juce::JSON::toString(params,false,17));
         revolved.getDynamicObject()->removeProperty("outer");revolved.getDynamicObject()->removeProperty("inner");
         if(!readRevolveParameters(revolved,p,error))return fail("invalid_arguments",error);
+        if(replace)p.entities.clear(); // Legacy station replacement authors a complete replacement contour.
         if(params.hasProperty("sketch"))return fail("invalid_arguments","Use the source sketch editor or cad_revolve to select a different profile.");
         juce::String created=id;
         const bool ok=mutate([&](juce::String& e)
@@ -173,9 +237,11 @@ juce::var CadDocument::latheCommand(const juce::var& args)
             return true;
         },error);
         if(!ok)return fail("modeling_failed",error);id=created;feature=find(id);
+        }
     }
     Stations outer,inner;const bool editable=profileFromSketch(*findSketch(feature->sketchId),outer,inner);
     auto params=revolveParametersToJson(feature->revolve);
+    params.getDynamicObject()->setProperty("sketch",feature->sketchId);
     if(editable){params.getDynamicObject()->setProperty("outer",stationJson(outer));params.getDynamicObject()->setProperty("inner",stationJson(inner));}
     reply->setProperty("ok",true);reply->setProperty("id",id);reply->setProperty("type","revolve");reply->setProperty("workflow","lathe");reply->setProperty("sketch",feature->sketchId);reply->setProperty("profileEditable",editable);reply->setProperty("parameters",params);
     return result;

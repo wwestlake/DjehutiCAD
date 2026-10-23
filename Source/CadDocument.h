@@ -55,6 +55,8 @@ struct CadRevolveParameters
     std::array<double, 3> origin { 0, 0, 0 }, direction { 0, 1, 0 };
     double angleDegrees = 360.0;
     bool reverse = false;
+    juce::StringArray entities; // Explicit contour membership; empty preserves legacy whole-sketch Revolve.
+    juce::String axisSketch, axisEntity;
 };
 juce::var revolveParametersToJson(const CadRevolveParameters&);
 bool readRevolveParameters(const juce::var&, CadRevolveParameters&, juce::String& error);
@@ -245,6 +247,9 @@ public:
     bool createRevolve(const juce::String& sketchId, const CadRevolveParameters&, juce::String& id, juce::String& error);
     bool updateRevolve(const juce::String& id, const juce::String& sketchId, const CadRevolveParameters&, juce::String& error);
     juce::var latheCommand(const juce::var& args);
+    juce::var latheContours(const juce::String& sketchId) const;
+    std::shared_ptr<const CadRenderSnapshot> lathePreview(const juce::var&, juce::var& result, juce::String& error) const;
+    bool revolveAxis(const juce::String& sketchId, const CadRevolveParameters&, gp_Pnt&, gp_Dir&, juce::String& error) const;
     juce::var chamferCommand(const juce::var& args);
     juce::var holeCommand(const juce::var& args);
     juce::var replicationCommand(const juce::String& type, const juce::var& args);
