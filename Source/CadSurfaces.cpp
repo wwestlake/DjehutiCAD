@@ -177,7 +177,7 @@ bool validateSurface(const juce::String& type,const juce::var& p,juce::String& e
         if(!p["sides"].isArray()||p["sides"].size()!=4)return fail("Extension sides are four booleans: U min, U max, V min, V max.");
         bool any=false;for(const auto& v:*p["sides"].getArray()){if(!v.isBool())return fail("Extension sides must be booleans.");any=any||(bool)v;}if(!any)return fail("Choose at least one boundary to extend.");
     }
-    if(type=="surface_thicken"&&(!number(p["thickness"])||(double)p["thickness"]<1e-6||(double)p["thickness"]>1e5||!juce::StringArray{"positive","negative","symmetric"}.contains(p["direction"].toString())))return fail("Thickness must be positive (0.000001ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“100000 mm); direction is positive, negative or symmetric.");
+    if(type=="surface_thicken"&&(!number(p["thickness"])||(double)p["thickness"]<1e-6||(double)p["thickness"]>1e5||!juce::StringArray{"positive","negative","symmetric"}.contains(p["direction"].toString())))return fail("Thickness must be positive (0.000001ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ100000 mm); direction is positive, negative or symmetric.");
     return true;
 }
 
@@ -307,6 +307,14 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
             if(!rectangle.IsDone()||std::abs(area(rectangle.Face())-area(face))>std::max(1e-7,area(face)*1e-7)){error="Extend supports untrimmed rectangular U/V boundaries. Trimmed contours, holes and arbitrary boundary extensions are unsupported.";return {};}
             TopoDS_Face extended;BRepLib::ExtendFace(face,(double)p["distance"],(bool)p["sides"][0],(bool)p["sides"][1],(bool)p["sides"][2],(bool)p["sides"][3],extended);
             if(extended.IsNull()||area(extended)<=area(face)+1e-8){error="This surface cannot continue in the requested U/V directions (closed/periodic limit or unsupported basis surface).";return {};}
+            BRepAdaptor_Surface basis(face,true);const auto kind=basis.GetType();
+            if(kind==GeomAbs_Plane||kind==GeomAbs_Cylinder||kind==GeomAbs_Cone||kind==GeomAbs_Sphere||kind==GeomAbs_Torus)
+            {
+                double eu0,eu1,ev0,ev1;BRepTools::UVBounds(extended,eu0,eu1,ev0,ev1);
+                const auto requestedU=u1-u0+basis.UResolution((double)p["distance"])*(int(bool(p["sides"][0]))+int(bool(p["sides"][1])));
+                const auto requestedV=v1-v0+basis.VResolution((double)p["distance"])*(int(bool(p["sides"][2]))+int(bool(p["sides"][3])));
+                if(eu1-eu0<requestedU-1e-7||ev1-ev0<requestedV-1e-7){error="The requested extension reaches a periodic or natural surface limit. Reduce the distance or choose another boundary.";return {};}
+            }
             result=extended;history.modified.push_back({face,extended});for(const auto& n:names)if(n.first.IsSame(face))origins.push_back({extended,n.second});
         }
         if(type=="surface_solidify")
