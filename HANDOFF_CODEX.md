@@ -1,6 +1,27 @@
 # DjehutiCAD Architecture Handoff
 
-Latest expansion update (October 22, 2026): **Order 4 is complete**. Sweep, Loft
+Latest expansion update (October 23, 2026): **Order 5 is complete**. Surface
+Creation (planar/extrude/revolve/sweep/loft), Trim/Extend, Sew/Solidify and Thicken
+use the existing modeling command/OCAF architecture. Commits `f855c2e` and
+`5b8eb9b` implement and validate the tools; `a5eb63a` rejects periodic-extension
+clamping. See `docs/PROFESSIONAL_MODELING_ORDER5.md`,
+`docs/SURFACE_MODELING.md` and `docs/SURFACE_MODELING_API.md`.
+Six GUI/API/FRust/CAD-node commands expose structured CRUD and isolated previews;
+OCAF child 28 stores definitions and engineering JSON is now version 14.
+Trim region points have persistent face/UV anchors. Surfaces render from both
+sides and expose distinct selectable face references for downstream solid tools.
+
+Final Debug build passed: 139/139 surface checks, 274/274 existing modeling
+regressions and 30/30 live HTTP/GUI-control checks (443 total). Native/JSON,
+dependency movement, Undo/Redo, actual FRust and compiled nodes, curved extension
+and downstream Hole machining passed. Native pointer/visual interaction and
+Release remain unverified. The owned test instance was closed with its document
+saved. Limits include single-chain profiles, consistent open/closed Loft sections,
+individual trim regions, rectangular U/V extension, one connected sewn shell,
+straight-path controlled Sweep twist and eligible open-shell/face thickening.
+Stop after Order 5; no later batch is authorized.
+
+Previous expansion update (October 22, 2026): **Order 4 is complete**. Sweep, Loft
 and Virtual Router/Mill use the shared GUI/API/FRust/CAD-node command architecture.
 Commits `202512a` and `5609b53` implement and validate these features. See
 `docs/PROFESSIONAL_MODELING_ORDER4.md`, `docs/SWEEP.md`, `docs/LOFT.md`,

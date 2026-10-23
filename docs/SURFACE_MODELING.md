@@ -39,6 +39,8 @@ retains it; clearing that option removes it. Preview shows the chosen result.
 The command anchors the point to a persistent source face and its U/V parameters,
 so it follows source placement and supported geometry changes. Pick a new point
 if that face is removed/split or a new trim boundary changes region membership.
+The coordinate fields record the last specified point; use the region picker or
+enter the new complete world coordinates when changing selection after movement.
 Boundary points, tools that do not divide the surface, and invalid results give
 controlled errors. Curves are not silently projected onto a different surface.
 

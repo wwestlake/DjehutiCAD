@@ -36,6 +36,9 @@ Trim returns a generated `regionReference:{face,u,v}` anchor in its parameters;
 this follows the source face through placement/geometry changes. Changing the
 seed, source or selected face regenerates the anchor. Preserve it when replaying
 complete definitions through persistence or update commands.
+`seed` records the last supplied world point; `regionReference` drives subsequent
+rebuilds. After source movement, specify a new complete world point (or use the
+GUI region picker) when changing region selection.
 
 Preview executes the same create/update command on an isolated engineering
 document; it adds `preview:true`, `committed:false` and `volume_mm3`. Create previews
@@ -55,3 +58,8 @@ OCAF feature child 28 stores definitions. JSON engineering interchange is versio
 through the existing document evaluator. Older applications cannot evaluate the
 new types. Transactions, history, Undo/Redo and dependency invalidation use the
 same mechanisms as the solid tools.
+
+Final Debug verification: 139 focused surface checks, 274 existing modeling
+checks and 30 live application checks passed. Native pointer/visual interaction
+and Release builds remain unverified. See the
+[Order 5 completion report](PROFESSIONAL_MODELING_ORDER5.md).

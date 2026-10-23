@@ -39,6 +39,8 @@ swept and lofted surfaces, region trimming, eligible U/V boundary extension,
 shell sewing, separate solidification, and positive/negative/symmetric thickening.
 These share GUI previews, APIs, FRust hosts, CAD nodes and
 [version 14 interchange](docs/SURFACE_MODELING_API.md).
+The [Order 5 completion report](docs/PROFESSIONAL_MODELING_ORDER5.md) records
+verified behavior, test counts and geometric limits.
 
 The [Materials and Sheet Stock Manager](docs/MATERIALS_AND_SHEET_STOCK.md) provides reusable engineering catalogs,
 document material assignments, and portable stock snapshots. Open it from CAD Workspace → Edit → Materials and Sheet Stock.
