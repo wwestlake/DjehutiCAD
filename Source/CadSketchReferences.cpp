@@ -54,7 +54,9 @@ void SketchReferenceScene::addCurve(const Handle(Geom_Curve)& world,double first
         const auto normal=frame.u.Crossed(frame.v);local.SetTransformation(gp_Ax3(frame.origin,normal,frame.u));
         const auto inPlane=GeomProjLib::ProjectOnPlane(Handle(Geom_Curve)::DownCast(world->Transformed(local)),new Geom_Plane(gp_Pln(gp::XOY())),gp_Dir(0,0,1),true);
         if(inPlane.IsNull())return;const auto curve=GeomAPI::To2d(inPlane,gp_Pln(gp::XOY()));if(curve.IsNull())return;
-        Curve item;item.geometry=curve;item.first=first;item.last=last;item.source=source;item.entity=entity;item.reference=reference;item.solid=solid;item.section=section;curves.push_back(std::move(item));
+        Curve item;item.geometry=curve;item.first=first;item.last=last;item.source=source;item.entity=entity;item.reference=reference;item.solid=solid;item.section=section;
+        const auto pStart=point2(curve->Value(first)),pEnd=point2(curve->Value(last));double minX=std::min(pStart.x,pEnd.x),maxX=std::max(pStart.x,pEnd.x),minY=std::min(pStart.y,pEnd.y),maxY=std::max(pStart.y,pEnd.y);for(double t:{0.25,0.5,0.75}){const auto p=point2(curve->Value(first+t*(last-first)));minX=std::min(minX,p.x);maxX=std::max(maxX,p.x);minY=std::min(minY,p.y);maxY=std::max(maxY,p.y);}item.bounds=juce::Rectangle<double>::leftTopRightBottom(minX,minY,maxX,maxY);
+        curves.push_back(std::move(item));
         Geom2dAdaptor_Curve adaptor(curve,first,last);
         const bool fullCircle=(adaptor.GetType()==GeomAbs_Circle||adaptor.GetType()==GeomAbs_Ellipse)&&last-first>=juce::MathConstants<double>::twoPi-1e-9;
         if(!fullCircle)
@@ -90,7 +92,7 @@ void SketchReferenceScene::rebuild(const CadDocument& document,const juce::Strin
         }
     };
     addSketch(active,active,false);
-    const auto meshes=document.snapshot(true);
+    const auto meshes=document.snapshot(false);
     for(const auto& source:sources)if(source.visible&&source.id!=active)
     {
         if(!source.solid){addSketch(source.feature,source.id,true);continue;}
@@ -135,7 +137,7 @@ SnapHit SketchReferenceScene::snap(juce::Point<double> raw,double scale,double g
     {const int mode=p.type=="vertex"?1:p.type=="center"?4:3;if(preferences.modes[(size_t)mode])offer(p.position,p.type,p.source,p.entity,p.reference,p.type=="vertex"?0:p.type=="center"?2:3);}
     std::vector<const Curve*> nearby;
     for(const auto& c:curves)if((!c.reference||references)&&!(c.source==active&&excluded.isNotEmpty()&&(c.entity==excluded||c.entity.contains("_"+excluded+"_"))))
-    {const auto p=closest(c,raw);if(raw.getDistanceFrom(p)<=tolerance){nearby.push_back(&c);if(preferences.modes[2])offer(p,"edge",c.source,c.entity,c.reference,4);}}
+    {if(!c.bounds.isEmpty()&&!c.bounds.expanded(tolerance+1e-6).contains(raw))continue;const auto p=closest(c,raw);if(raw.getDistanceFrom(p)<=tolerance){nearby.push_back(&c);if(preferences.modes[2])offer(p,"edge",c.source,c.entity,c.reference,4);}}
     if(preferences.modes[5]&&priority>0)for(size_t i=0;i<nearby.size();++i)for(size_t j=i+1;j<nearby.size();++j)
     {
         try

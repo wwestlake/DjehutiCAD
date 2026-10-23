@@ -47,6 +47,7 @@ private:
         bool reference=false,solid=false,section=false;
         mutable juce::Path path;
         mutable double pathScale=0;
+        juce::Rectangle<double> bounds;
     };
     struct Point{juce::Point<double> position;juce::String source,entity,type;bool reference=false;};
     struct Ghost{juce::String source;juce::Path fill;};

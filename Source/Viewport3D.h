@@ -73,6 +73,7 @@ public:
     // Optional fixture equipment picking; empty in ordinary CAD views. Uses the same camera projection.
     void setPickMarkers(std::vector<std::pair<juce::String,std::array<float,3>>> markers) { pickMarkers=std::move(markers); }
     std::function<void(const juce::String&)> onMarkerPicked;
+    void markDirty();
 
 private:
     friend bool runViewportInteractionCheck(juce::String&);
@@ -116,9 +117,9 @@ private:
     void updateSceneBounds(const std::shared_ptr<const djehuti::cad::CadRenderSnapshot>& snapshot);
     void frameScene();
     void updatePosedBounds();
-    void tryPendingFit();
+    void tryPendingFit(); /*
     void markDirty();
-    void cameraChanged();
+*/ void cameraChanged();
 
     const int viewNumber;
     juce::OpenGLContext context;

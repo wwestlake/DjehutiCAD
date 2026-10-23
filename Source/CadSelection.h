@@ -33,6 +33,7 @@ public:
     Tool tool() const { return activeTool; }
     void setTool(Tool next) { if (next != activeTool) { activeTool = next; changed(); } }
     const std::vector<CadPick>& items() const { return chosenItems; }
+    void setChosenItemsQuietly(std::vector<CadPick> next) { chosenItems = std::move(next); chosen = chosenItems.empty() ? CadPick() : chosenItems.back(); ++changeSerial; }
     void setSelectedMany(std::vector<CadPick> next) { chosenItems = std::move(next); chosen = chosenItems.empty() ? CadPick() : chosenItems.back(); changed(); }
 
     Mode mode() const { return currentMode; }
@@ -42,7 +43,7 @@ public:
 
     void setMode(Mode next) { if (next == currentMode) return; currentMode = next; hovered = {}; chosen = {}; chosenItems.clear(); changed(); }
     void setHover(const CadPick& next) { if (next == hovered) return; hovered = next; ++changeSerial; }   // hover only redraws
-    void setSelected(const CadPick& next) { if (next == chosen && chosenItems.size() <= 1) return; chosen = next; chosenItems = next.valid() ? std::vector<CadPick>{next} : std::vector<CadPick>(); changed(); }
+    void setSelected(const CadPick& next) { if (next == chosen && chosenItems.size() <= 1 && currentMode != Mode::edge) return; chosen = next; chosenItems = next.valid() ? std::vector<CadPick>{next} : std::vector<CadPick>(); changed(); }
     void clear() { if (!hovered.valid() && !chosen.valid()) return; hovered = {}; chosen = {}; chosenItems.clear(); changed(); }
     void addListener(std::function<void()> listener) { listeners.push_back(std::move(listener)); }
 

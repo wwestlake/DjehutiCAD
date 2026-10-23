@@ -528,8 +528,12 @@ public:
         if (pointDragActive)
         {
             if (e.position.getDistanceFrom(dragPress) >= 3.0f) dragMoved = true;
-            if (dragMoved) dragTo = nearestSnap(fromPoint(e.position)).point;
-            repaint(); return;
+            if (dragMoved)
+            {
+                const bool isHandleDrag = dragRef.endsWith(":c1") || dragRef.endsWith(":c2");
+                dragTo = isHandleDrag ? fromPoint(e.position) : snapPoint;
+            }
+            return;
         }
         if (!gestureActive) return;
         const auto raw = fromPoint(e.position); const auto snap = snapsEnds() ? nearestSnap(raw) : Snap { raw, {} };
@@ -632,7 +636,7 @@ private:
     double gridStep() const { for (const auto s : { 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0 }) if (s * scale >= 16.0) return s; return 1000.0; }
     juce::Point<float> toPoint(double x, double y) const { return { (float) (getWidth() * 0.5 + (x - centre.x) * scale), (float) (getHeight() * 0.5 - (y - centre.y) * scale) }; }
     Point fromPoint(juce::Point<float> p) const { return { centre.x + (p.x - getWidth() * 0.5) / scale, centre.y + (getHeight() * 0.5 - p.y) / scale }; }
-    void updateCursor(juce::Point<float> p) { cursor = fromPoint(p); hasCursor = true;if(snapsEnds()||pointDragActive||owner.pickingSymmetryCentre){const auto hit=nearestSnap(cursor);snapTarget=hit.target;snapPoint=hit.point;} repaint(); }
+    void updateCursor(juce::Point<float> p) { cursor = fromPoint(p); hasCursor = true; const bool isHandleDrag = pointDragActive && (dragRef.endsWith(":c1") || dragRef.endsWith(":c2")); if(snapsEnds()||(pointDragActive && !isHandleDrag)||owner.pickingSymmetryCentre){const auto hit=nearestSnap(cursor);snapTarget=hit.target;snapPoint=hit.point;} else {snapTarget.clear(); snapPoint=cursor;} repaint(); }
     bool snapsEnds() const { return mode=="line"||mode=="curve"||mode=="rectangle"||mode=="circle"; }
     static double bezierAt(double t, double p0, double p1, double p2, double p3) { const auto s = 1.0 - t; return s * s * s * p0 + 3 * s * s * t * p1 + 3 * s * t * t * p2 + t * t * t * p3; }
     juce::Path curvePath(const djehuti::cad::CadSketchEntity& c) const
@@ -900,7 +904,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     modelView.onContextCommand = [this](const juce::String& command,const djehuti::cad::CadPick& pick) { viewContextCommand(command,pick); };
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
     modelView.onFrameRequested = [this] { wakeFrames(); };
-    modelView.wantsBodyPick = [this] { return isCommandTask()&&task!=Task::hole; };
+    modelView.wantsBodyPick = [this] { return isCommandTask() && task != Task::hole && task != Task::fillet && task != Task::chamfer && (selection == nullptr || selection->mode() == djehuti::cad::CadSelection::Mode::body); };
     modelView.faceSnapEnabled=[this]{return faceSnapAvailable()&&snapPreferences->enabled&&snapPreferences->modes[6];};
     modelView.refineFaceSnap=[this](auto& pick){return refineFaceSnap(pick);};
     modelView.wantsSketchPick=[this]{return task==Task::lathe;};
@@ -964,13 +968,50 @@ void CadWorkspacePanel::resized()
     juce::Component* items[] = { &tree, &leftBar, &centre, &rightBar, &side };
     columns.layOutComponents(items, 5, area.getX(), area.getY(), area.getWidth(), area.getHeight(), false, true);
     auto treeArea = tree.getBounds(); treeHeading.setBounds(treeArea.removeFromTop(30).reduced(10, 4)); tree.setBounds(treeArea.reduced(4, 0));
-    auto sketchArea=centre.getLocalBounds();
-    if(modifyPalette){modifyPalette->place(sketchArea,editingSketchId.isEmpty());modifyPalette->reserve(sketchArea);}
-    sketchPalette->place(sketchArea);
-    if(sketchPalette->isVisible()&&sketchPalette->isDocked())sketchArea.removeFromLeft(sketchPalette->getWidth()+6);
-    if(snapPalette){snapPalette->place(sketchArea,true);snapPalette->reserve(sketchArea);}
-    if(!sketchPalette->isDocked())sketchPalette->place(sketchArea);
-    modelView.setBounds(sketchArea);sketchCanvas->setBounds(sketchArea);
+    auto sketchArea = centre.getLocalBounds();
+    const bool inSketch = editingSketchId.isNotEmpty();
+    if (!inSketch)
+    {
+        modelView.setBounds(sketchArea);
+        sketchCanvas->setBounds(sketchArea);
+        if (modifyPalette)
+        {
+            if (modifyPalette->getParentComponent() != &modelView)
+                modelView.addChildComponent(*modifyPalette);
+            modifyPalette->place(modelView.getLocalBounds(), true);
+        }
+        if (snapPalette)
+        {
+            if (snapPalette->getParentComponent() != &modelView)
+                modelView.addChildComponent(*snapPalette);
+            snapPalette->place(modelView.getLocalBounds(), true);
+        }
+        if (sketchPalette)
+            sketchPalette->place(sketchArea);
+    }
+    else
+    {
+        if (modifyPalette)
+        {
+            if (modifyPalette->getParentComponent() != &centre)
+                centre.addChildComponent(*modifyPalette);
+            modifyPalette->setVisible(false);
+        }
+        if (snapPalette)
+        {
+            if (snapPalette->getParentComponent() != &centre)
+                centre.addChildComponent(*snapPalette);
+            snapPalette->place(sketchArea, true);
+            snapPalette->reserve(sketchArea);
+        }
+        sketchPalette->place(sketchArea);
+        if (sketchPalette->isVisible() && sketchPalette->isDocked())
+            sketchArea.removeFromLeft(sketchPalette->getWidth() + 6);
+        if (!sketchPalette->isDocked())
+            sketchPalette->place(sketchArea);
+        sketchCanvas->setBounds(sketchArea);
+        modelView.setBounds(sketchArea);
+    }
 
     auto s = side.getLocalBounds().reduced(12, 10);
     taskTitle.setBounds(s.removeFromTop(28));
@@ -1069,7 +1110,7 @@ void CadWorkspacePanel::refreshFromDocument(bool force)
     modelingPreviewActive=false;modelingSourcesActive=false;replicationPreviewActive=false;replicationSourcesActive=false;chamferPreviewActive=false;chamferSourceActive=false;holeSourceActive=false;
     shownRevision = document.revision();
     if (interferenceActive && (document.revision() != interferenceReport.documentRevision || document.documentInstance() != interferenceReport.documentInstance)) markInterferenceStale();
-    modelView.setSnapshot(service->snapshot());
+    if (editingSketchId.isEmpty()) modelView.setSnapshot(service->snapshot());
     auto missing = [&](const juce::String& id) { return id.isNotEmpty() && document.find(id) == nullptr && document.mechanicsData().findInstance(id) == nullptr && document.mechanicsData().findJoint(id) == nullptr && document.mechanicsData().findCoupling(id) == nullptr && document.mechanicsData().findIkTask(id) == nullptr; };
     if (missing(selectedId)) selectedId.clear();
     if (missing(targetId)) targetId.clear();
@@ -1324,7 +1365,7 @@ void CadWorkspacePanel::selectionChanged()
     {
         if (task == Task::fillet || task == Task::chamfer)
         {
-            if (!selection->items().empty())
+            if (selection->items().size() > 1)
             {
                 for (const auto& item : selection->items())
                 {
@@ -1350,9 +1391,15 @@ void CadWorkspacePanel::selectionChanged()
                 auto it = std::find(filletEdges.begin(), filletEdges.end(), picked.edge);
                 if (it == filletEdges.end())
                     filletEdges.push_back(picked.edge);
-                else if (filletEdges.size() > 1)
+                else
                     filletEdges.erase(it);
             }
+            std::vector<djehuti::cad::CadPick> edgePicks;
+            for (int edgeIdx : filletEdges)
+                edgePicks.push_back(djehuti::cad::CadPick{ targetId, targetId, -1, edgeIdx });
+            selection->setChosenItemsQuietly(std::move(edgePicks));
+            modelView.markDirty();
+            clearChamferPreview(false);
             rebuildTaskPanel(true);
             return;
         }
@@ -1544,9 +1591,12 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
     {
         chamferSelectionRevision=service->document().revision();editingChamferId=selected!=nullptr&&selected->type=="chamfer"?selectedId:juce::String();chamferDistance=editingChamferId.isEmpty()?1.0:selected->width;
     }
+    if(next==Task::fillet)
+    {
+        editingFilletId=selected!=nullptr&&selected->type=="fillet"?selectedId:juce::String();filletRadius=editingFilletId.isEmpty()?2.0:selected->radius;
+    }
     if (next == Task::fillet || next == Task::chamfer)
     {
-        filletRadius = 2.0;
         if (selection != nullptr && selection->selected().valid())
         {
             const auto& picked = selection->selected();
@@ -1567,6 +1617,19 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
         auto* a=new juce::DynamicObject();a->setProperty("action","get");a->setProperty("id",editingChamferId);const auto p=service->chamferCommand(a)["parameters"];
         targetId=p["target"].toString();filletEdges.clear();if(const auto* edges=p["edges"].getArray())for(const auto& edge:*edges)filletEdges.push_back((int)edge);
         showChamferSource();
+    }
+    if(next==Task::fillet&&editingFilletId.isNotEmpty())
+    {
+        targetId=selected->targetFeatureId.isNotEmpty()?selected->targetFeatureId:selected->firstOperand;
+        filletEdges=service->document().filletEdgeIndices(editingFilletId);
+        showFilletSource();
+    }
+    if((next==Task::fillet||next==Task::chamfer)&&selection!=nullptr&&!filletEdges.empty()&&targetId.isNotEmpty())
+    {
+        std::vector<djehuti::cad::CadPick> edgePicks;
+        for(int edgeIdx:filletEdges)edgePicks.push_back(djehuti::cad::CadPick{targetId,targetId,-1,edgeIdx});
+        selection->setChosenItemsQuietly(std::move(edgePicks));
+        modelView.markDirty();
     }
     if(next==Task::hole)
     {
@@ -1614,6 +1677,17 @@ void CadWorkspacePanel::showChamferSource()
     const auto all=service->document().snapshot(true);auto view=std::make_shared<djehuti::cad::CadRenderSnapshot>(*service->snapshot());
     std::erase_if(view->meshes,[&](const auto& m){return m.featureId==editingChamferId||m.featureId==targetId;});
     std::erase_if(view->edges,[&](const auto& e){return e.featureId==editingChamferId||e.featureId==targetId;});
+    for(const auto& m:all->meshes)if(m.featureId==targetId)view->meshes.push_back(m);
+    for(const auto& e:all->edges)if(e.featureId==targetId)view->edges.push_back(e);
+    view->revision|=(std::uint64_t(1)<<62);modelView.setSnapshot(view);chamferSourceActive=true;wakeFrames();
+}
+
+void CadWorkspacePanel::showFilletSource()
+{
+    if(editingFilletId.isEmpty()||targetId.isEmpty())return;
+    const auto all=service->document().snapshot(true);auto view=std::make_shared<djehuti::cad::CadRenderSnapshot>(*service->snapshot());
+    std::erase_if(view->meshes,[&](const auto& m){return m.featureId==editingFilletId||m.featureId==targetId;});
+    std::erase_if(view->edges,[&](const auto& e){return e.featureId==editingFilletId||e.featureId==targetId;});
     for(const auto& m:all->meshes)if(m.featureId==targetId)view->meshes.push_back(m);
     for(const auto& e:all->edges)if(e.featureId==targetId)view->edges.push_back(e);
     view->revision|=(std::uint64_t(1)<<62);modelView.setSnapshot(view);chamferSourceActive=true;wakeFrames();
@@ -2319,6 +2393,11 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
                 form->addHeader("Fillet");
                 form->addNote({}, "Target: " + featureName(f->targetFeatureId) + "  |  " + juce::String(f->edges.size()) + " edges filleted", 2);
                 form->addNumber("radius", "Radius", f->radius, "mm", "Fillet radius.");
+                form->addButton("filletEditEdges", "Edit edges...", [this] {
+                    postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
+                        if (safe != nullptr) safe->startTask(Task::fillet);
+                    });
+                }, "Reopen Fillet to add, remove or change edges.");
             }
             const juce::String placement = f->type == "box" ? "Corner " : f->type == "cylinder" ? "Base centre " : "Offset ";
             form->addHeader("Placement (world)");
@@ -2579,7 +2658,7 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             const bool chamfer=task==Task::chamfer;
             title = chamfer?"Chamfer":"Fillet";
             instruction = chamfer?"Click each edge on one solid body in Edge mode to add it, then enter the distance. Clear selected edges to start again.":"Select a solid body and one or more of its edges in Edge mode, then enter the radius.";
-            accept = chamfer?(editingChamferId.isEmpty()?"Chamfer":"Update Chamfer"):"Fillet";
+            accept = chamfer?(editingChamferId.isEmpty()?"Chamfer":"Update Chamfer"):(editingFilletId.isEmpty()?"Fillet":"Update Fillet");
             form->addHeader("Body and Edges");
             form->addSlot("target", "Target body", slotText(targetId, "Select a body in tree or view"), targetColour, targetId.isEmpty(), [this] {
                 postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
@@ -2863,6 +2942,14 @@ void CadWorkspacePanel::acceptTask()
                 const auto request=chamferArguments("update");clearChamferPreview(false);const auto reply=service->chamferCommand(request);
                 if(!(bool)reply["ok"]){showError(reply["error"].toString());return;}f=document.find(selectedId);
             }
+            if(f->type=="fillet")
+            {
+                if(r > 0 && std::abs(r - f->radius) > 1e-9)
+                {
+                    ok = service->updateFillet(selectedId, f->targetFeatureId, service->document().filletEdgeIndices(selectedId), r, e);
+                    if(!ok){showError(e);return;}f=document.find(selectedId);
+                }
+            }
             if (ok && name != f->name) ok = service->rename(selectedId, name, e);
             if (ok && (f = document.find(selectedId)) != nullptr && (f->type!="chamfer" && f->type!="hole" && (w != f->width || d != f->depth || h != f->height || r != f->radius))) ok = service->setDimensions(selectedId, w, d, h, r, e);
             if (ok && (f = document.find(selectedId)) != nullptr && (x != f->x || y != f->y || z != f->z)) ok = service->setPlacement(selectedId, x, y, z, f->rx, f->ry, f->rz, e);
@@ -3018,9 +3105,20 @@ void CadWorkspacePanel::acceptTask()
             filletRadius = form->number("radius");
             const auto target = targetId;
             const auto edges = filletEdges;
-            if (!service->createFillet(target, edges, filletRadius, id, e)) { showError(e); return; }
+            bool ok = false;
+            if (editingFilletId.isNotEmpty())
+            {
+                ok = service->updateFillet(editingFilletId, target, edges, filletRadius, e);
+                id = editingFilletId;
+            }
+            else
+            {
+                ok = service->createFillet(target, edges, filletRadius, id, e);
+            }
+            if (!ok) { showError(e); return; }
+            clearChamferPreview(false);
             refreshFromDocument(true); selectFeature(id);
-            setMessage(featureName(id) + " created. " + featureName(target) + " is hidden in the tree; Undo restores it.", 0);
+            setMessage(featureName(id) + (editingFilletId.isNotEmpty() ? " updated." : " created. " + featureName(target) + " is hidden in the tree; Undo restores it."), 0);
             return;
         }
         case Task::none: return;
@@ -3031,6 +3129,17 @@ void CadWorkspacePanel::acceptTask()
 void CadWorkspacePanel::cancelTask()
 {
     clearLatheView();clearModelingView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
+    if (task == Task::fillet || task == Task::chamfer)
+    {
+        filletEdges.clear();
+        const auto restoreId = editingFilletId.isNotEmpty() ? editingFilletId : (editingChamferId.isNotEmpty() ? editingChamferId : (targetId.isNotEmpty() ? targetId : selectedId));
+        editingFilletId.clear();
+        editingChamferId.clear();
+        if (selection != nullptr) { selection->setMode(djehuti::cad::CadSelection::Mode::body); selection->clear(); }
+        selectFeature(restoreId);
+        setMessage("Command cancelled; the model is unchanged.", 0);
+        return;
+    }
     switch (task)
     {
         case Task::body: rebuildTaskPanel(false); setMessage("Changes reverted.", 0); return;
@@ -3063,7 +3172,7 @@ void CadWorkspacePanel::finishSketch()
     const auto sketchId = editingSketchId;
     sketchCanvas->cancelGesture(); sketchCanvas->setTool("select");
     editingSketchId.clear(); sketchEntityId.clear(); sketchSecondEntityId.clear();
-    sketchCanvas->setVisible(false); modelView.setVisible(true);
+    sketchCanvas->setVisible(false); modelView.setVisible(true); modelView.setSnapshot(service->snapshot());
     selectedId = sketchId; task = Task::sketch;
     commandMessage = "Sketch finished. Use Extrude or Cut Sketch with this profile."; commandSeverity = 0; validationMessage.clear();
     syncTreeSelection(); updateHighlights(); updateToolbar();
@@ -3121,6 +3230,11 @@ void CadWorkspacePanel::updateToolbar()
     const bool sketching = editingSketchId.isNotEmpty();
     sketchPalette->setAvailable(sketching);
     sketchPalette->refresh([this](const auto& c){return uiCommandEnabled(c);},[this](const auto& c){return uiToolActive(c);});
+    if (modifyPalette)
+    {
+        modifyPalette->setAvailable(!sketching);
+        modifyPalette->refresh([this](const auto& c){return uiCommandEnabled(c);},[this](const auto& c){return uiToolActive(c);});
+    }
     for (auto* b : { &sketchButton, &boxButton, &cylinderButton, &extrudeButton, &revolveButton, &latheButton, &cutButton, &filletButton, &chamferButton, &holeButton, &subtractButton, &unionButton, &intersectButton, &fitButton, &resetViewButton, &viewsButton, &instanceButton, &jointButton, &couplingButton, &linkButton, &ikButton, &bodyModeButton, &faceModeButton, &edgeModeButton }) b->setVisible(!sketching);
     {
         const auto mode = selection != nullptr ? selection->mode() : djehuti::cad::CadSelection::Mode::body;
@@ -3757,9 +3871,11 @@ void CadWorkspacePanel::toggleVisibility(const juce::String& id)
 
 void CadWorkspacePanel::deleteFeature(const juce::String& id)
 {
+    const auto* f = service->document().find(id);
+    const auto fallbackSelect = f != nullptr ? (f->targetFeatureId.isNotEmpty() ? f->targetFeatureId : f->firstOperand) : juce::String();
     juce::String e; const auto name = featureName(id);
     if (!service->remove(id, e)) { showError(e); return; }
-    if (selectedId == id) selectedId.clear();
+    if (selectedId == id) selectedId = fallbackSelect;
     refreshFromDocument(true);
     selectFeature(selectedId);
     setMessage(name + " deleted. Undo restores it.", 0);
@@ -4703,7 +4819,7 @@ std::vector<djehuti::cad::ui::ReferenceInput> CadWorkspacePanel::referenceInputs
     const auto& instances=d.mechanicsData().instances;for(const auto& i:instances)instanced.addIfNotAlreadyThere(i.featureId);
     const auto add=[&](const juce::String& id,const juce::String& feature,const juce::String& label,bool solid,bool visible,const gp_Trsf& transform)
     {sources.push_back({id,feature,label,solid,(bool)referenceVisibility.getProperty(id,visible)&&(solid?showReferenceSolids:showReferenceSketches)&&referenceOpacity>0,transform});};
-    for(const auto& f:d.features())if(f.id!=editingSketchId)
+    for(const auto& f:d.features())if(f.id!=editingSketchId && f.sketchId!=editingSketchId)
     {
         if(f.type=="sketch")add(f.id,f.id,f.name,false,f.visible,{});
         else if(!f.shape.IsNull()&&!instanced.contains(f.id))add(f.id,f.id,f.name,true,f.visible,{});

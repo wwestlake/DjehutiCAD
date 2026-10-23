@@ -271,6 +271,8 @@ public:
     std::shared_ptr<const CadRenderSnapshot> chamferPreview(const juce::var& args, juce::var& result, juce::String& error) const;
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
+    bool updateFillet(const juce::String& id, const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& error);
+    std::vector<int> filletEdgeIndices(const juce::String& id) const;
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
     bool setDimensions(const juce::String& id, double width, double depth, double height, double radius, juce::String& error);
     bool booleanOp(const juce::String& kind, const juce::String& first, const juce::String& second, juce::String& id, juce::String& error);
@@ -501,6 +503,8 @@ public:
     juce::var modelingCommand(const juce::String& type,const juce::var& args) { return model.modelingCommand(type,args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
+    bool updateFillet(const juce::String& id, const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& error) { return model.updateFillet(id, targetFeatureId, edgeIndices, radius, error); }
+    std::vector<int> filletEdgeIndices(const juce::String& id) const { return model.filletEdgeIndices(id); }
     bool setPlacement(const juce::String& id, double x, double y, double z, double rx, double ry, double rz, juce::String& error);
     bool setDimensions(const juce::String& id, double w, double d, double h, double radius, juce::String& error);
     bool booleanOp(const juce::String& kind, const juce::String& a, const juce::String& b, juce::String& id, juce::String& error);

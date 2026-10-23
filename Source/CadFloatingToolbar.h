@@ -23,9 +23,11 @@ public:
         if(horizontal){const int columns=juce::jmax(1,juce::jmin(n,(area.getWidth()-8)/32));return {juce::jmin(area.getWidth(),juce::jmax(112,columns*32+8)),24+((n+columns-1)/columns)*34+4};}
         const int rows=juce::jmax(1,juce::jmin(n,(area.getHeight()-28)/34));return {juce::jmax(96,((n+rows-1)/rows)*34+8),24+rows*34+4};
     }
-    void place(juce::Rectangle<int> area,bool available)
+    void setAvailable(bool a) { available=a; setVisible(available && wanted); }
+    bool isAvailable() const { return available; }
+    void place(juce::Rectangle<int> area,bool avail)
     {
-        placement=area;setVisible(available&&wanted);if(!isVisible()||area.isEmpty())return;
+        available=avail;placement=area;setVisible(available&&wanted);if(!isVisible()||area.isEmpty())return;
         auto size=preferredSize(area);size.x=juce::jmin(size.x,area.getWidth());size.y=juce::jmin(size.y,area.getHeight());
         auto at=floating;if(docked){at={0,0};if(edge=="bottom")at.y=area.getHeight()-size.y;if(edge=="right")at.x=area.getWidth()-size.x;}
         at.x=juce::jlimit(0,juce::jmax(0,area.getWidth()-size.x),at.x);at.y=juce::jlimit(0,juce::jmax(0,area.getHeight()-size.y),at.y);
@@ -42,7 +44,7 @@ public:
     void toggleVisible(){wanted=!wanted;changed();}
     void toggleDocked(){docked=!docked;changed();}
     void refresh(const std::function<bool(const juce::String&)>& enabled,const std::function<bool(const juce::String&)>& active)
-    {for(auto& b:buttons){b->setEnabled(enabled(b->getName()));b->setToggleState(active(b->getName()),juce::dontSendNotification);}}
+    {for(auto& b:buttons){b->setEnabled(available&&enabled(b->getName()));b->setToggleState(active(b->getName()),juce::dontSendNotification);}}
     bool invoke(const juce::String& key)
     {for(auto& b:buttons)if(b->getName()==key&&b->isEnabled()){b->onClick();return true;}return false;}
     juce::var state() const
@@ -114,5 +116,5 @@ private:
         }
     };
     void changed(){resized();if(layoutChanged)layoutChanged();}
-    bool rotatable=false,horizontal=true,wanted=true,docked=false,dragging=false;juce::String edge="top";juce::Point<int> floating;juce::Rectangle<int> placement;juce::ComponentDragger dragger;juce::TextButton close{"x"},dock{"Dock"},orientation{"V"};std::vector<std::unique_ptr<Icon>> buttons;
+    bool available=true,rotatable=false,horizontal=true,wanted=true,docked=false,dragging=false;juce::String edge="top";juce::Point<int> floating;juce::Rectangle<int> placement;juce::ComponentDragger dragger;juce::TextButton close{"x"},dock{"Dock"},orientation{"V"};std::vector<std::unique_ptr<Icon>> buttons;
 };

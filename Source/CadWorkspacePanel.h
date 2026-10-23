@@ -241,13 +241,14 @@ private:
     void showHoleSource();
     void clearHoleSource();
     double chamferDistance = 1.0;
-    juce::String editingChamferId;
+    juce::String editingChamferId, editingFilletId;
     bool chamferPreviewActive = false, chamferSourceActive = false;
     std::uint64_t chamferSelectionRevision = 0;
     juce::var chamferArguments(const juce::String& action) const;
     void previewChamfer();
     void clearChamferPreview(bool keepSource = false);
     void showChamferSource();
+    void showFilletSource();
     djehuti::cad::CadRevolveParameters revolveSettings;
     juce::StringArray revolveProfileIds;
     juce::String editingLatheId;

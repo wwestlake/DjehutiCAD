@@ -854,12 +854,98 @@ bool CadDocument::createFillet(const juce::String& target,const std::vector<int>
         return true;
     }, error);
 }
+std::vector<int> CadDocument::filletEdgeIndices(const juce::String& id) const
+{
+    std::vector<int> indices;
+    const auto* f = find(id);
+    if (f == nullptr || (f->type != "fillet" && f->type != "chamfer")) return indices;
+    const auto* target = find(f->targetFeatureId.isNotEmpty() ? f->targetFeatureId : f->firstOperand);
+    if (target == nullptr || target->shape.IsNull()) return indices;
+    TopTools_IndexedMapOfShape map;
+    TopExp::MapShapes(target->shape, TopAbs_EDGE, map);
+    for (const auto& token : f->edges)
+    {
+        TopoDS_Edge edge;
+        if (resolveEdgeFromToken(target->shape, token, &target->faceOrigins, edge))
+        {
+            const int idx = map.FindIndex(edge) - 1;
+            if (idx >= 0) indices.push_back(idx);
+        }
+    }
+    return indices;
+}
+
+bool CadDocument::updateFillet(const juce::String& id, const juce::String& target, const std::vector<int>& edgeIndices, double radius, juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        auto* f = find(id);
+        if (f == nullptr || f->type != "fillet") { e = "Unknown fillet feature: " + id; return false; }
+        const auto targetId = target.isNotEmpty() ? target : (f->targetFeatureId.isNotEmpty() ? f->targetFeatureId : f->firstOperand);
+        const auto* targetFeature = find(targetId);
+        if (targetFeature == nullptr || targetFeature->shape.IsNull() || targetFeature->type == "sketch")
+        {
+            e = "Fillet requires an existing solid target body.";
+            return false;
+        }
+        if (radius <= 0 || !std::isfinite(radius))
+        {
+            e = "Fillet radius must be finite and greater than zero.";
+            return false;
+        }
+        if (edgeIndices.empty())
+        {
+            e = "Fillet requires at least one selected edge.";
+            return false;
+        }
+        TopTools_IndexedMapOfShape edgeMap;
+        TopExp::MapShapes(targetFeature->shape, TopAbs_EDGE, edgeMap);
+        juce::StringArray tokens;
+        for (const int idx : edgeIndices)
+        {
+            if (idx < 0 || idx >= edgeMap.Extent())
+            {
+                e = "Edge index " + juce::String(idx) + " is invalid for " + targetFeature->name + ".";
+                return false;
+            }
+            const auto token = encodeEdgeToken(targetFeature->shape, edgeMap(idx + 1), &targetFeature->faceOrigins);
+            if (token.isEmpty())
+            {
+                e = "Unable to encode edge reference for edge " + juce::String(idx) + ".";
+                return false;
+            }
+            tokens.addIfNotAlreadyThere(token);
+        }
+        for (auto& item : items)
+        {
+            if (item.id == id)
+            {
+                item.targetFeatureId = targetId;
+                item.firstOperand = targetId;
+                item.radius = radius;
+                item.edges = tokens;
+            }
+            if (item.id == targetId)
+                item.visible = false;
+        }
+        juce::StringArray active;
+        const auto result = evaluate(id, e, active);
+        if (result.IsNull()) return false;
+        if (!TopExp_Explorer(result, TopAbs_SOLID).More())
+        {
+            e = f->name + " would produce no solid.";
+            return false;
+        }
+        return true;
+    }, error);
+}
+
 bool CadDocument::setPlacement(const juce::String& id,double x,double y,double z,double rx,double ry,double rz,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){f.x=x;f.y=y;f.z=z;f.rx=rx;f.ry=ry;f.rz=rz;return true;}e="Unknown feature id: "+id;return false;},error); }
 bool CadDocument::setDimensions(const juce::String& id,double w,double d,double h,double r,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){if(f.type=="box"&&(w<=0||d<=0||h<=0)){e="Box dimensions must be greater than zero.";return false;}if(f.type=="cylinder"&&(r<=0||h<=0)){e="Cylinder radius and height must be greater than zero.";return false;}if((f.type=="extrude"||f.type=="cut")&&h<=0){e="Feature depth must be greater than zero.";return false;}if(f.type=="fillet"&&r<=0){e="Fillet radius must be greater than zero.";return false;}f.width=w;f.depth=d;f.height=h;f.radius=r;if(f.type=="extrude"||f.type=="cut")f.depth=h;return true;}e="Unknown feature id: "+id;return false;},error); }
 bool CadDocument::booleanOp(const juce::String& kind,const juce::String& first,const juce::String& second,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){if((kind!="union"&&kind!="subtract"&&kind!="intersect")||find(first)==nullptr||find(second)==nullptr||first==second){e="Boolean operation requires two distinct existing features.";return false;}for(const auto* operand:{find(first),find(second)})if(operand->type=="sketch"||operand->shape.IsNull()){e=operand->name+" is not a solid body; Boolean operations need two solid bodies.";return false;}CadFeature f;f.id=newId(kind.toRawUTF8(),nextNumber++);f.name=kind.substring(0,1).toUpperCase()+kind.substring(1)+" "+juce::String(nextNumber-1);f.type=kind;f.firstOperand=first;f.secondOperand=second;for(auto& source:items)if(source.id==first||source.id==second)source.visible=false;items.push_back(f);juce::StringArray active;const auto result=evaluate(f.id,e,active);if(result.IsNull())return false;if(!TopExp_Explorer(result,TopAbs_SOLID).More()){e=f.name+" would produce no solid: the bodies do not overlap.";return false;}id=f.id;return true;},error); }
 bool CadDocument::rename(const juce::String& id,const juce::String& name,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){if(name.trim().isEmpty()){e="Name cannot be empty.";return false;}f.name=name.trim();return true;}e="Unknown feature id: "+id;return false;},error); }
 bool CadDocument::setVisible(const juce::String& id,bool visible,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){f.visible=visible;return true;}e="Unknown feature id: "+id;return false;},error); }
-bool CadDocument::remove(const juce::String& id,juce::String& error) { return mutate([&](juce::String& e){for(const auto& sketch:sketches)if(sketch.supportFeature==id){e="Cannot delete a body that supports "+(find(sketch.id)!=nullptr?find(sketch.id)->name:sketch.id)+"; delete that sketch first.";return false;}for(const auto& instance:mechanics.instances)if(instance.featureId==id){e="Cannot delete a body used by assembly instance "+instance.name+"; delete the instance first.";return false;}for(const auto& f:items)if(f.firstOperand==id||f.secondOperand==id||replicationDependencies(f.replication).contains(id)||modelingDependencies(f.modeling).contains(id)){e="Cannot delete a feature used by another modeling feature.";return false;}const auto old=items.size();items.erase(std::remove_if(items.begin(),items.end(),[&](const CadFeature& f){return f.id==id;}),items.end());if(items.size()==old){e="Unknown feature id: "+id;return false;}auto& assigned=materials.assignments;assigned.erase(std::remove_if(assigned.begin(),assigned.end(),[&](const CadMaterialAssignment& a){return a.featureId==id;}),assigned.end());return true;},error); }
+bool CadDocument::remove(const juce::String& id,juce::String& error) { return mutate([&](juce::String& e){for(const auto& sketch:sketches)if(sketch.supportFeature==id){e="Cannot delete a body that supports "+(find(sketch.id)!=nullptr?find(sketch.id)->name:sketch.id)+"; delete that sketch first.";return false;}for(const auto& instance:mechanics.instances)if(instance.featureId==id){e="Cannot delete a body used by assembly instance "+instance.name+"; delete the instance first.";return false;}for(const auto& f:items)if(f.firstOperand==id||f.secondOperand==id||f.targetFeatureId==id||replicationDependencies(f.replication).contains(id)||modelingDependencies(f.modeling).contains(id)){e="Cannot delete a feature used by another modeling feature.";return false;}const auto* targetItem = find(id);if(targetItem==nullptr){e="Unknown feature id: "+id;return false;}const auto targetOp1=targetItem->firstOperand,targetOp2=targetItem->secondOperand,targetBody=targetItem->targetFeatureId;items.erase(std::remove_if(items.begin(),items.end(),[&](const CadFeature& f){return f.id==id;}),items.end());auto& assigned=materials.assignments;assigned.erase(std::remove_if(assigned.begin(),assigned.end(),[&](const CadMaterialAssignment& a){return a.featureId==id;}),assigned.end());for(const auto& candidate:{targetOp1,targetOp2,targetBody})if(candidate.isNotEmpty()){bool stillConsumed=false;for(const auto& remaining:items)if(remaining.firstOperand==candidate||remaining.secondOperand==candidate||remaining.targetFeatureId==candidate){stillConsumed=true;break;}if(!stillConsumed)for(auto& prior:items)if(prior.id==candidate&&prior.type!="sketch")prior.visible=true;}return true;},error); }
 bool CadDocument::restoreMechanicsFromOCAF(juce::String& error)
 {
     const auto text = readString(ocafDocument->Main().FindChild(kMechanicsContainerTag, false), 1);
