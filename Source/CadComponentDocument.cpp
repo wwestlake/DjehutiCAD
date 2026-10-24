@@ -50,6 +50,7 @@ bool CadDocument::insertComponent(const juce::var& record,const CadFrame& placem
 {
     if(!validate(record,error))return false;
     for(double value:{placement.x,placement.y,placement.z,placement.qw,placement.qx,placement.qy,placement.qz})if(!std::isfinite(value)){error="Component placement must be finite.";return false;}
+    if(record["geometry"]["kind"].toString()=="assembly")return insertComponentAssembly(record,placement,instanceId,error);
     auto snapshot=clone(record);
     if(snapshot["geometry"]["kind"].toString()=="brep"&&snapshot["geometry"]["data"].toString().isEmpty())
     {
@@ -86,6 +87,44 @@ bool CadDocument::insertComponent(const juce::var& record,const CadFrame& placem
             }
         }
         CadMechanicalInstance instance;instance.id=newId("inst",nextNumber++);instance.name=record["name"].toString();instance.featureId=featureId;instance.placement=placement;mechanics.instances.push_back(instance);++mechanics.interfaceRevision;++mechanics.profileRevision;instanceId=instance.id;return true;
+    },error);
+}
+bool CadDocument::insertComponentAssembly(const juce::var& record,const CadFrame& placement,juce::String& instanceId,juce::String& error)
+{
+    if(!validateAssembly(record,error))return false;
+    const auto a=record["assembly"];std::vector<juce::var> parts;
+    for(const auto& part:*a["parts"].getArray())
+    {auto r=assemblyPart(record,part);if(components::shape(r,error).IsNull())return false;parts.push_back(r);}
+    const auto joint=a["joint"];const auto groundedRole=joint.isObject()?joint["parent"].toString():parts.front()["assemblyRole"].toString();
+    return mutate([&](juce::String& e)
+    {
+        std::map<juce::String,juce::String> occurrence;   // part role -> instance id
+        for(const auto& part:parts)
+        {
+            const auto stamp=digest(juce::JSON::toString(part));juce::String featureId;
+            for(const auto& d:componentDefinitions)if(digest(juce::JSON::toString(d.record))==stamp&&find(d.featureId)){featureId=d.featureId;break;}
+            if(featureId.isEmpty())
+            {
+                CadFeature feature;feature.id=newId("component",nextNumber++);feature.type="component";feature.name=part["name"].toString();featureId=feature.id;
+                items.push_back(feature);componentDefinitions.push_back({feature.id,clone(part)});
+            }
+            CadMechanicalInstance instance;instance.id=newId("inst",nextNumber++);instance.name=part["name"].toString();instance.featureId=featureId;instance.placement=placement;
+            instance.grounded=part["assemblyRole"].toString()==groundedRole;
+            mechanics.instances.push_back(instance);occurrence[part["assemblyRole"].toString()]=instance.id;
+        }
+        if(joint.isObject())
+        {
+            // The joint is authored in the component's own frame and placed with the occurrence.
+            const auto world=placement.toTrsf();
+            const auto origin=gp_Pnt((double)joint["origin"][0],(double)joint["origin"][1],(double)joint["origin"][2]).Transformed(world);
+            const auto axis=gp_Dir((double)joint["direction"][0],(double)joint["direction"][1],(double)joint["direction"][2]).Transformed(world);
+            CadJointRequest request;request.type=joint["type"].toString();request.parentInstance=occurrence[joint["parent"].toString()];request.childInstance=occurrence[joint["child"].toString()];
+            request.name=record["name"].toString()+" "+joint.getProperty("name",juce::String(request.type)).toString();
+            request.originX=origin.X();request.originY=origin.Y();request.originZ=origin.Z();request.axisX=axis.X();request.axisY=axis.Y();request.axisZ=axis.Z();
+            CadJoint created;created.id=newId("joint",nextNumber++);if(!jointFramesFromRequest(request,created,e))return false;
+            mechanics.joints.push_back(created);if(!mech::validateModel(mechanics,e))return false;
+        }
+        ++mechanics.interfaceRevision;++mechanics.profileRevision;instanceId=occurrence[groundedRole];return true;
     },error);
 }
 bool CadDocument::updateCraftStock(const juce::String& feature, const juce::var& geometry, juce::String& error)

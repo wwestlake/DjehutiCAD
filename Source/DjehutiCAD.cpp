@@ -397,7 +397,9 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     dockManager->registerPanel("fixtures", "Test Fixtures", std::move(fixtureContent), CreationDock::DockTargetZone::CenterTab);
     auto browserContent=std::make_unique<CadComponentBrowser>(cadService);componentBrowser=browserContent.get();
     componentBrowser->selectedPart=[this]{auto id=cadWorkspace->automationState()["selected"].toString();if(const auto* instance=cadService->document().mechanicsData().findInstance(id))id=instance->featureId;return id;};
-    componentBrowser->onInserted=[this](const juce::String& id){auto args=djehuti::cad::components::object();djehuti::cad::components::put(args,"action","select");djehuti::cad::components::put(args,"id",id);cadWorkspace->automation(args);};
+    // After an insertion the CAD workspace comes forward with the new occurrence selected and Move / Rotate ready.
+    componentBrowser->onInserted=[this](const juce::String& id){selectWorkspace(0);if(cadWorkspace!=nullptr)cadWorkspace->focusInsertedComponent(id);};
+    cadWorkspace->onOpenComponentLibrary=[this]{selectWorkspace(6);};
     dockManager->registerPanel("components","Component Library",std::move(browserContent),CreationDock::DockTargetZone::CenterTab);
     auto craftStockContent=std::make_unique<CadCraftBrowser>(cadService);craftBrowser=craftStockContent.get();
     craftBrowser->selectedOccurrence=[this]{return craftWorkspace->automationState()["selected"].toString();};

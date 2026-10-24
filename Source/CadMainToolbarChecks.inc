@@ -51,7 +51,7 @@ private:
         bool full=true,overlap=false;int count=0;juce::Array<juce::Rectangle<int>> bounds;const auto controls=toolbar.state()["controls"];
         for(auto* c:toolbar.getChildren())if(dynamic_cast<juce::Button*>(c)&&controls.size()>0){bool tool=false;for(const auto& v:*controls.getArray())if(v["command"].toString()==c->getName())tool=true;if(!tool)continue;++count;
             full=full&&c->getWidth()==32&&c->getHeight()==32&&toolbar.getLocalBounds().contains(c->getBounds())&&dynamic_cast<juce::Button*>(c)->getTooltip().isNotEmpty();for(const auto& b:bounds)overlap=overlap||b.intersects(c->getBounds());bounds.add(c->getBounds());}
-        check(full&&!overlap&&count==(toolbar.getName()=="Modify toolbar"?22:9),"Square, contained, spaced icons and tooltips: "+toolbar.getName());
+        check(full&&!overlap&&count==(toolbar.getName()=="Modify toolbar"?23:9),"Square, contained, spaced icons and tooltips: "+toolbar.getName());
         const auto image=toolbar.createComponentSnapshot(toolbar.getLocalBounds());bool opaque=true;for(int y=0;y<image.getHeight();++y)for(int x=0;x<image.getWidth();++x)opaque=opaque&&image.getPixelAt(x,y).getAlpha()==255;check(opaque&&toolbar.isOpaque(),"Rendered toolbar background is fully opaque");
     }
     void timerCallback() override

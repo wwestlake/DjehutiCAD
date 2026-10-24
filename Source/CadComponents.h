@@ -18,6 +18,9 @@ void put(juce::var&,const juce::Identifier&,const juce::var&);
 juce::String digest(const juce::String&);
 bool validate(const juce::var&,juce::String&);
 TopoDS_Shape shape(const juce::var&,juce::String&);
+// Multi-part components (record.assembly): validation and the per-part record each occurrence is defined by.
+bool validateAssembly(const juce::var& record,juce::String& error);
+juce::var assemblyPart(const juce::var& record,const juce::var& part);
 juce::String encodeShape(const TopoDS_Shape&);
 juce::File resolveAssetFile(const juce::var& record,const juce::String& relativePath);
 bool attachModel(juce::var&,const juce::File&,juce::String&);

@@ -90,11 +90,30 @@ public:
     void setPickMarkers(std::vector<std::pair<juce::String,std::array<float,3>>> markers) { pickMarkers=std::move(markers); }
     std::function<void(const juce::String&)> onMarkerPicked;
     void markDirty();
+    // Move/rotate manipulator for one body or assembly instance. The viewport draws and hit-tests it and previews
+    // the drag without touching the document; the owner applies the finished amount as one document command.
+    struct Manipulator
+    {
+        bool active = false, local = false;
+        juce::String drawId, label;
+        std::array<float, 3> pivot {};
+        std::array<std::array<float, 3>, 3> axes { { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } } };
+    };
+    struct Manipulation { bool rotate = false; int axis = 0; double amount = 0.0; };   // mm along, or radians about, axes[axis] through pivot
+    void setManipulator(const Manipulator& next);
+    const Manipulator& manipulator() const { return manip; }
+    bool isManipulating() const { return manipAxis >= 0; }
+    std::function<bool(const Manipulation&)> onManipulated;   // true: committed (the preview clears when the new geometry arrives)
+    juce::var manipulatorState() const;
+    juce::Point<float> manipulatorHandle(int axis, bool rotate, float fraction) const;   // screen point on an arrow or ring
+    // Standard named views (front, back, left, right, top, bottom, isometric) about the current orbit target.
+    bool setStandardView(const juce::String& name);
 
 private:
     friend bool runViewportInteractionCheck(juce::String&);
     friend bool runWorkspaceNavigationCheck(juce::var&);
     friend bool runViewportRangeCheck(juce::var&);
+    friend bool runPlacementWorkflowCheck(juce::var&);
     std::array<float,2> clippingPlanes() const;
     std::array<float,2> navigationRange() const;
     void renderFloor(const DjehutiFramePacket&);
@@ -125,6 +144,23 @@ private:
     juce::String dragTargetId;
     std::array<float, 3> dragPlanePoint {}, dragPlaneNormal {};
     std::vector<std::pair<juce::String,std::array<float,3>>> pickMarkers;
+    Manipulator manip;
+    int manipAxis = -1, previewClearFrames = -1;
+    bool manipRotate = false, orbitAnchored = false;
+    double manipStartParam = 0.0, manipAmount = 0.0;
+    std::array<float, 3> manipStartVector {};
+    juce::Point<float> manipMouse, manipPress;
+    bool glPreviewActive = false; juce::String glPreviewId; std::array<float, 16> glPreviewMatrix {};   // guarded by highlightLock
+    static constexpr float maxPitch = 1.5697f;   // just short of straight up/down: top and bottom views
+    float manipulatorLength() const;
+    std::array<float, 3> eyePosition() const;
+    bool hitManipulator(juce::Point<float> position, int& axis, bool& rotate) const;
+    bool axisParameter(juce::Point<float> position, int axis, double& t) const;
+    bool ringVector(juce::Point<float> position, int axis, std::array<float, 3>& v) const;
+    void updateManipulation(juce::Point<float> position, bool snap);
+    void setPreview(bool active);
+    void drawManipulator(juce::Graphics&);
+    void anchorOrbit(juce::Point<float> position);
 
     void timerCallback() override;
     void newOpenGLContextCreated() override;

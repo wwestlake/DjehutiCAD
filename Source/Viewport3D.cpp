@@ -17,6 +17,7 @@ V3 cross(V3 a, V3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x
 float length(V3 a) { return std::sqrt(dot(a, a)); }
 V3 normalized(V3 a) { const auto l = juce::jmax(1.0e-6f, length(a)); return scale(a, 1.0f / l); }
 M4 identity() { M4 m; m.v[0] = m.v[5] = m.v[10] = m.v[15] = 1.0f; return m; }
+M4 multiply4(const M4& a, const M4& b);   // column-major a * b (defined with the manipulator helpers)
 M4 mul(const M4& a, const M4& b) { M4 r; for (int c = 0; c < 4; ++c) for (int row = 0; row < 4; ++row) for (int k = 0; k < 4; ++k) r.v[c * 4 + row] += a.v[k * 4 + row] * b.v[c * 4 + k]; return r; }
 M4 perspective(float fov, float aspect, float nearZ, float farZ) { M4 m; const auto f = 1.0f / std::tan(fov * 0.5f); m.v[0] = f / aspect; m.v[5] = f; m.v[10] = (farZ + nearZ) / (nearZ - farZ); m.v[11] = -1.0f; m.v[14] = 2.0f * farZ * nearZ / (nearZ - farZ); return m; }
 M4 camera(float yaw, float pitch, float distance, float targetX, float targetY, float targetZ, float panX, float panY)
@@ -80,7 +81,7 @@ Viewport3D::Viewport3D(int number) : viewNumber(number)
     setOpaque(false); context.setRenderer(this); context.setContinuousRepainting(false); context.setOpenGLVersionRequired(juce::OpenGLContext::openGL4_1); context.attachTo(*this);
 }
 Viewport3D::~Viewport3D() { context.detach(); }
-void Viewport3D::paint(juce::Graphics& g) { if(faceSnapMarker&&faceSnapEnabled&&faceSnapEnabled()){g.setColour(juce::Colour(0xffffce73));g.drawRect(juce::Rectangle<float>(faceSnapScreen.x-4,faceSnapScreen.y-4,8,8),1.5f);g.drawText("face",(int)faceSnapScreen.x+9,(int)faceSnapScreen.y-18,55,18,juce::Justification::left);} drawReferenceGuides(g); g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(flyMode?"FLY | WASD move, Q/E down/up, drag/arrow keys look, Shift faster, Esc exits":orbitPointPicking?"Set orbit point: click a surface or the XY floor; Esc cancels":title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
+void Viewport3D::paint(juce::Graphics& g) { if(faceSnapMarker&&faceSnapEnabled&&faceSnapEnabled()){g.setColour(juce::Colour(0xffffce73));g.drawRect(juce::Rectangle<float>(faceSnapScreen.x-4,faceSnapScreen.y-4,8,8),1.5f);g.drawText("face",(int)faceSnapScreen.x+9,(int)faceSnapScreen.y-18,55,18,juce::Justification::left);} drawReferenceGuides(g); drawManipulator(g); g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(flyMode?"FLY | WASD move, Q/E down/up, drag/arrow keys look, Shift faster, Esc exits":orbitPointPicking?"Set orbit point: click a surface or the XY floor; Esc cancels":title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
 void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged && !fitPending) frameScene(); tryPendingFit(); markDirty(); }
 void Viewport3D::timerCallback()
 {
@@ -125,8 +126,19 @@ void Viewport3D::mouseDown(const juce::MouseEvent& e)
 {
     grabKeyboardFocus();
     dragStart = pressPosition = e.position.roundToInt();
-    draggingTarget = false;
+    draggingTarget = false; orbitAnchored = false;
     if(flyMode||orbitPointPicking)return;
+    if(manip.active&&!e.mods.isRightButtonDown()&&!e.mods.isShiftDown()&&!e.mods.isPopupMenu())
+    {
+        int axis=-1;bool rotate=false;
+        if(hitManipulator(e.position,axis,rotate))
+        {
+            manipAxis=axis;manipRotate=rotate;manipAmount=0;manipMouse=manipPress=e.position;double t=0;
+            if(rotate?!ringVector(e.position,axis,manipStartVector):false)manipAxis=-1;
+            else if(!rotate)manipStartParam=axisParameter(e.position,axis,t)?t:0.0;
+            if(manipAxis>=0){repaint();return;}
+        }
+    }
     selectingRegion=selection!=nullptr && (selection->tool()==djehuti::cad::CadSelection::Tool::box||selection->tool()==djehuti::cad::CadSelection::Tool::circle) && !e.mods.isRightButtonDown() && !e.mods.isShiftDown() && !(wantsBodyPick && wantsBodyPick());
     regionEnd=e.position;
     if(selectingRegion) { repaint(); return; }
@@ -141,6 +153,14 @@ void Viewport3D::mouseDown(const juce::MouseEvent& e)
 void Viewport3D::mouseUp(const juce::MouseEvent& e)
 {
     if(flyMode)return;
+    if(manipAxis>=0)
+    {
+        updateManipulation(e.position,e.mods.isCtrlDown());
+        const Manipulation result{manipRotate,manipAxis,manipAmount};manipAxis=-1;
+        previewClearFrames=30;   // cleared when the committed geometry or pose arrives
+        if(std::abs(result.amount)<1e-12||onManipulated==nullptr||!onManipulated(result))setPreview(false);
+        markDirty();repaint();return;
+    }
     if(orbitPointPicking){
         if(e.mods.isPopupMenu()){orbitPointPicking=false;repaint();return;}
         if(e.position.roundToInt().getDistanceFrom(pressPosition)>3)return;
@@ -349,6 +369,7 @@ void Viewport3D::mouseDrag(const juce::MouseEvent& e)
 {
     if(flyMode){const auto now=e.position.roundToInt(),d=now-dragStart;lookFly(d.x*.006f,d.y*.006f);dragStart=now;return;}
     if(orbitPointPicking)return;
+    if(manipAxis>=0){updateManipulation(e.position,e.mods.isCtrlDown());return;}
     if(selectingRegion) { regionEnd=e.position; repaint(); return; }
     if (draggingTarget)
     {
@@ -357,7 +378,7 @@ void Viewport3D::mouseDrag(const juce::MouseEvent& e)
         if (onFrameRequested) onFrameRequested();
         return;
     }
-    const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { const auto unitsPerPixel=2.0f*distance*std::tan(0.425f)/(float)juce::jmax(1,getHeight()); panX += d.x * unitsPerPixel; panY -= d.y * unitsPerPixel; } else { yaw += d.x * 0.01f; pitch = juce::jlimit(-1.4f, 1.4f, pitch + d.y * 0.01f); } dragStart = now; cameraChanged(); }
+    const auto now = e.position.roundToInt(), d = now - dragStart; if (e.mods.isRightButtonDown() || e.mods.isShiftDown()) { const auto unitsPerPixel=2.0f*distance*std::tan(0.425f)/(float)juce::jmax(1,getHeight()); panX += d.x * unitsPerPixel; panY -= d.y * unitsPerPixel; } else { if(!orbitAnchored){orbitAnchored=true;anchorOrbit(pressPosition.toFloat());} yaw += d.x * 0.01f; pitch = juce::jlimit(-maxPitch, maxPitch, pitch + d.y * 0.01f); } dragStart = now; cameraChanged(); }
 void Viewport3D::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& w)
 {
     const auto range=navigationRange();const auto minimumDistance=range[0], maximumDistance=range[1];
@@ -379,6 +400,7 @@ bool Viewport3D::controlCamera(const juce::var& args, juce::String& error)
 {
     const auto op = args.getProperty("operation", "set").toString();
     if(op=="fly"){setFlyMode(args.getProperty("enabled",!flyMode));return true;}
+    if(op=="standardView"){if(setStandardView(args["view"].toString()))return true;error="Standard view must be front, back, left, right, top, bottom or isometric.";return false;}
     if(op=="orbitPoint"){
         std::array<float,3> point{};const char* keys[]{"x","y","z"};for(int i=0;i<3;++i){const auto v=args[keys[i]];if(!(v.isDouble()||v.isInt()||v.isInt64())||!std::isfinite((double)v)||std::abs((double)v)>1e20){error="Orbit point requires finite world coordinates.";return false;}point[i]=(float)(double)v;}return setOrbitPoint(point);
     }
@@ -397,7 +419,7 @@ bool Viewport3D::controlCamera(const juce::var& args, juce::String& error)
     const auto range=navigationRange();const auto minimum=range[0],maximum=range[1];
     const auto nextDistance = (double)args.getProperty("distance", distance);
     const auto nextPitch = (double)args.getProperty("pitchDeg", juce::radiansToDegrees(pitch));
-    if (nextDistance < minimum || nextDistance > maximum || std::abs(nextPitch) > juce::radiansToDegrees(1.4))
+    if (nextDistance < minimum || nextDistance > maximum || std::abs(nextPitch) > juce::radiansToDegrees((double) maxPitch) + 1.0e-6)
     { error = "Camera distance or elevation exceeds the same bounds used by mouse navigation."; return false; }
     yaw = (float)juce::degreesToRadians(std::remainder((double)args.getProperty("yawDeg", juce::radiansToDegrees(yaw)),360.0));
     pitch = (float)juce::degreesToRadians(nextPitch); distance = (float)nextDistance;
@@ -482,7 +504,7 @@ void Viewport3D::frameScene()
     distance = juce::jmax(1.0e-6f, margin / std::tan(limitingHalfFov));
     panX = panY = 0.0f;
 }
-void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { pickSnapshot = next; updateSceneBounds(next); pendingSnapshot = std::move(next); markDirty(); }
+void Viewport3D::setSnapshot(std::shared_ptr<const djehuti::cad::CadRenderSnapshot> next) { if (previewClearFrames >= 0 && manipAxis < 0) setPreview(false); pickSnapshot = next; updateSceneBounds(next); pendingSnapshot = std::move(next); markDirty(); }
 juce::String Viewport3D::diagnostics() const { return glStatus; }
 bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 {
@@ -496,6 +518,7 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
         if (auto latest = poseSource(); latest != pose)
         {
             pose = std::move(latest);
+            if (previewClearFrames >= 0 && manipAxis < 0) setPreview(false);
             updatePosedBounds();
             { const juce::SpinLock::ScopedLockType lock(highlightLock); glPose = pose; }
             renderDirty = true;
@@ -506,6 +529,7 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
         { const juce::SpinLock::ScopedLockType lock(highlightLock); glHover = selection->hover(); glSelected = selection->selected(); glChosen=selection->items(); }
         renderDirty = true;
     }
+    if (previewClearFrames > 0 && manipAxis < 0 && --previewClearFrames == 0) setPreview(false);   // safety: never leave a stale preview
     tryPendingFit();
     const auto p = projectionFor(getWidth(), getHeight(), clippingPlanes()); const auto v = camera(yaw, pitch, distance, targetX, targetY, targetZ, panX, panY); const auto m = identity(); juce::ignoreUnused(sharedAngle);
     std::array<float, 32> cameraState {};
@@ -598,13 +622,15 @@ void Viewport3D::renderOpenGL()
         std::shared_ptr<const djehuti::cad::CadPoseSnapshot> posed;
         djehuti::cad::CadPick hoverPick, selectedPick;
         std::vector<djehuti::cad::CadPick> pickedItems;
-        { const juce::SpinLock::ScopedLockType lock(highlightLock); colours = highlights; posed = glPose; hoverPick = glHover; selectedPick = glSelected; pickedItems=glChosen; }
+        bool previewing = false; juce::String previewId; M4 preview = identity();
+        { const juce::SpinLock::ScopedLockType lock(highlightLock); colours = highlights; posed = glPose; hoverPick = glHover; selectedPick = glSelected; pickedItems=glChosen; previewing = glPreviewActive; previewId = glPreviewId; std::memcpy(preview.v, glPreviewMatrix.data(), sizeof(preview.v)); }
         const auto geometry = pendingSnapshot;
         const auto colourOf = [&](const juce::String& id) { juce::Colour colour(0xff2e9ec7); for (const auto& item : colours) if (item.first == id) colour = item.second; for(const auto& p:pickedItems) if(p.drawId==id && p.face<0 && p.edge<0) colour=juce::Colour(0xffff4fd8); return colour; };
         const auto draw = [&](const MeshRange& range, const float* matrix, const juce::String& id)
         {
             if(range.doubleSided)glDisable(GL_CULL_FACE);else glEnable(GL_CULL_FACE);
             const auto colour = colourOf(id);
+            M4 moved; if (previewing && id == previewId) { M4 base; std::memcpy(base.v, matrix, sizeof(base.v)); moved = multiply4(preview, base); matrix = moved.v; }
             drawShader->setUniformMat4("uInstance", matrix, 1, GL_FALSE);
             drawShader->setUniform("uColour", colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue());
             glDrawElements(GL_TRIANGLES, range.count, GL_UNSIGNED_INT, reinterpret_cast<void*>(static_cast<size_t>(range.first) * sizeof(std::uint32_t)));
@@ -622,10 +648,11 @@ void Viewport3D::renderOpenGL()
         // the body they belong to (only the instance that was hit).
         const auto matrixFor = [&](const djehuti::cad::CadPick& p, M4& m)
         {
-            m = identity();
-            if (posed == nullptr || posed->instancedFeatures.count(p.featureId) == 0) return p.drawId == p.featureId;
-            for (const auto& instance : posed->instances) if (instance.instanceId == p.drawId) { std::memcpy(m.v, instance.matrix.data(), sizeof(m.v)); return true; }
-            return false;
+            m = identity(); bool found = false;
+            if (posed == nullptr || posed->instancedFeatures.count(p.featureId) == 0) found = p.drawId == p.featureId;
+            else for (const auto& instance : posed->instances) if (instance.instanceId == p.drawId) { std::memcpy(m.v, instance.matrix.data(), sizeof(m.v)); found = true; }
+            if (found && previewing && p.drawId == previewId) m = multiply4(preview, m);
+            return found;
         };
         const auto drawLines = [&](const std::vector<float>& points, bool strip, const float* matrix, juce::Colour colour)
         {
@@ -811,6 +838,7 @@ void ThreeDViewsPanel::restoreViewState(const juce::String& json)
 
 bool Viewport3D::keyPressed(const juce::KeyPress& key)
 {
+    if(key==juce::KeyPress::escapeKey&&manipAxis>=0){manipAxis=-1;setPreview(false);repaint();return true;}
     if(key==juce::KeyPress::escapeKey&&flyMode){setFlyMode(false);return true;}
     if(key==juce::KeyPress::escapeKey&&orbitPointPicking){orbitPointPicking=false;repaint();return true;}
     if(flyMode&&!key.getModifiers().isCommandDown()&&!key.getModifiers().isAltDown()){const auto c=juce::CharacterFunctions::toUpperCase(key.getTextCharacter());if(c=='W'||c=='A'||c=='S'||c=='D'||c=='Q'||c=='E'||key.getKeyCode()==juce::KeyPress::leftKey||key.getKeyCode()==juce::KeyPress::rightKey||key.getKeyCode()==juce::KeyPress::upKey||key.getKeyCode()==juce::KeyPress::downKey)return true;}
@@ -826,6 +854,211 @@ bool Viewport3D::keyPressed(const juce::KeyPress& key)
     return false;
 }
 
+
+
+//==============================================================================
+// Move/rotate manipulator, standard views and orbit anchoring.
+namespace
+{
+using F3 = std::array<float, 3>;
+F3 sub3(const F3& a, const F3& b) { return { a[0] - b[0], a[1] - b[1], a[2] - b[2] }; }
+F3 add3(const F3& a, const F3& b) { return { a[0] + b[0], a[1] + b[1], a[2] + b[2] }; }
+F3 mul3(const F3& a, float s) { return { a[0] * s, a[1] * s, a[2] * s }; }
+float dot3(const F3& a, const F3& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+F3 cross3(const F3& a, const F3& b) { return { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] }; }
+F3 unit3(const F3& a) { const float n = std::sqrt(dot3(a, a)); return n > 1e-20f ? mul3(a, 1.0f / n) : F3 { 0, 0, 1 }; }
+M4 multiply4(const M4& a, const M4& b) { M4 r; for (int c = 0; c < 4; ++c) for (int row = 0; row < 4; ++row) { float s = 0; for (int k = 0; k < 4; ++k) s += a.v[k * 4 + row] * b.v[c * 4 + k]; r.v[c * 4 + row] = s; } return r; }
+// World transform of a manipulation: translation along an axis, or rotation about the axis through the pivot.
+M4 manipulationMatrix(const F3& pivot, const F3& axis, bool rotate, double amount)
+{
+    M4 m = identity();
+    if (!rotate) { for (int i = 0; i < 3; ++i) m.v[12 + i] = (float) (axis[(size_t) i] * amount); return m; }
+    const double c = std::cos(amount), s = std::sin(amount), t = 1 - c, x = axis[0], y = axis[1], z = axis[2];
+    const double r[3][3] { { c + x * x * t, x * y * t - z * s, x * z * t + y * s }, { y * x * t + z * s, c + y * y * t, y * z * t - x * s }, { z * x * t - y * s, z * y * t + x * s, c + z * z * t } };
+    for (int row = 0; row < 3; ++row) for (int col = 0; col < 3; ++col) m.v[col * 4 + row] = (float) r[row][col];
+    for (int row = 0; row < 3; ++row) m.v[12 + row] = (float) (pivot[(size_t) row] - (r[row][0] * pivot[0] + r[row][1] * pivot[1] + r[row][2] * pivot[2]));
+    return m;
+}
+float segmentDistance(juce::Point<float> p, juce::Point<float> a, juce::Point<float> b)
+{ juce::Point<float> nearest; return juce::Line<float>(a, b).getDistanceFromPoint(p, nearest); }
+}
+
+std::array<float, 3> Viewport3D::eyePosition() const
+{
+    const float cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
+    const F3 right { cy, sy, 0 }, up { -sp * sy, sp * cy, cp }, back { cp * sy, -cp * cy, sp }, target { targetX, targetY, targetZ };
+    return sub3(sub3(add3(target, mul3(back, distance)), mul3(right, panX)), mul3(up, panY));
+}
+float Viewport3D::manipulatorLength() const
+{
+    const float cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
+    const F3 back { cp * sy, -cp * cy, sp };
+    const float depth = juce::jmax(1.0e-3f, dot3(sub3(eyePosition(), manip.pivot), back));
+    return 85.0f * 2.0f * depth * std::tan(0.425f) / (float) juce::jmax(1, getHeight());   // about 85 pixels on screen
+}
+void Viewport3D::setManipulator(const Manipulator& next)
+{
+    if (manipAxis >= 0 && (!next.active || next.drawId != manip.drawId)) { manipAxis = -1; setPreview(false); }
+    manip = next;
+    for (auto& a : manip.axes) a = unit3(a);
+    repaint();
+}
+juce::Point<float> Viewport3D::manipulatorHandle(int axis, bool rotate, float fraction) const
+{
+    juce::Point<float> screen;
+    if (!juce::isPositiveAndBelow(axis, 3)) return screen;
+    const auto& a = manip.axes[(size_t) axis];const float length = manipulatorLength();
+    if (!rotate) { toScreen(add3(manip.pivot, mul3(a, length * fraction)), screen); return screen; }
+    const auto u = unit3(cross3(a, std::abs(a[2]) < 0.9f ? F3 { 0, 0, 1 } : F3 { 1, 0, 0 })), w = cross3(a, u);
+    const float angle = fraction * juce::MathConstants<float>::twoPi;
+    toScreen(add3(manip.pivot, add3(mul3(u, 0.62f * length * std::cos(angle)), mul3(w, 0.62f * length * std::sin(angle)))), screen);
+    return screen;
+}
+bool Viewport3D::hitManipulator(juce::Point<float> position, int& axis, bool& rotate) const
+{
+    if (!manip.active) return false;
+    juce::Point<float> centre; if (!toScreen(manip.pivot, centre)) return false;
+    float best = 8.0f; axis = -1;
+    for (int i = 0; i < 3; ++i) { const auto tip = manipulatorHandle(i, false, 1.0f); const float d = segmentDistance(position, centre + (tip - centre) * 0.18f, tip); if (d < best) { best = d; axis = i; } }
+    if (axis >= 0) { rotate = false; return true; }
+    best = 7.0f;
+    for (int i = 0; i < 3; ++i)
+    {
+        auto previous = manipulatorHandle(i, true, 0.0f);
+        for (int k = 1; k <= 64; ++k) { const auto next = manipulatorHandle(i, true, k / 64.0f); const float d = segmentDistance(position, previous, next); if (d < best) { best = d; axis = i; } previous = next; }
+    }
+    rotate = axis >= 0;
+    return axis >= 0;
+}
+bool Viewport3D::axisParameter(juce::Point<float> position, int axis, double& t) const
+{
+    F3 o {}, d {}; if (!rayThrough(position, o, d)) return false;
+    const auto& a = manip.axes[(size_t) axis]; const auto w0 = sub3(manip.pivot, o);
+    const double b = dot3(a, d), denominator = 1.0 - b * b;
+    if (denominator < 1.0e-4) return false;   // the axis points at the viewer
+    t = (b * dot3(d, w0) - dot3(a, w0)) / denominator;
+    return std::isfinite(t);
+}
+bool Viewport3D::ringVector(juce::Point<float> position, int axis, std::array<float, 3>& v) const
+{
+    F3 o {}, d {}; if (!rayThrough(position, o, d)) return false;
+    const auto& a = manip.axes[(size_t) axis]; const float denominator = dot3(d, a);
+    if (std::abs(denominator) < 1.0e-4f) return false;   // the ring is seen edge-on
+    const float s = dot3(sub3(manip.pivot, o), a) / denominator;
+    v = sub3(add3(o, mul3(d, s)), manip.pivot);
+    return dot3(v, v) > 1.0e-12f;
+}
+void Viewport3D::updateManipulation(juce::Point<float> position, bool snap)
+{
+    if (manipAxis < 0) return;
+    const auto& a = manip.axes[(size_t) manipAxis];
+    if (manipRotate)
+    {
+        F3 v {}; if (ringVector(position, manipAxis, v)) manipAmount = std::atan2((double) dot3(cross3(manipStartVector, v), a), (double) dot3(manipStartVector, v));
+        if (snap) { const double step = juce::degreesToRadians(15.0); manipAmount = std::round(manipAmount / step) * step; }
+    }
+    else
+    {
+        double t = 0;
+        if (axisParameter(position, manipAxis, t)) manipAmount = t - manipStartParam;
+        else
+        {
+            // Axis toward the viewer: fall back to the screen direction of the arrow.
+            juce::Point<float> centre; toScreen(manip.pivot, centre); const auto direction = manipulatorHandle(manipAxis, false, 1.0f) - centre;
+            const float pixels = direction.getDistanceSquaredFromOrigin();
+            if (pixels > 1.0f) manipAmount = (double) ((position - manipPress).getDotProduct(direction) / pixels * manipulatorLength());
+        }
+        if (snap) manipAmount = std::round(manipAmount);
+    }
+    manipMouse = position;
+    setPreview(true); markDirty(); if (onFrameRequested) onFrameRequested(); repaint();
+}
+void Viewport3D::setPreview(bool active)
+{
+    const auto m = active && manipAxis >= 0 ? manipulationMatrix(manip.pivot, manip.axes[(size_t) manipAxis], manipRotate, manipAmount) : identity();
+    { const juce::SpinLock::ScopedLockType lock(highlightLock); glPreviewActive = active; glPreviewId = manip.drawId; std::memcpy(glPreviewMatrix.data(), m.v, sizeof(m.v)); }
+    if (!active) previewClearFrames = -1;
+    markDirty();
+}
+juce::var Viewport3D::manipulatorState() const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty("active", manip.active); o->setProperty("target", manip.drawId); o->setProperty("label", manip.label); o->setProperty("local", manip.local);
+    o->setProperty("pivot", juce::Array<juce::var> { manip.pivot[0], manip.pivot[1], manip.pivot[2] });
+    o->setProperty("dragging", manipAxis >= 0); o->setProperty("rotate", manipRotate); o->setProperty("axis", manipAxis >= 0 ? juce::String::charToString("XYZ"[manipAxis]) : juce::String());
+    o->setProperty("amount", manipRotate ? juce::radiansToDegrees(manipAmount) : manipAmount);
+    { const juce::SpinLock::ScopedLockType lock(highlightLock); o->setProperty("previewing", glPreviewActive); }
+    return o;
+}
+void Viewport3D::drawManipulator(juce::Graphics& g)
+{
+    if (!manip.active) return;
+    const juce::Colour colours[3] { juce::Colour(0xffff5f5f), juce::Colour(0xff5fd46e), juce::Colour(0xff5a96ff) }, active(0xffffd34d);
+    const auto offset = [&](const juce::Point<float>& p) { if (manipAxis < 0 || manipRotate) return p; juce::Point<float> a, b; toScreen(manip.pivot, a); toScreen(add3(manip.pivot, mul3(manip.axes[(size_t) manipAxis], (float) manipAmount)), b); return p + (b - a); };
+    juce::Point<float> centre; if (!toScreen(manip.pivot, centre)) return; centre = offset(centre);
+    for (int i = 0; i < 3; ++i)
+    {
+        juce::Path ring; for (int k = 0; k <= 64; ++k) { const auto p = offset(manipulatorHandle(i, true, k / 64.0f)); if (k == 0) ring.startNewSubPath(p); else ring.lineTo(p); }
+        const bool hot = manipAxis == i && manipRotate;
+        g.setColour((hot ? active : colours[i]).withAlpha(hot ? 1.0f : 0.75f)); g.strokePath(ring, juce::PathStrokeType(hot ? 3.0f : 1.6f));
+    }
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto tip = offset(manipulatorHandle(i, false, 1.0f)); const bool hot = manipAxis == i && !manipRotate;
+        const auto colour = hot ? active : colours[i];
+        g.setColour(colour); g.drawLine({ centre, tip }, hot ? 3.5f : 2.4f);
+        const auto direction = tip - centre; const float length = direction.getDistanceFromOrigin();
+        if (length > 4.0f)
+        {
+            const auto u = direction / length; const juce::Point<float> n { -u.y, u.x };
+            juce::Path head; head.addTriangle(tip + u * 11.0f, tip + n * 5.0f, tip - n * 5.0f); g.fillPath(head);
+            g.setFont(juce::Font(12.0f, juce::Font::bold)); g.drawText(juce::String::charToString("XYZ"[i]), juce::Rectangle<float>(16, 16).withCentre(tip + u * 22.0f), juce::Justification::centred);
+        }
+    }
+    g.setColour(juce::Colours::white); g.fillEllipse(juce::Rectangle<float>(7, 7).withCentre(centre));
+    juce::String line = manip.label + (manip.local ? "  (local axes)" : "  (world axes)") + " | drag an arrow to move, a ring to rotate | Ctrl snaps 1 mm / 15 deg | Esc cancels";
+    if (manipAxis >= 0)
+    {
+        const auto axisName = juce::String::charToString("XYZ"[manipAxis]);
+        const auto value = manipRotate ? "Rotate " + axisName + " " + juce::String(juce::radiansToDegrees(manipAmount), 2) + " deg" : "Move " + axisName + " " + juce::String(manipAmount, 3) + " mm";
+        g.setColour(juce::Colour(0xe0151d24)); g.fillRoundedRectangle(manipMouse.x + 14, manipMouse.y + 10, 150, 22, 4); g.setColour(active); g.setFont(juce::Font(13.0f)); g.drawText(value, (int) manipMouse.x + 20, (int) manipMouse.y + 10, 140, 22, juce::Justification::centredLeft);
+    }
+    g.setColour(juce::Colour(0xffd8e4ea)); g.setFont(juce::Font(12.0f)); g.drawFittedText(line, 10, juce::jmax(40, getHeight() - 48), getWidth() - 20, 18, juce::Justification::left, 1);
+}
+bool Viewport3D::setStandardView(const juce::String& name)
+{
+    const float pi = juce::MathConstants<float>::pi;
+    const std::pair<const char*, std::array<float, 2>> views[] { { "front", { 0, 0 } }, { "back", { pi, 0 } }, { "right", { pi / 2, 0 } }, { "left", { -pi / 2, 0 } },
+                                                                  { "top", { 0, maxPitch } }, { "bottom", { 0, -maxPitch } }, { "isometric", { homeYaw, homePitch } } };
+    for (const auto& [key, angles] : views)
+        if (name.equalsIgnoreCase(key))
+        {
+            if (flyMode) setFlyMode(false);
+            // Keep what is in the middle of the screen in the middle: fold any pan into the orbit target first.
+            anchorOrbit({ getWidth() * 0.5f, getHeight() * 0.5f });
+            yaw = angles[0]; pitch = angles[1]; panX = panY = 0.0f; cameraChanged(); return true;
+        }
+    return false;
+}
+// Orbit about the surface point under the cursor, or about the screen centre over empty space. The camera is
+// re-expressed about the new target without moving: the eye and orientation stay, pan compensates the offset.
+void Viewport3D::anchorOrbit(juce::Point<float> position)
+{
+    const float cp = std::cos(pitch), sp = std::sin(pitch), cy = std::cos(yaw), sy = std::sin(yaw);
+    const F3 right { cy, sy, 0 }, up { -sp * sy, sp * cy, cp }, back { cp * sy, -cp * cy, sp };
+    const auto eye = eyePosition();
+    F3 pivot { targetX, targetY, targetZ };
+    auto hit = pick(position, djehuti::cad::CadSelection::Mode::face);
+    if (hit.valid() && hit.hasPoint)
+    {
+        pivot = { (float) hit.point[0], (float) hit.point[1], (float) hit.point[2] };
+        if (pose) for (const auto& i : pose->instances) if (i.instanceId == hit.drawId) { const auto p = pivot; for (int k = 0; k < 3; ++k) pivot[(size_t) k] = i.matrix[(size_t) k] * p[0] + i.matrix[(size_t) (4 + k)] * p[1] + i.matrix[(size_t) (8 + k)] * p[2] + i.matrix[(size_t) (12 + k)]; }
+    }
+    else pivot = sub3(sub3(pivot, mul3(right, panX)), mul3(up, panY));   // the point now at the screen centre
+    const auto v = sub3(eye, pivot); const float along = dot3(v, back);
+    if (!(along > navigationRange()[0])) return;   // too close to the eye to orbit about
+    targetX = pivot[0]; targetY = pivot[1]; targetZ = pivot[2]; distance = along; panX = -dot3(v, right); panY = -dot3(v, up);
+}
 
 juce::var ThreeDViewsPanel::controlViewCamera(int view, const juce::var& args)
 {

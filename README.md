@@ -38,6 +38,10 @@ verification and current limitations.
 compatible spur pairs (centre distance, phase, joints and the existing gear
 coupling) through Create > Gear / Gear Pair, `cad_gear` and `cad_gear_pair`.
 
+[Moving parts, camera and components](docs/PLACEMENT_AND_COMPONENTS.md) covers the Move / Rotate
+manipulator (T), orbit about the point under the pointer, standard views, inserting and placing
+library components, and multi-part components such as a stator and rotor on a revolute axis.
+
 [Surface modeling](docs/SURFACE_MODELING.md) provides planar, extruded, revolved,
 swept and lofted surfaces, region trimming, eligible U/V boundary extension,
 shell sewing, separate solidification, and positive/negative/symmetric thickening.

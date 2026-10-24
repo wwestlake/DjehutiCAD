@@ -362,6 +362,9 @@ public:
     juce::var componentData() const;
     const juce::var* componentFor(const juce::String& feature) const;
     bool insertComponent(const juce::var& record,const CadFrame& placement,juce::String& instance,juce::String& error);
+    // Multi-part component: one definition and occurrence per part, the first (or joint parent) part grounded, and the
+    // record's joint between parts, all in one undoable transaction. instance is the grounded part's occurrence.
+    bool insertComponentAssembly(const juce::var& record,const CadFrame& placement,juce::String& instance,juce::String& error);
     bool updateCraftStock(const juce::String& feature, const juce::var& geometry, juce::String& error);
     bool addCraftCut(const juce::String& feature, const juce::var& cutSpec, juce::String& error);
     bool clearCraftCuts(const juce::String& feature, juce::String& error);

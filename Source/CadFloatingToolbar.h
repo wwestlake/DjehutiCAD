@@ -145,6 +145,7 @@ private:
             else if(k=="fillet"||k=="chamfer"){juce::Path p;p.startNewSubPath(3,22);p.lineTo(3,9);if(k=="fillet")p.quadraticTo(3,3,9,3);else p.lineTo(9,3);p.lineTo(22,3);g.strokePath(p,juce::PathStrokeType(2));line(9,22,9,9);line(9,9,22,9);}
             else if(k=="revolve"||k=="lathe"){line(12,1,12,23);if(k=="lathe"){line(4,5,20,5);line(4,19,20,19);line(4,5,7,8);line(7,8,7,16);line(7,16,4,19);line(20,5,17,8);line(17,8,17,16);line(17,16,20,19);}else{juce::Path p;p.addCentredArc(12,12,9,8,0,-2.5f,2.5f,true);g.strokePath(p,juce::PathStrokeType(1.6f));line(19,6,22,9);line(22,9,17,9);}}
             else if(k=="hole"){g.drawRect(2,12,20,10,1);circle(12,16,4);line(12,1,12,12);line(8,7,12,12);line(16,7,12,12);}
+            else if(k=="transform"){line(12,2,12,22);line(2,12,22,12);line(12,2,9,5);line(12,2,15,5);line(12,22,9,19);line(12,22,15,19);line(2,12,5,9);line(2,12,5,15);line(22,12,19,9);line(22,12,19,15);circle(12,12,5);}
             else if(k=="mirror"){line(12,1,12,23);juce::Path p;p.addTriangle(3,6,3,19,9,19);p.addTriangle(21,6,21,19,15,19);g.strokePath(p,juce::PathStrokeType(1.5f));}
             else if(k=="linearPattern"){for(int x:{1,9,17})g.drawRect(x,8,6,8,1);line(2,21,22,21);}
             else if(k=="circularPattern"){circle(12,12,8);for(const auto p:std::vector<juce::Point<int>>{{10,1},{1,15},{18,15}})g.drawRect(p.x,p.y,5,5,1);}

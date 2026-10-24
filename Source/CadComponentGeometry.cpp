@@ -9,6 +9,10 @@
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
+#include <gp_Ax1.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopExp_Explorer.hxx>
 #include <STEPControl_Reader.hxx>
@@ -111,6 +115,60 @@ juce::String digest(const juce::String& text)
     const auto status=BCryptHash(algorithm,nullptr,0,(PUCHAR)text.toRawUTF8(),(ULONG)text.getNumBytesAsUTF8(),output,sizeof(output));BCryptCloseAlgorithmProvider(algorithm,0);
     return status<0?juce::String():juce::String::toHexString(output,sizeof(output),0);
 }
+namespace
+{
+bool finiteNumber(const juce::var& v){return (v.isDouble()||v.isInt()||v.isInt64())&&std::isfinite((double)v);}
+// Nominal turned part: closed polygon of [radius, z] millimetre points in the part's half plane, revolved about +Z.
+bool validRevolvedProfile(const juce::var& g,juce::String& error)
+{
+    const auto p=g["profileMm"];if(!p.isArray()||p.size()<3||p.size()>256){error="A revolved component profile needs 3 to 256 [radius, z] points in mm.";return false;}
+    double area=0;for(int i=0;i<p.size();++i)
+    {
+        const auto a=p[i],b=p[(i+1)%p.size()];
+        if(!a.isArray()||a.size()!=2||!finiteNumber(a[0])||!finiteNumber(a[1])||(double)a[0]<0||std::abs((double)a[0])>1e6||std::abs((double)a[1])>1e6){error="Revolved profile points must be finite [radius >= 0, z] millimetres.";return false;}
+        area+=(double)a[0]*(double)b[1]-(double)b[0]*(double)a[1];
+    }
+    if(std::abs(area)<1e-8){error="The revolved component profile encloses no area.";return false;}
+    return true;
+}
+TopoDS_Shape revolvedShape(const juce::var& g)
+{
+    BRepBuilderAPI_MakePolygon polygon;const auto p=g["profileMm"];for(int i=0;i<p.size();++i)polygon.Add(gp_Pnt((double)p[i][0],0,(double)p[i][1]));polygon.Close();
+    const auto face=BRepBuilderAPI_MakeFace(polygon.Wire(),true).Face();
+    return BRepPrimAPI_MakeRevol(face,gp::OZ(),juce::MathConstants<double>::twoPi).Shape();
+}
+}
+// Multi-part component (e.g. slip ring stator + rotor): parts with their own geometry in one assembly frame, and an
+// optional joint between two parts. Each part becomes its own document definition and occurrence on insertion.
+bool validateAssembly(const juce::var& record,juce::String& error)
+{
+    const auto fail=[&](const juce::String& e){error=e;return false;};
+    const auto a=record["assembly"];if(!a.isObject()||!a["parts"].isArray()||a["parts"].size()<2||a["parts"].size()>8)return fail("An assembly component needs 2 to 8 parts.");
+    juce::StringArray roles;
+    for(const auto& part:*a["parts"].getArray())
+    {
+        const auto role=part["role"].toString();if(role.isEmpty()||roles.contains(role))return fail("Assembly parts need distinct roles.");roles.add(role);
+        if(part["name"].toString().trim().isEmpty())return fail("Assembly parts need names.");
+        if(part["geometry"]["kind"].toString()=="assembly")return fail("Assembly parts cannot nest assemblies.");
+        auto partRecord=assemblyPart(record,part);if(!validate(partRecord,error))return fail("Part "+role+": "+error);
+    }
+    if(a.hasProperty("joint"))
+    {
+        const auto j=a["joint"];const auto triple=[&](const juce::var& v,bool nonzero){if(!v.isArray()||v.size()!=3)return false;double n=0;for(int i=0;i<3;++i){if(!finiteNumber(v[i]))return false;n+=(double)v[i]*(double)v[i];}return !nonzero||n>1e-18;};
+        if(!juce::StringArray{"revolute","prismatic","fixed"}.contains(j["type"].toString()))return fail("Assembly joint type must be revolute, prismatic or fixed.");
+        if(!roles.contains(j["parent"].toString())||!roles.contains(j["child"].toString())||j["parent"].toString()==j["child"].toString())return fail("Assembly joint parent and child must be two different part roles.");
+        if(!triple(j["origin"],false)||!triple(j["direction"],true))return fail("Assembly joint needs a finite origin and a nonzero direction in mm.");
+    }
+    return true;
+}
+juce::var assemblyPart(const juce::var& record,const juce::var& part)
+{
+    auto r=clone(record);r.getDynamicObject()->removeProperty("assembly");
+    put(r,"id",record["id"].toString()+"/"+part["role"].toString());put(r,"name",record["name"].toString()+" - "+part["name"].toString());
+    put(r,"geometry",clone(part["geometry"]));put(r,"assemblyOf",record["id"]);put(r,"assemblyRole",part["role"]);
+    if(part.hasProperty("references"))put(r,"references",clone(part["references"]));
+    return r;
+}
 bool validate(const juce::var& record,juce::String& error)
 {
     const auto fail=[&](const char* reason){error=reason;return false;};
@@ -122,6 +180,8 @@ bool validate(const juce::var& record,juce::String& error)
     const auto g=record["geometry"];const auto kind=g["kind"].toString();
     if(kind=="craftStock")return craft::validateGeometry(g,error);
     if(kind=="none")return true;
+    if(kind=="assembly")return validateAssembly(record,error);
+    if(kind=="revolved")return validRevolvedProfile(g,error);
     if(kind=="brep")
     {
         if(g["data"].toString().isNotEmpty())return g["data"].toString().getNumBytesAsUTF8()<=32*1024*1024?true:fail("Missing or oversized component BRep.");
@@ -146,6 +206,14 @@ TopoDS_Shape shape(const juce::var& record,juce::String& error)
         if(kind=="craftStock")result=craft::shape(g,error);
         else if(kind=="envelope")result=BRepPrimAPI_MakeBox((double)g["widthMm"],(double)g["heightMm"],(double)g["lengthMm"]).Shape();
         else if(kind=="cylinder")result=BRepPrimAPI_MakeCylinder((double)g["diameterMm"]/2,(double)g["lengthMm"]).Shape();
+        else if(kind=="revolved")result=revolvedShape(g);
+        else if(kind=="assembly")
+        {
+            // Preview of the whole multi-part component: every part in the shared assembly frame.
+            BRep_Builder builder;TopoDS_Compound compound;builder.MakeCompound(compound);
+            for(const auto& part:*record["assembly"]["parts"].getArray()){const auto s=shape(assemblyPart(record,part),error);if(s.IsNull())return {};builder.Add(compound,s);}
+            result=compound;
+        }
         else if(kind=="brep")
         {
             if(g["data"].toString().isNotEmpty())

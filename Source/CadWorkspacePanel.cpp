@@ -10,6 +10,13 @@
 #include "CadSketchSymmetry.h"
 #include "CadSketchSymmetryControls.h"
 #include "CadGear.h"
+#include "CadKinematics.h"
+#include <gp_Quaternion.hxx>
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+#include <TopLoc_Location.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -855,11 +862,11 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         const bool sketching = editingSketchId.isNotEmpty();
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
-            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching} } },
-            { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching}, E{78,"Insert Component...",!sketching} } },
+            { "Modify", { E{77,"Move / Rotate (T)",!sketching,transformTool}, E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
-            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{63,"Focus Selected (Shift+F)",!sketching}, E{64,"Fly Mode (Ctrl+Shift+F)",!sketching,modelView.isFlyMode()}, E{65,"Set Orbit Point...",!sketching}, E{66,"Show All Sketches"}, E{67,"Hide All Sketches"}, E{61,"Selection toolbox",true,sketching?selectionPalette->isVisible():modelSelectionPalette->isVisible()}, E{62,"Dock Selection toolbox",true,sketching?selectionPalette->isDocked():modelSelectionPalette->isDocked()}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{56,"Modify toolbar",true,modifyPalette->visiblePreference()}, E{57,"Dock Modify toolbar",!sketching,modifyPalette->isDocked()}, E{58,"Snap toolbar",true,snapPalette->visiblePreference()}, E{59,"Dock Snap toolbar",true,snapPalette->isDocked()}, E{60,"Reference geometry...",sketching}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
+            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{63,"Focus Selected (Shift+F)",!sketching}, E{64,"Fly Mode (Ctrl+Shift+F)",!sketching,modelView.isFlyMode()}, E{65,"Set Orbit Point...",!sketching}, E{70,"Front view",!sketching}, E{71,"Back view",!sketching}, E{72,"Left view",!sketching}, E{73,"Right view",!sketching}, E{74,"Top view",!sketching}, E{75,"Bottom view",!sketching}, E{76,"Isometric view",!sketching}, E{66,"Show All Sketches"}, E{67,"Hide All Sketches"}, E{61,"Selection toolbox",true,sketching?selectionPalette->isVisible():modelSelectionPalette->isVisible()}, E{62,"Dock Selection toolbox",true,sketching?selectionPalette->isDocked():modelSelectionPalette->isDocked()}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{56,"Modify toolbar",true,modifyPalette->visiblePreference()}, E{57,"Dock Modify toolbar",!sketching,modifyPalette->isDocked()}, E{58,"Snap toolbar",true,snapPalette->visiblePreference()}, E{59,"Dock Snap toolbar",true,snapPalette->isDocked()}, E{60,"Reference geometry...",sketching}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
         };
     };
     workspaceMenu.invoke = [this](int id)
@@ -873,6 +880,9 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
         else if (id == 68 || id == 69) executeUiCommand(id == 68 ? "gear" : "gearPair");
+        else if (id >= 70 && id <= 76) executeUiCommand(juce::StringArray{"viewFront","viewBack","viewLeft","viewRight","viewTop","viewBottom","viewIsometric"}[id-70]);
+        else if (id == 77) executeUiCommand("transform");
+        else if (id == 78) executeUiCommand("insertComponent");
         else if (id >= 44 && id <= 52) executeUiCommand(juce::StringArray{"sweep","loft","mill","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken"}[id-44]);
         else if (id >= 41 && id <= 43) executeUiCommand(juce::StringArray{"mirror","linearPattern","circularPattern"}[id-41]);
         else if (id == 40) executeUiCommand("hole");
@@ -963,7 +973,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     selectionPalette->layoutChanged=[this]{selectionPalette->setAvailable(editingSketchId.isNotEmpty());resized();workspaceMenu.refresh();};
     using Toolbar=CadFloatingToolbar;
     modifyPalette=std::make_unique<Toolbar>("Modify toolbar",std::vector<Toolbar::Tool>{
-        {"extrude","Extrude a sketch profile into a solid"},{"revolve","Revolve a sketch around an axis"},{"lathe","Virtual Lathe: edit a turned profile"},{"cut","Cut a sketch profile from a body"},{"fillet","Fillet selected edges with a radius"},{"chamfer","Chamfer selected edges"},{"hole","Drill Press / Hole: place a hole on a planar face"},
+        {"transform","Move / Rotate the selected body or component (T): drag arrows or rings"},{"extrude","Extrude a sketch profile into a solid"},{"revolve","Revolve a sketch around an axis"},{"lathe","Virtual Lathe: edit a turned profile"},{"cut","Cut a sketch profile from a body"},{"fillet","Fillet selected edges with a radius"},{"chamfer","Chamfer selected edges"},{"hole","Drill Press / Hole: place a hole on a planar face"},
         {"mirror","Mirror a body across a plane"},{"linearPattern","Repeat a body along a line"},{"circularPattern","Repeat a body around an axis"},{"sweep","Sweep a profile along a path"},{"loft","Loft between sketch profiles"},{"mill","Virtual Router / Mill: cut along a toolpath"},
         {"surface","Create a surface from sketch geometry"},{"surface_trim","Trim a surface with cutting geometry"},{"surface_extend","Extend surface boundaries"},{"surface_sew","Sew adjoining surface boundaries"},{"surface_solidify","Solidify a closed surface shell"},{"surface_thicken","Thicken a surface into a solid"},
         {"subtract","Subtract one body from another"},{"union","Join bodies with Boolean union"},{"intersect","Keep the common volume of bodies"}},true,juce::Point<int>{12,12});
@@ -991,6 +1001,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     modelView.edgeTarget=[this]{return task==Task::fillet||task==Task::chamfer?targetId:juce::String();};
     modelView.onContextCommand = [this](const juce::String& command,const djehuti::cad::CadPick& pick) { viewContextCommand(command,pick); };
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
+    modelView.onManipulated = [this](const Viewport3D::Manipulation& m) { return applyManipulation(m); };
     modelView.onFrameRequested = [this] { wakeFrames(); };
     modelView.wantsBodyPick = [this] { return isCommandTask() && task != Task::hole && task != Task::fillet && task != Task::chamfer && (selection == nullptr || selection->mode() == djehuti::cad::CadSelection::Mode::body); };
     modelView.faceSnapEnabled=[this]{return faceSnapAvailable()&&snapPreferences->enabled&&snapPreferences->modes[6];};
@@ -1188,6 +1199,7 @@ void CadWorkspacePanel::timerCallback()
     const auto instance = service->document().documentInstance();
     const bool documentChanged = revision != shownRevision || instance != shownDocument;
     refreshFromDocument();
+    updateManipulator(false);
     const bool published = modelView.prepareFrame(0.0f, ++frameSerial);
     if(editingSketchId.isNotEmpty()&&motionRuntime){const auto pose=motionRuntime->pose();const auto serial=pose?pose->serial:0;if(serial!=referencePoseSerial||documentChanged){referencePoseSerial=serial;sketchCanvas->repaint();}}
     if (documentChanged || published) wakeFrames();
@@ -2630,6 +2642,10 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("x", placement + "X", f->x, "mm", "World X position.");
             form->addNumber("y", placement + "Y", f->y, "mm", "World Y position.");
             form->addNumber("z", placement + "Z", f->z, "mm", "World Z position.");
+            form->addNumber("rx", "Rotate X", f->rx, "deg", "Rotation about world X through the placement point, applied first (then Y, then Z).");
+            form->addNumber("ry", "Rotate Y", f->ry, "deg", "Rotation about world Y, applied second.");
+            form->addNumber("rz", "Rotate Z", f->rz, "deg", "Rotation about world Z, applied last.");
+            form->addNote({}, "Placement moves the whole body; its modeled geometry is unchanged. Press T (Move / Rotate) to drag it in the view.", 2);
             juce::String materialText = "No engineering material assigned.";
             if (const auto* a = document.materialsData().assignmentFor(selectedId))
                 if (const auto* m = document.materialsData().find(a->materialId)) materialText = "Material: " + m->name + " (revision " + juce::String(m->revision) + ")";
@@ -3044,6 +3060,7 @@ void CadWorkspacePanel::validateTask()
             if (form->text("name").isEmpty()) { problem = "Name cannot be empty."; severity = 2; }
             for (const auto* key : { "width", "depth", "height", "radius" }) requirePositive(key, form->control(key) != nullptr ? juce::String(key).substring(0, 1).toUpperCase() + juce::String(key).substring(1) : juce::String());
             for (const auto* key : { "x", "y", "z" }) requireNumber(key, juce::String("Position ") + juce::String(key).toUpperCase());
+            for (const auto* key : { "rx", "ry", "rz" }) requireNumber(key, juce::String("Rotation ") + juce::String(key).getLastCharacters(1).toUpperCase());
             break;
         case Task::createSketch:
             if (sketchPlane.isEmpty()) problem = "Choose the selected face or the XY, XZ or YZ plane.";
@@ -3214,7 +3231,11 @@ void CadWorkspacePanel::acceptTask()
             }
             if (ok && name != f->name) ok = service->rename(selectedId, name, e);
             if (ok && (f = document.find(selectedId)) != nullptr && (f->type!="chamfer" && f->type!="hole" && (w != f->width || d != f->depth || h != f->height || r != f->radius))) ok = service->setDimensions(selectedId, w, d, h, r, e);
-            if (ok && (f = document.find(selectedId)) != nullptr && (x != f->x || y != f->y || z != f->z)) ok = service->setPlacement(selectedId, x, y, z, f->rx, f->ry, f->rz, e);
+            if (ok && (f = document.find(selectedId)) != nullptr)
+            {
+                const auto rx = form->control("rx") ? form->number("rx") : f->rx, ry = form->control("ry") ? form->number("ry") : f->ry, rz = form->control("rz") ? form->number("rz") : f->rz;
+                if (x != f->x || y != f->y || z != f->z || rx != f->rx || ry != f->ry || rz != f->rz) ok = service->setPlacement(selectedId, x, y, z, rx, ry, rz, e);
+            }
             refreshFromDocument(true);
             rebuildTaskPanel(false);
             if (!ok) showError(e); else setMessage("Changes applied.", 0);
@@ -4614,6 +4635,15 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
         return true;
     }
     if(command=="gearPair"){startTask(Task::gearPair);return true;}
+    if(command=="transform"||command=="transformLocal")
+    {
+        if(command=="transformLocal")transformLocal=!transformLocal;else transformTool=!transformTool;
+        juce::String reason;if(transformTool&&(selectedId.isEmpty()||!manipulable(selectedId,reason)))setMessage(reason.isNotEmpty()?reason:"Move / Rotate: select a body or assembly component.",0);
+        updateManipulator(true);updateToolbar();return true;
+    }
+    if(command.startsWith("view")&&juce::StringArray{"viewFront","viewBack","viewLeft","viewRight","viewTop","viewBottom","viewIsometric"}.contains(command))
+    {modelView.setStandardView(command.substring(4).toLowerCase());wakeFrames();return true;}
+    if(command=="insertComponent"){if(onOpenComponentLibrary)onOpenComponentLibrary();else setMessage("Open Window > Component Library to insert components.",0);return true;}
     if(djehuti::cad::isModelingType(command)){startTask(Task::modeling,command);return true;}
     if(djehuti::cad::isReplicationType(command)){startTask(Task::replication,command);return true;}
     if (command == "materials") { showMaterialsManager(); return true; }
@@ -4638,7 +4668,7 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
     if(command=="deleteSketchEntities")return sketch&&sketchEntityId.isNotEmpty();
     if(command=="dockSketchToolbox"||command=="references")return sketch;
     if(juce::StringArray{"extrude","revolve","lathe","cut","fillet","chamfer","hole","subtract","union","intersect"}.contains(command))return !sketch;
-    if(command=="gearPair"||djehuti::cad::isModelingType(command)||djehuti::cad::isReplicationType(command))return !sketch;
+    if(command=="gearPair"||command=="transform"||command=="transformLocal"||command=="insertComponent"||command.startsWith("view")||djehuti::cad::isModelingType(command)||djehuti::cad::isReplicationType(command))return !sketch;
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
     if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","multipleSelect","selectAll","clearSelection","focusSelected","orbitSelected","flyMode","orbitPoint","interference","materials"}.contains(command)) return !sketch;
     if (command == "clearInterference") return interferenceActive;
@@ -4657,6 +4687,8 @@ bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
         if(command=="bodyMode"||command=="faceMode"||command=="edgeMode")return selection->mode()==(command=="bodyMode"?djehuti::cad::CadSelection::Mode::body:command=="faceMode"?djehuti::cad::CadSelection::Mode::face:djehuti::cad::CadSelection::Mode::edge);
     }
     if(command=="gearPair")return task==Task::gearPair;
+    if(command=="transform")return transformTool;
+    if(command=="transformLocal")return transformLocal;
     if(djehuti::cad::isModelingType(command))return task==Task::modeling&&modelingKind==command;
     if(djehuti::cad::isReplicationType(command))return task==Task::replication&&replicationKind==command;
     if (editingSketchId.isNotEmpty()) return command == (sketchCanvas->tool() == "select" ? juce::String("sketchSelect") : sketchCanvas->tool());
@@ -4699,7 +4731,7 @@ juce::var CadWorkspacePanel::automationState()
     const auto& document = service->document();
     auto* state = new juce::DynamicObject();
     state->setProperty("symmetry",service->document().sketchSymmetryState(editingSketchId));
-    state->setProperty("modifyToolbar",modifyPalette->state());state->setProperty("snapToolbar",snapPalette->state());state->setProperty("snapping",snapPreferences->state());state->setProperty("references",referenceState());
+    state->setProperty("manipulator",modelView.manipulatorState());state->setProperty("transformTool",transformTool);state->setProperty("modifyToolbar",modifyPalette->state());state->setProperty("snapToolbar",snapPalette->state());state->setProperty("snapping",snapPreferences->state());state->setProperty("references",referenceState());
     state->setProperty("modelingPreview",modelingPreviewActive);
     state->setProperty("replicationPreview",replicationPreviewActive);
     state->setProperty("chamferPreview",chamferPreviewActive);
@@ -4722,7 +4754,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","gear","gearPair","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox","selectionToolbox","dockSelectionToolbox","selectAll","clearSelection","multipleSelect","focusSelected","flyMode","orbitPoint","showAllSketches","hideAllSketches","modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","gear","gearPair","transform","transformLocal","insertComponent","viewFront","viewBack","viewLeft","viewRight","viewTop","viewBottom","viewIsometric","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox","selectionToolbox","dockSelectionToolbox","selectAll","clearSelection","multipleSelect","focusSelected","flyMode","orbitPoint","showAllSketches","hideAllSketches","modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -5354,6 +5386,8 @@ bool runCadWorkflowUiCheck(juce::var& report)
 #include "CadSketchToolboxChecks.inc"
 
 #include "CadSketchReferenceChecks.inc"
+
+#include "CadPlacementWorkflowChecks.inc"
 
 #include "CadMainToolbarChecks.inc"
 
