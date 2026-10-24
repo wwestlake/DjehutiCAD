@@ -48,6 +48,7 @@ bool Viewport3D::fitSelection()
         if(pose!=nullptr)for(const auto& instance:pose->instances)if(instance.instanceId==pick.drawId)include(it->second,instance.matrix.data());
     }
     if(!found)return false;
+    setFlyMode(false);orbitPointPicking=false;
     targetX=(float)((low[0]+high[0])*.5);targetY=(float)((low[1]+high[1])*.5);targetZ=(float)((low[2]+high[2])*.5);
     double r2=0;for(int i=0;i<3;++i)r2+=(high[i]-low[i])*(high[i]-low[i]);
     const double aspect=(double)juce::jmax(1,getWidth())/juce::jmax(1,getHeight());

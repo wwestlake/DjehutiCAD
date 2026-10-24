@@ -9,6 +9,7 @@
 #include "CadInterference.h"
 #include "WorkspaceMenu.h"
 #include "CadSaveProtection.h"
+#include "CadTooltipWindow.h"
 
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
@@ -71,6 +72,7 @@ private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    friend bool runWorkspaceNavigationCheck(juce::var&);
     friend class CadMainToolbarCheck;
     friend bool runSketchToolboxCheck(juce::var&);
     friend bool runAdvancedSketchCheck(juce::var&);
@@ -123,7 +125,7 @@ private:
     void referencePreferencesChanged();
     bool faceSnapAvailable() const;
     bool refineFaceSnap(djehuti::cad::CadPick&) const;
-    std::unique_ptr<CadFloatingToolbar> modifyPalette,snapPalette;
+    std::unique_ptr<CadFloatingToolbar> modifyPalette,snapPalette,modelSelectionPalette;
     std::unique_ptr<djehuti::cad::ui::SnapPreferences> snapPreferences;
     bool showReferenceSketches=true,showReferenceSolids=true,snapReferences=true,referenceSelection=false;
     float referenceOpacity=.4f;
@@ -135,6 +137,11 @@ private:
     // Interactive sketch edits committed by the canvas (one document command each): vertex/handle drag,
     // vertex insertion. selectSketchVertex selects an endpoint ("<entity>:p1|p2") for precise editing.
     void selectSketchVertex(const juce::String& pointRef);
+    std::vector<int> eligibleEdges(const juce::String&,int* skipped=nullptr) const;
+    void chooseAll(bool clear=false);
+    bool handleModelKey(const juce::KeyPress&);
+    void showSketches(bool);
+    bool sketchShown(const juce::String&) const;
     bool handleHistoryKey(const juce::KeyPress& key);
     bool moveSketchPoint(const juce::String& pointRef, double u, double v);
     bool insertSketchVertex(const juce::String& lineId, double u, double v);
@@ -186,7 +193,7 @@ private:
 
     std::shared_ptr<djehuti::cad::CadCommandService> service;
     juce::Component::SafePointer<juce::Component> keyHost;   // top-level component this panel listens to for undo/redo keys
-    juce::TooltipWindow tooltipWindow { this, 600 };
+    CadTooltipWindow tooltipWindow { *this };
     juce::Label modeLabel, statusLabel, unitsLabel, treeHeading;
     juce::TextButton sketchButton { "Create Sketch" }, boxButton { "Box" }, cylinderButton { "Cylinder" }, extrudeButton { "Extrude" }, cutButton { "Cut Sketch" },
         filletButton { "Fillet" }, revolveButton { "Revolve" }, latheButton { "Virtual Lathe" }, chamferButton { "Chamfer" }, holeButton { "Drill Press" },

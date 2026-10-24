@@ -55,15 +55,16 @@ std::vector<djehuti::cad::CadPick> Viewport3D::pickRegion(P start,P end,bool cir
         if(pose==nullptr || pose->instancedFeatures.count(feature)==0) callback(feature,unit);
         else for(const auto& instance:pose->instances) if(instance.featureId==feature) callback(instance.instanceId,instance.matrix);
     };
+    const auto pickClip=clippingPlanes();std::array<float,3> pickEye{},pickDirection{};rayThrough({getWidth()*.5f,getHeight()*.5f},pickEye,pickDirection);
     const auto project=[&](const std::array<float,16>& m,const float* v,P& out)
     {
         std::array<float,3> point{};
         for(int k=0;k<3;++k) point[(size_t)k]=m[(size_t)k]*v[0]+m[(size_t)(4+k)]*v[1]+m[(size_t)(8+k)]*v[2]+m[(size_t)(12+k)];
-        return toScreen(point,out);
+        double depth=0;for(int k=0;k<3;++k)depth+=(point[k]-pickEye[k])*pickDirection[k];return depth>=pickClip[0]&&depth<=pickClip[1]&&toScreen(point,out);
     };
     if(selection->mode()==Mode::edge)
     {
-        for(const auto& edge:pickSnapshot->edges) forDraw(edge.featureId,[&](const juce::String& id,const auto& matrix)
+        for(const auto& edge:pickSnapshot->edges) if(!edgeTarget||edgeTarget().isEmpty()||edgeTarget()==edge.featureId)forDraw(edge.featureId,[&](const juce::String& id,const auto& matrix)
         {
             auto& entry=candidates[id+"/edge/"+juce::String(edge.edgeIndex)]; entry.pick={id,edge.featureId,-1,edge.edgeIndex};
             P previous; bool prior=false;
@@ -118,4 +119,16 @@ bool runViewportInteractionCheck(juce::String& detail)
     if(!check(states.size()==2 && (bool)states[1]["floor"],"Restored additional view must retain its own settings")) return false;
     detail="Enclosing/crossing boxes, empty region, circle, face identities, world floor, guide visibility and view-count persistence passed.";
     return true;
+}
+
+std::vector<djehuti::cad::CadPick> Viewport3D::allPicks() const
+{
+    using Pick=djehuti::cad::CadPick;std::vector<Pick> result;if(!selection||!pickSnapshot)return result;
+    const auto add=[&](const juce::String& feature,int face,int edge){
+        const auto insert=[&](const juce::String& draw){for(const auto& p:result)if(p.drawId==draw&&p.face==face&&p.edge==edge)return;result.push_back({draw,feature,face,edge});};
+        if(!pose||!pose->instancedFeatures.count(feature))insert(feature);else for(const auto& i:pose->instances)if(i.featureId==feature)insert(i.instanceId);
+    };
+    if(selection->mode()==djehuti::cad::CadSelection::Mode::edge)for(const auto& e:pickSnapshot->edges){if(!edgeTarget||edgeTarget().isEmpty()||edgeTarget()==e.featureId)add(e.featureId,-1,e.edgeIndex);}
+    else for(const auto& m:pickSnapshot->meshes)add(m.featureId,selection->mode()==djehuti::cad::CadSelection::Mode::face?m.faceIndex:-1,-1);
+    return result;
 }

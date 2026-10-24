@@ -124,7 +124,16 @@ private:
             g.setColour(juce::Colour(0xffdcecf3).withAlpha(isEnabled()?1.0f:.28f));g.addTransform(juce::AffineTransform::translation((getWidth()-24)*.5f,(getHeight()-24)*.5f));
             const auto k=getName();const auto line=[&](float a,float b,float c,float d){g.drawLine(a,b,c,d,1.5f);};const auto circle=[&](float x,float y,float r){g.drawEllipse(x-r,y-r,r*2,r*2,1.5f);};
             const auto cube=[&]{line(3,8,12,3);line(12,3,21,8);line(21,8,12,13);line(12,13,3,8);line(3,8,3,19);line(3,19,12,23);line(12,23,21,19);line(21,19,21,8);line(12,13,12,23);};
-            if(k=="grid"){for(int x:{4,12,20})for(int y:{4,12,20})g.fillEllipse((float)x-1,(float)y-1,2,2);}
+            if(k=="pointer"){juce::Path p;p.startNewSubPath(4,2);p.lineTo(21,13);p.lineTo(12,14);p.lineTo(8,23);p.closeSubPath();g.strokePath(p,juce::PathStrokeType(1.5f));}
+            else if(k=="boxSelect"){g.drawRect(3.f,3.f,18.f,18.f,1.5f);g.fillRect(1,1,4,4);g.fillRect(19,19,4,4);}
+            else if(k=="circleSelect"){circle(12,12,9);g.fillRect(1,1,4,4);g.fillRect(19,19,4,4);}
+            else if(k=="multipleSelect"){g.drawRect(2,2,13,13,1);g.drawRect(9,9,13,13,1);line(17,3,23,3);line(20,0,20,6);}
+            else if(k=="bodyMode")cube();
+            else if(k=="faceMode"){cube();g.fillRect(13,14,6,6);}
+            else if(k=="edgeMode"){cube();g.setColour(juce::Colour(0xffff716b));line(3,8,12,3);line(12,3,21,8);}
+            else if(k=="selectAll"){g.drawRect(1,1,22,22,1);for(int x:{5,14})for(int y:{5,14})g.fillRect(x,y,5,5);}
+            else if(k=="clearSelection"){g.drawRect(1,1,22,22,1);line(5,5,19,19);line(5,19,19,5);}
+            else if(k=="grid"){for(int x:{4,12,20})for(int y:{4,12,20})g.fillEllipse((float)x-1,(float)y-1,2,2);}
             else if(k=="vertex"){line(3,20,12,6);line(12,6,22,18);g.drawRect(9,3,6,6,1);}
             else if(k=="edge"){line(2,20,22,4);circle(12,12,3);}
             else if(k=="midpoint"){line(2,17,22,17);juce::Path p;p.addTriangle(12,7,7,15,17,15);g.strokePath(p,juce::PathStrokeType(1.5f));}

@@ -19,6 +19,8 @@ bool runAdvancedSketchCheck(juce::var&);
 bool runSketchToolboxCheck(juce::var&);
 void startMainToolbarCheck(std::function<void(bool,juce::var)>);
 bool runCadSaveProtectionCheck(juce::var&);
+bool runWorkspaceNavigationCheck(juce::var&);
+std::unique_ptr<juce::DocumentWindow> createNavigationCheckWindow();
 bool runSketchUsabilityCheck(juce::var&);
 bool runCadWorkflowUiCheck(juce::var&);
 bool runSketchLineRepairCheck(juce::var&);
@@ -1389,6 +1391,10 @@ public:
         {
             juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runSketchLineRepairCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-line-repair-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
         }
+        if(commandLine.startsWith("--cad-navigation-live")){navigationCheckWindow=createNavigationCheckWindow();return;}
+        if(commandLine.startsWith("--cad-workspace-navigation-check")){
+            juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runWorkspaceNavigationCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-workspace-navigation-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
+        }
         if(commandLine.startsWith("--cad-save-protection-check"))
         {
             juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runCadSaveProtectionCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-save-protection-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
@@ -1561,7 +1567,7 @@ public:
         mainWindow = std::make_unique<MainWindow>(getApplicationName());
     }
 
-    void shutdown() override { mainWindow = nullptr; }
+    void shutdown() override { navigationCheckWindow=nullptr;mainWindow = nullptr; }
 
     void systemRequestedQuit() override
     {
@@ -1601,6 +1607,7 @@ private:
         }
     };
 
+    std::unique_ptr<juce::DocumentWindow> navigationCheckWindow;
     std::unique_ptr<MainWindow> mainWindow;
 };
 

@@ -80,15 +80,54 @@ Viewport3D::Viewport3D(int number) : viewNumber(number)
     setOpaque(false); context.setRenderer(this); context.setContinuousRepainting(false); context.setOpenGLVersionRequired(juce::OpenGLContext::openGL4_1); context.attachTo(*this);
 }
 Viewport3D::~Viewport3D() { context.detach(); }
-void Viewport3D::paint(juce::Graphics& g) { if(faceSnapMarker&&faceSnapEnabled&&faceSnapEnabled()){g.setColour(juce::Colour(0xffffce73));g.drawRect(juce::Rectangle<float>(faceSnapScreen.x-4,faceSnapScreen.y-4,8,8),1.5f);g.drawText("face",(int)faceSnapScreen.x+9,(int)faceSnapScreen.y-18,55,18,juce::Justification::left);} drawReferenceGuides(g); g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
+void Viewport3D::paint(juce::Graphics& g) { if(faceSnapMarker&&faceSnapEnabled&&faceSnapEnabled()){g.setColour(juce::Colour(0xffffce73));g.drawRect(juce::Rectangle<float>(faceSnapScreen.x-4,faceSnapScreen.y-4,8,8),1.5f);g.drawText("face",(int)faceSnapScreen.x+9,(int)faceSnapScreen.y-18,55,18,juce::Justification::left);} drawReferenceGuides(g); g.setColour(juce::Colour(0xffa9c8d2)); g.drawText(flyMode?"FLY | WASD move, Q/E down/up, drag/arrow keys look, Shift faster, Esc exits":orbitPointPicking?"Set orbit point: click a surface or the XY floor; Esc cancels":title.isNotEmpty() ? title : "View " + juce::String(viewNumber), 10, 8, juce::jmax(100, getWidth() - 20), 20, juce::Justification::left); g.setColour(juce::Colour(0xff8fa4ad)); g.setFont(juce::Font(10.0f)); g.drawFittedText(glStatus, 10, juce::jmax(24, getHeight() - 28), getWidth() - 20, 18, juce::Justification::left, 1); }
 void Viewport3D::resized() { if (hasSceneBounds && !userCameraChanged && !fitPending) frameScene(); tryPendingFit(); markDirty(); }
-void Viewport3D::timerCallback() {}
+void Viewport3D::timerCallback()
+{
+    const auto now=juce::Time::getMillisecondCounterHiRes();const auto elapsed=(float)juce::jlimit(0.0,0.05,(now-flyTick)/1000.0);flyTick=now;
+    if(!flyMode||!isShowing()||!hasKeyboardFocus(false))return;
+    const auto mods=juce::ModifierKeys::getCurrentModifiersRealtime();if(mods.isCommandDown()||mods.isAltDown())return;
+    const auto down=[](int key){return juce::KeyPress::isKeyCurrentlyDown(key);};
+    const float speed=juce::jmax(.01f,sceneRadius)*elapsed*(mods.isShiftDown()?4.f:1.f);
+    const float f=(float)(down('W')-down('S')),r=(float)(down('D')-down('A')),u=(float)(down('E')-down('Q'));
+    if(f!=0||r!=0||u!=0)moveFly(f*speed,r*speed,u*speed);
+    const float x=(float)(down(juce::KeyPress::rightKey)-down(juce::KeyPress::leftKey)),y=(float)(down(juce::KeyPress::upKey)-down(juce::KeyPress::downKey));if(x!=0||y!=0)lookFly(x*elapsed,y*elapsed);
+}
+void Viewport3D::setFlyMode(bool value)
+{
+    if(flyMode==value)return;flyMode=value;selectingRegion=false;orbitPointPicking=false;
+    if(value){const float cy=std::cos(yaw),sy=std::sin(yaw),sp=std::sin(pitch),cp=std::cos(pitch);targetX-=panX*cy-panY*sp*sy;targetY-=panX*sy+panY*sp*cy;targetZ-=panY*cp;panX=panY=0;flyTick=juce::Time::getMillisecondCounterHiRes();startTimerHz(60);grabKeyboardFocus();}
+    else stopTimer();cameraChanged();repaint();
+}
+bool Viewport3D::keyStateChanged(bool){return flyMode;}
+void Viewport3D::focusLost(FocusChangeType){flyTick=juce::Time::getMillisecondCounterHiRes();}
+void Viewport3D::moveFly(float forward,float right,float up)
+{
+    if(!flyMode||!std::isfinite(forward)||!std::isfinite(right)||!std::isfinite(up))return;
+    targetX+=-forward*std::cos(pitch)*std::sin(yaw)+right*std::cos(yaw);
+    targetY+=forward*std::cos(pitch)*std::cos(yaw)+right*std::sin(yaw);
+    targetZ+=-forward*std::sin(pitch)+up;cameraChanged();repaint();
+}
+void Viewport3D::lookFly(float dx,float dy)
+{
+    if(!flyMode)return;const std::array<float,3> eye{targetX+distance*std::cos(pitch)*std::sin(yaw),targetY-distance*std::cos(pitch)*std::cos(yaw),targetZ+distance*std::sin(pitch)};
+    yaw+=dx;pitch=juce::jlimit(-1.55f,1.55f,pitch+dy);
+    targetX=eye[0]-distance*std::cos(pitch)*std::sin(yaw);targetY=eye[1]+distance*std::cos(pitch)*std::cos(yaw);targetZ=eye[2]-distance*std::sin(pitch);cameraChanged();repaint();
+}
+void Viewport3D::chooseOrbitPoint(){setFlyMode(false);selectingRegion=false;draggingTarget=false;orbitPointPicking=true;grabKeyboardFocus();repaint();}
+bool Viewport3D::setOrbitPoint(const std::array<float,3>& point)
+{
+    for(auto v:point)if(!std::isfinite(v))return false;setFlyMode(false);orbitPointPicking=false;
+    targetX=point[0];targetY=point[1];targetZ=point[2];panX=panY=0;cameraChanged();markDirty();repaint();return true;
+}
+
 void Viewport3D::mouseDown(const juce::MouseEvent& e)
 {
     grabKeyboardFocus();
     dragStart = pressPosition = e.position.roundToInt();
     draggingTarget = false;
-    selectingRegion=selection!=nullptr && selection->tool()!=djehuti::cad::CadSelection::Tool::pointer && !e.mods.isRightButtonDown() && !e.mods.isShiftDown() && !(wantsBodyPick && wantsBodyPick());
+    if(flyMode||orbitPointPicking)return;
+    selectingRegion=selection!=nullptr && (selection->tool()==djehuti::cad::CadSelection::Tool::box||selection->tool()==djehuti::cad::CadSelection::Tool::circle) && !e.mods.isRightButtonDown() && !e.mods.isShiftDown() && !(wantsBodyPick && wantsBodyPick());
     regionEnd=e.position;
     if(selectingRegion) { repaint(); return; }
     if (!targetDragEnabled || e.mods.isRightButtonDown() || e.mods.isShiftDown() || onTargetDragged == nullptr) return;
@@ -101,6 +140,17 @@ void Viewport3D::mouseDown(const juce::MouseEvent& e)
 }
 void Viewport3D::mouseUp(const juce::MouseEvent& e)
 {
+    if(flyMode)return;
+    if(orbitPointPicking){
+        if(e.mods.isPopupMenu()){orbitPointPicking=false;repaint();return;}
+        if(e.position.roundToInt().getDistanceFrom(pressPosition)>3)return;
+        auto hit=pick(e.position,djehuti::cad::CadSelection::Mode::face);
+        if(hit.valid()&&hit.hasPoint){std::array<float,3> world{(float)hit.point[0],(float)hit.point[1],(float)hit.point[2]};
+            if(pose)for(const auto& i:pose->instances)if(i.instanceId==hit.drawId){const auto p=world;for(int k=0;k<3;++k)world[k]=i.matrix[k]*p[0]+i.matrix[4+k]*p[1]+i.matrix[8+k]*p[2]+i.matrix[12+k];}
+            setOrbitPoint(world);
+        }else{std::array<float,3> o{},d{};if(rayThrough(e.position,o,d)&&std::abs(d[2])>1e-8f){const float t=-o[2]/d[2];if(t>0)setOrbitPoint({o[0]+t*d[0],o[1]+t*d[1],0});}}
+        return;
+    }
     if (draggingTarget)
     {
         draggingTarget = false;
@@ -113,7 +163,7 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
     {
         selectingRegion=false;
         auto picked=pickRegion(pressPosition.toFloat(),e.position,selection->tool()==djehuti::cad::CadSelection::Tool::circle);
-        if(e.mods.isCtrlDown()) { auto prior=selection->items(); for(const auto& p:picked) if(std::find(prior.begin(),prior.end(),p)==prior.end()) prior.push_back(p); picked=std::move(prior); }
+        if(e.mods.isCtrlDown()||(wantsEdgePick&&wantsEdgePick())) { auto prior=selection->items(); for(const auto& p:picked) if(std::none_of(prior.begin(),prior.end(),[&](const auto& old){return old.drawId==p.drawId&&old.featureId==p.featureId&&old.face==p.face&&old.edge==p.edge;})) prior.push_back(p); picked=std::move(prior); }
         selection->setSelectedMany(std::move(picked)); markDirty(); repaint();
         if(onContextCommand) onContextCommand("inspectRegion",selection->selected());
         return;
@@ -127,8 +177,12 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
     }
     auto picked=pick(e.position,faceSnapEnabled&&faceSnapEnabled()?djehuti::cad::CadSelection::Mode::face:selection!=nullptr && !(wantsBodyPick&&wantsBodyPick())?selection->mode():djehuti::cad::CadSelection::Mode::body);
     if(faceSnapEnabled&&faceSnapEnabled()&&refineFaceSnap)refineFaceSnap(picked);
-    if(selection!=nullptr) selection->setSelected(picked);
-    if(picked.face<0 && picked.edge<0)
+    if(selection!=nullptr){
+        if(!(wantsEdgePick&&wantsEdgePick())&&(e.mods.isCtrlDown()||selection->tool()==djehuti::cad::CadSelection::Tool::multiple)){
+            auto items=selection->items();const auto found=std::find_if(items.begin(),items.end(),[&](const auto& p){return p.drawId==picked.drawId&&p.featureId==picked.featureId&&p.face==picked.face&&p.edge==picked.edge;});if(found!=items.end())items.erase(found);else if(picked.valid())items.push_back(picked);selection->setSelectedMany(std::move(items));
+        }else selection->setSelected(picked);
+    }
+    if(picked.face<0 && picked.edge<0&&!(selection&&(selection->tool()==djehuti::cad::CadSelection::Tool::multiple||e.mods.isCtrlDown())))
     {
         if(onBodyPicked) onBodyPicked(picked.drawId);
         else if(onContextCommand) onContextCommand("inspect",picked);
@@ -293,6 +347,8 @@ void Viewport3D::setInspectionLines(std::vector<djehuti::cad::CadOverlayLine> ne
 void Viewport3D::setHighlights(std::vector<std::pair<juce::String, juce::Colour>> next) { { const juce::SpinLock::ScopedLockType lock(highlightLock); if (highlights == next) return; highlights = std::move(next); } markDirty(); }
 void Viewport3D::mouseDrag(const juce::MouseEvent& e)
 {
+    if(flyMode){const auto now=e.position.roundToInt(),d=now-dragStart;lookFly(d.x*.006f,d.y*.006f);dragStart=now;return;}
+    if(orbitPointPicking)return;
     if(selectingRegion) { regionEnd=e.position; repaint(); return; }
     if (draggingTarget)
     {
@@ -312,6 +368,7 @@ juce::var Viewport3D::cameraState() const
 {
     auto* o = new juce::DynamicObject();
     o->setProperty("yawDeg", (double)juce::radiansToDegrees(yaw)); o->setProperty("pitchDeg", (double)juce::radiansToDegrees(pitch));
+    o->setProperty("flyMode",flyMode);o->setProperty("orbitPointPicking",orbitPointPicking);
     o->setProperty("distance", distance); o->setProperty("panX", panX); o->setProperty("panY", panY);
     o->setProperty("targetX", targetX); o->setProperty("targetY", targetY); o->setProperty("targetZ", targetZ);
     const auto clip=clippingPlanes();o->setProperty("nearPlane",clip[0]);o->setProperty("farPlane",clip[1]);o->setProperty("depthMode",clip[1]/clip[0]>50000?"logarithmic":"linear");
@@ -321,6 +378,10 @@ juce::var Viewport3D::cameraState() const
 bool Viewport3D::controlCamera(const juce::var& args, juce::String& error)
 {
     const auto op = args.getProperty("operation", "set").toString();
+    if(op=="fly"){setFlyMode(args.getProperty("enabled",!flyMode));return true;}
+    if(op=="orbitPoint"){
+        std::array<float,3> point{};const char* keys[]{"x","y","z"};for(int i=0;i<3;++i){const auto v=args[keys[i]];if(!(v.isDouble()||v.isInt()||v.isInt64())||!std::isfinite((double)v)||std::abs((double)v)>1e20){error="Orbit point requires finite world coordinates.";return false;}point[i]=(float)(double)v;}return setOrbitPoint(point);
+    }
     if (op == "fit") { fitAll(); return true; }
     if(op=="fitSelection"){if(fitSelection())return true;error="Select visible model geometry to frame.";return false;}
     if(op=="capture"){if(!juce::File::isAbsolutePath(args["path"].toString())){error="Capture needs an absolute PNG path.";return false;}return captureViewport(juce::File(args["path"].toString()),error);}
@@ -343,7 +404,7 @@ bool Viewport3D::controlCamera(const juce::var& args, juce::String& error)
     panX = (float)(double)args.getProperty("panX", panX); panY = (float)(double)args.getProperty("panY", panY);
     cameraChanged(); markDirty(); return true;
 }
-void Viewport3D::resetCamera() { yaw = homeYaw; pitch = homePitch; panX = panY = 0.0f; userCameraChanged = false; if (hasSceneBounds) frameScene(); else { distance = homeDistance; targetX = targetY = targetZ = 0.0f; fitPending = true; } markDirty(); }
+void Viewport3D::resetCamera() { setFlyMode(false);orbitPointPicking=false; yaw = homeYaw; pitch = homePitch; panX = panY = 0.0f; userCameraChanged = false; if (hasSceneBounds) frameScene(); else { distance = homeDistance; targetX = targetY = targetZ = 0.0f; fitPending = true; } markDirty(); }
 void Viewport3D::fitAll() { userCameraChanged = false; if (hasSceneBounds) frameScene(); else fitPending = true; markDirty(); }
 void Viewport3D::requestFit(std::uint64_t documentInstance) { fitPending = true; fitDocument = documentInstance; userCameraChanged = false; tryPendingFit(); markDirty(); }
 // The user moved the camera: their view wins over any fit still waiting for geometry.
@@ -583,7 +644,7 @@ void Viewport3D::renderOpenGL()
             glEnable(GL_DEPTH_TEST);
         };
         std::vector<std::pair<djehuti::cad::CadPick,juce::Colour>> pickColours {{hoverPick,juce::Colour(0xff9be7ff)}};
-        for(const auto& p:pickedItems) pickColours.push_back({p,juce::Colour(0xffff4fd8)});
+        for(const auto& p:pickedItems) pickColours.push_back({p,juce::Colour(p.edge>=0?0xffff4b44:0xffff4fd8)});
         for (const auto& [p, colour] : pickColours)
         {
             M4 m;
@@ -750,6 +811,15 @@ void ThreeDViewsPanel::restoreViewState(const juce::String& json)
 
 bool Viewport3D::keyPressed(const juce::KeyPress& key)
 {
+    if(key==juce::KeyPress::escapeKey&&flyMode){setFlyMode(false);return true;}
+    if(key==juce::KeyPress::escapeKey&&orbitPointPicking){orbitPointPicking=false;repaint();return true;}
+    if(flyMode&&!key.getModifiers().isCommandDown()&&!key.getModifiers().isAltDown()){const auto c=juce::CharacterFunctions::toUpperCase(key.getTextCharacter());if(c=='W'||c=='A'||c=='S'||c=='D'||c=='Q'||c=='E'||key.getKeyCode()==juce::KeyPress::leftKey||key.getKeyCode()==juce::KeyPress::rightKey||key.getKeyCode()==juce::KeyPress::upKey||key.getKeyCode()==juce::KeyPress::downKey)return true;}
+    if(onWorkspaceKey&&onWorkspaceKey(key))return true;
+    auto navigationKey=key.getKeyCode();if(navigationKey>=1&&navigationKey<=26)navigationKey+='A'-1;navigationKey=(int)juce::CharacterFunctions::toUpperCase((juce::juce_wchar)navigationKey);
+    if(key.getModifiers().isCtrlDown()&&key.getModifiers().isShiftDown()){
+        if(navigationKey=='F'){setFlyMode(!flyMode);return true;}if(navigationKey=='O'){chooseOrbitPoint();return true;}
+    }
+    if(key==juce::KeyPress::homeKey){resetCamera();return true;}
     if(key==juce::KeyPress::escapeKey) { selectingRegion=false; if(selection!=nullptr) selection->setTool(djehuti::cad::CadSelection::Tool::pointer); markDirty(); repaint(); return true; }
     if((key.getTextCharacter()=='F'||key.getTextCharacter()=='f')&&key.getModifiers().isShiftDown()){fitSelection();return true;}
     if(key.getTextCharacter()=='f' && !key.getModifiers().isAnyModifierKeyDown()) { fitAll(); return true; }

@@ -14,6 +14,10 @@
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopTools_ListIteratorOfListOfShape.hxx>
+#include <TopExp.hxx>
 
 #include <deque>
 #include <cstdlib>
@@ -308,11 +312,13 @@ public:
         g.setFont(juce::Font(14.0f));
         g.drawText(name, 8, 0, w - 66, h, juce::Justification::centredLeft, true);
         g.setColour(dimTextColour); g.setFont(juce::Font(11.5f));
-        g.drawText(visible || type == "sketch" ? type : "hidden", w - 60, 0, 56, h, juce::Justification::centredRight, true);
+        if(type=="sketch"){
+            const auto eye=juce::Rectangle<float>((float)w-23,h*.5f-5,18,10);g.setColour(panel.sketchShown(id)?accentColour:dimTextColour);g.drawEllipse(eye,1.3f);g.fillEllipse(eye.getCentreX()-2,eye.getCentreY()-2,4,4);if(!panel.sketchShown(id))g.drawLine(eye.getX(),eye.getBottom()+2,eye.getRight(),eye.getY()-2,1.5f);
+        }else g.drawText(visible?type:"hidden",w-60,0,56,h,juce::Justification::centredRight,true);
     }
-    void itemClicked(const juce::MouseEvent& e) override { if (e.mods.isPopupMenu()) panel.showFeatureMenu(id); else panel.featureClicked(id); }
-    void itemDoubleClicked(const juce::MouseEvent&) override { if (type == "sketch") {if(panel.editingSketchId.isNotEmpty()&&id!=panel.editingSketchId)panel.featureClicked(id);else panel.enterSketch(id);} }
-    juce::String getTooltip() override { return name + " (" + type + (visible ? "" : ", hidden") + ")  Right-click for actions."; }
+    void itemClicked(const juce::MouseEvent& e) override { if(type=="sketch"&&!e.mods.isPopupMenu()&&e.x>=getItemPosition(true).getWidth()-26){panel.toggleVisibility(id);return;}if (e.mods.isPopupMenu()) panel.showFeatureMenu(id); else panel.featureClicked(id); }
+    void itemDoubleClicked(const juce::MouseEvent& e) override { if(type=="sketch"&&e.x>=getItemPosition(true).getWidth()-26)return;if (type == "sketch") {if(panel.editingSketchId.isNotEmpty()&&id!=panel.editingSketchId)panel.featureClicked(id);else panel.enterSketch(id);} }
+    juce::String getTooltip() override { return (type=="sketch"?"Click the eye to show/hide; double-click the name to edit. ":juce::String())+name + " (" + type + (visible ? "" : ", hidden") + ")  Right-click for actions."; }
 private:
     CadWorkspacePanel& panel;
     juce::String id, name, type;
@@ -823,7 +829,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
             { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
-            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{61,"Selection toolbox",true,selectionPalette->wanted()}, E{62,"Dock Selection toolbox",sketching,selectionPalette->isDocked()}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{56,"Modify toolbar",true,modifyPalette->visiblePreference()}, E{57,"Dock Modify toolbar",!sketching,modifyPalette->isDocked()}, E{58,"Snap toolbar",true,snapPalette->visiblePreference()}, E{59,"Dock Snap toolbar",true,snapPalette->isDocked()}, E{60,"Reference geometry...",sketching}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
+            { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{63,"Focus Selected (Shift+F)",!sketching}, E{64,"Fly Mode (Ctrl+Shift+F)",!sketching,modelView.isFlyMode()}, E{65,"Set Orbit Point...",!sketching}, E{66,"Show All Sketches"}, E{67,"Hide All Sketches"}, E{61,"Selection toolbox",true,sketching?selectionPalette->isVisible():modelSelectionPalette->isVisible()}, E{62,"Dock Selection toolbox",true,sketching?selectionPalette->isDocked():modelSelectionPalette->isDocked()}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{56,"Modify toolbar",true,modifyPalette->visiblePreference()}, E{57,"Dock Modify toolbar",!sketching,modifyPalette->isDocked()}, E{58,"Snap toolbar",true,snapPalette->visiblePreference()}, E{59,"Dock Snap toolbar",true,snapPalette->isDocked()}, E{60,"Reference geometry...",sketching}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
         };
     };
     workspaceMenu.invoke = [this](int id)
@@ -831,6 +837,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         const juce::StringArray names { "undo","redo","sketch","box","cylinder","extrude","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views" };
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
         else if(id>=56&&id<=60)executeUiCommand(juce::StringArray{"modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"}[id-56]);
+        else if(id>=63&&id<=67)executeUiCommand(juce::StringArray{"focusSelected","flyMode","orbitPoint","showAllSketches","hideAllSketches"}[id-63]);
         else if(id==61||id==62)executeUiCommand(id==61?"selectionToolbox":"dockSelectionToolbox");
         else if(id>=53&&id<=55)executeUiCommand(juce::StringArray{"deleteSketchEntities","sketchToolbox","dockSketchToolbox"}[id-53]);
         else if (id == 26) executeUiCommand("interference");
@@ -931,6 +938,12 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         {"subtract","Subtract one body from another"},{"union","Join bodies with Boolean union"},{"intersect","Keep the common volume of bodies"}},true,juce::Point<int>{12,12});
     snapPalette=std::make_unique<Toolbar>("Snap toolbar",std::vector<Toolbar::Tool>{{"grid","Grid"},{"vertex","Vertex"},{"edge","Nearest edge"},{"midpoint","Midpoint"},{"center","Circle / arc centre"},{"intersection","Intersection"},{"face","Planar face point (Drill Press)"},{"off","Temporarily disable snapping"},{"references","Reference geometry visibility..."}},false,juce::Point<int>{76,100});
     {juce::String error;snapPalette->configure(juce::JSON::parse(R"({"docked":true,"edge":"right"})"),error);}
+    modelSelectionPalette=std::make_unique<Toolbar>("Selection toolbox",std::vector<Toolbar::Tool>{
+        {"pointer","Single selection (V)"},{"boxSelect","Box selection (B): left-to-right encloses; right-to-left crosses; includes obscured edges"},{"circleSelect","Circle selection (C): intersects projected geometry, including obscured edges"},{"multipleSelect","Multiple selection (M); Ctrl-click toggles an item"},
+        {"bodyMode","Select bodies (1)"},{"faceMode","Select faces (2)"},{"edgeMode","Select edges (3)"},{"selectAll","Select all in the active context (Ctrl+A)"},{"clearSelection","Clear selected items (Ctrl+Shift+A)"}},true,juce::Point<int>{104,12});
+    {juce::String error;modelSelectionPalette->configure(juce::JSON::parse(R"({"docked":true,"edge":"left"})"),error);}
+    centre.addChildComponent(*modelSelectionPalette);modelSelectionPalette->command=[this](const auto& c){executeUiCommand(c);};
+    modelSelectionPalette->layoutChanged=[this]{updateToolbar();resized();workspaceMenu.refresh();};
     centre.addChildComponent(*modifyPalette);centre.addChildComponent(*snapPalette);
     modifyPalette->command=[this](const auto& c){executeUiCommand(c);};
     snapPalette->command=[this](const auto& c){
@@ -942,6 +955,9 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     symmetryControls=std::make_unique<CadSketchSymmetryControls>();sketchPalette->setSymmetryPanel(symmetryControls.get());
     symmetryControls->operate=[this](const auto& v){symmetryOperation(v);};symmetryControls->pickCentre=[this]{sketchCanvas->setTool("select");pickingSymmetryCentre=true;setMessage("Pick symmetry centre in the sketch; enabled snaps apply.",0);};
     modelView.setTitle("Perspective  |  Model  (drag to orbit, Shift/right-drag to pan, wheel to zoom, click to select)");
+    modelView.onWorkspaceKey=[this](const auto& key){return editingSketchId.isEmpty()&&handleModelKey(key);};
+    modelView.wantsEdgePick=[this]{return task==Task::fillet||task==Task::chamfer;};
+    modelView.edgeTarget=[this]{return task==Task::fillet||task==Task::chamfer?targetId:juce::String();};
     modelView.onContextCommand = [this](const juce::String& command,const djehuti::cad::CadPick& pick) { viewContextCommand(command,pick); };
     modelView.onBodyPicked = [this](const juce::String& id) { bodyPicked(id); };
     modelView.onFrameRequested = [this] { wakeFrames(); };
@@ -1027,13 +1043,16 @@ void CadWorkspacePanel::resized()
             if (snapPalette->getParentComponent() != &modelView)
                 modelView.addChildComponent(*snapPalette);
             auto toolbarArea=modelView.getLocalBounds().withTrimmedTop(30).withTrimmedBottom(28);
-            modifyPalette->reserve(toolbarArea);snapPalette->place(toolbarArea,true);if(modifyPalette->isVisible())snapPalette->avoid(modifyPalette->getBounds());
+            if(modelSelectionPalette->getParentComponent()!=&modelView)modelView.addChildComponent(*modelSelectionPalette);
+            modifyPalette->reserve(toolbarArea);modelSelectionPalette->place(toolbarArea,true);modelSelectionPalette->reserve(toolbarArea);
+            snapPalette->place(toolbarArea,true);if(modifyPalette->isVisible())snapPalette->avoid(modifyPalette->getBounds());if(modelSelectionPalette->isVisible()){modelSelectionPalette->avoid(snapPalette->getBounds());snapPalette->avoid(modelSelectionPalette->getBounds());}
         }
         if (sketchPalette)
             sketchPalette->place(sketchArea);
     }
     else
     {
+        modelSelectionPalette->setAvailable(false);
         if (modifyPalette)
         {
             if (modifyPalette->getParentComponent() != &centre)
@@ -1083,6 +1102,7 @@ void CadWorkspacePanel::resized()
 // field consumes these keys for its own text undo before they get here.
 bool CadWorkspacePanel::handleHistoryKey(const juce::KeyPress& key)
 {
+    if(auto* focus=juce::Component::getCurrentlyFocusedComponent();focus&&(dynamic_cast<juce::TextEditor*>(focus)||focus->findParentComponentOfClass<juce::TextEditor>()))return false;
     const auto mods = key.getModifiers();
     if (!mods.isCommandDown() || mods.isAltDown()) return false;
     // Windows can report Ctrl+letter as the control character (Ctrl+Z = 26) when no scan code accompanies the key.
@@ -1101,6 +1121,8 @@ bool CadWorkspacePanel::handleHistoryKey(const juce::KeyPress& key)
 bool CadWorkspacePanel::keyPressed(const juce::KeyPress& key, juce::Component*)
 {
     if (!isShowing()) return false;
+    auto* keyFocus=juce::Component::getCurrentlyFocusedComponent();
+    if(editingSketchId.isEmpty()&&keyFocus&&(keyFocus==this||isParentOf(keyFocus))&&handleModelKey(key))return true;
     if (handleHistoryKey(key)) return true;
     auto* focus=juce::Component::getCurrentlyFocusedComponent();
     if(focus!=nullptr&&(focus==this||isParentOf(focus)))return handleSketchKey(key);
@@ -1119,6 +1141,7 @@ void CadWorkspacePanel::parentHierarchyChanged()
 
 bool CadWorkspacePanel::keyPressed(const juce::KeyPress& key)
 {
+    if(editingSketchId.isEmpty()&&handleModelKey(key))return true;
     if (handleHistoryKey(key)) return true;
     if(editingSketchId.isNotEmpty())return handleSketchKey(key);
     if (key != juce::KeyPress::escapeKey) return false;
@@ -1298,7 +1321,7 @@ bool CadWorkspacePanel::handleSketchKey(const juce::KeyPress& key)
 
 juce::String CadWorkspacePanel::viewState() const
 {
-    auto state=modelView.viewState();state.getDynamicObject()->setProperty("sketchToolbox",sketchPalette->state());state.getDynamicObject()->setProperty("selectionToolbox",selectionPalette->state());
+    auto state=modelView.viewState();state.getDynamicObject()->setProperty("sketchToolbox",sketchPalette->state());state.getDynamicObject()->setProperty("selectionToolbox",selectionPalette->state());state.getDynamicObject()->setProperty("modelSelectionToolbox",modelSelectionPalette->state());
     state.getDynamicObject()->setProperty("modifyToolbar",modifyPalette->state());state.getDynamicObject()->setProperty("snapToolbar",snapPalette->state());
     state.getDynamicObject()->setProperty("snapping",snapPreferences->state());state.getDynamicObject()->setProperty("references",const_cast<CadWorkspacePanel*>(this)->referenceState());state.getDynamicObject()->setProperty("referenceDocuments",referenceDocuments);
     state.getDynamicObject()->setProperty("sketchLineAngleUnit",lineAnglesInRadians?"radians":"degrees");return juce::JSON::toString(state);
@@ -1306,6 +1329,7 @@ juce::String CadWorkspacePanel::viewState() const
 void CadWorkspacePanel::restoreViewState(const juce::String& json)
 {
     const auto state=juce::JSON::parse(json);modelView.restoreViewState(state);
+    if(state.hasProperty("modelSelectionToolbox"))modelSelectionPalette->restore(state["modelSelectionToolbox"]);
     if(state.hasProperty("selectionToolbox"))selectionPalette->restore(state["selectionToolbox"]);
     if(state.hasProperty("sketchToolbox"))sketchPalette->restore(state["sketchToolbox"]);
     if(state.hasProperty("modifyToolbar"))modifyPalette->restore(state["modifyToolbar"]);if(state.hasProperty("snapToolbar"))snapPalette->restore(state["snapToolbar"]);
@@ -1408,54 +1432,30 @@ void CadWorkspacePanel::selectionChanged()
     {
         if(selection!=nullptr){if(replicationPick=="sources"){const auto pickedItems=selection->items();for(const auto& item:pickedItems)pickReplication(item);}else pickReplication(selection->selected());}return;
     }
-    if(chamferPreviewActive){clearChamferPreview(true);return;}
+    if(chamferPreviewActive){clearChamferPreview(true);}
     updateToolbar();
     updateHighlights();
     if (selection == nullptr) return;
     const auto& picked = selection->selected();
     if(task==Task::hole){if(picked.valid()&&picked.face>=0)chooseHoleFace(picked);return;}
+    if(task==Task::fillet||task==Task::chamfer){
+        if(!selection->isItemChange())return;
+        if(!picked.valid()&&!selection->isBulkChange())return;
+        if(targetId.isEmpty()&&picked.valid()&&isSolid(picked.featureId))targetId=picked.featureId;
+        if(!selection->isBulkChange()&&picked.valid()&&picked.featureId!=targetId&&isSolid(picked.featureId)){targetId=picked.featureId;filletEdges.clear();}
+        const auto eligible=eligibleEdges(targetId);int rejected=0;
+        if(selection->isBulkChange()){
+            std::vector<int> next;for(const auto& p:selection->items())if(p.featureId==targetId&&std::find(eligible.begin(),eligible.end(),p.edge)!=eligible.end()){if(std::find(next.begin(),next.end(),p.edge)==next.end())next.push_back(p.edge);}else ++rejected;filletEdges=std::move(next);
+        }else if(picked.edge>=0){
+            if(std::find(eligible.begin(),eligible.end(),picked.edge)==eligible.end())++rejected;
+            else{auto it=std::find(filletEdges.begin(),filletEdges.end(),picked.edge);if(it==filletEdges.end())filletEdges.push_back(picked.edge);else filletEdges.erase(it);}
+        }
+        std::vector<djehuti::cad::CadPick> picks;for(const int edge:filletEdges)picks.push_back({targetId,targetId,-1,edge});selection->setChosenItemsQuietly(std::move(picks));modelView.markDirty();clearChamferPreview(false);rebuildTaskPanel(true);
+        if(rejected)setMessage(juce::String(rejected)+" edge(s) excluded: wrong target, seam, degenerate, or not shared by two faces.",1);return;
+    }
+    if(selection->isItemChange()&&selection->isBulkChange()&&!isCommandTask()&&(!picked.valid()||(picked.face<0&&picked.edge<0))){selectFeature(picked.valid()?picked.drawId:juce::String());return;}
     if (picked.valid() && (picked.face >= 0 || picked.edge >= 0))
     {
-        if (task == Task::fillet || task == Task::chamfer)
-        {
-            if (selection->items().size() > 1)
-            {
-                for (const auto& item : selection->items())
-                {
-                    if (item.valid() && item.edge >= 0)
-                    {
-                        if (targetId.isEmpty() || targetId != item.featureId)
-                        {
-                            targetId = item.featureId;
-                            filletEdges.clear();
-                        }
-                        if (std::find(filletEdges.begin(), filletEdges.end(), item.edge) == filletEdges.end())
-                            filletEdges.push_back(item.edge);
-                    }
-                }
-            }
-            else if (picked.edge >= 0)
-            {
-                if (targetId.isEmpty() || targetId != picked.featureId)
-                {
-                    targetId = picked.featureId;
-                    filletEdges.clear();
-                }
-                auto it = std::find(filletEdges.begin(), filletEdges.end(), picked.edge);
-                if (it == filletEdges.end())
-                    filletEdges.push_back(picked.edge);
-                else
-                    filletEdges.erase(it);
-            }
-            std::vector<djehuti::cad::CadPick> edgePicks;
-            for (int edgeIdx : filletEdges)
-                edgePicks.push_back(djehuti::cad::CadPick{ targetId, targetId, -1, edgeIdx });
-            selection->setChosenItemsQuietly(std::move(edgePicks));
-            modelView.markDirty();
-            clearChamferPreview(false);
-            rebuildTaskPanel(true);
-            return;
-        }
         if (editingSketchId.isNotEmpty()) finishSketch();
         task = Task::subshape; commandMessage.clear(); validationMessage.clear();
         rebuildTaskPanel(false);
@@ -2752,7 +2752,9 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
                 edgeSummary = juce::String((int)filletEdges.size()) + " edge" + (filletEdges.size() == 1 ? "" : "s") + " selected: " + edgeNums.joinIntoString(", ");
             }
             form->addNote("edgeCount", edgeSummary, filletEdges.size() > 4 ? 2 : 1);
-            if (!filletEdges.empty())
+            form->addButton("allEdges","Select All Edges (Ctrl+A)",[this]{chooseAll();},"Select nondegenerate edges shared by two distinct faces; seams and unsupported edges are excluded. The radius/distance is still validated by Preview/Apply.");
+            form->addButton("boxEdges","Box select edges (B)",[this]{executeUiCommand("boxSelect");},"Left-to-right: fully enclosed. Right-to-left: intersecting. Includes obscured edges; adds to current target selection.");
+            form->addButton("circleEdges","Circle select edges (C)",[this]{executeUiCommand("circleSelect");},"Drag centre to radius. Select intersecting projected edges, including obscured edges; adds to current target selection.");
             {
                 form->addButton("clearEdges", "Clear selected edges", [this] {
                     postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
@@ -3303,6 +3305,8 @@ void CadWorkspacePanel::sketchGeometryAdded(const juce::String& what,const juce:
 void CadWorkspacePanel::updateToolbar()
 {
     const bool sketching = editingSketchId.isNotEmpty();
+    modelSelectionPalette->setAvailable(!sketching);
+    modelSelectionPalette->refresh([this](const auto& c){return uiCommandEnabled(c);},[this](const auto& c){return uiToolActive(c);});
     selectionPalette->setAvailable(sketching);
     selectionPalette->refresh([this](const auto& c){return uiCommandEnabled(c);},[this](const auto& c){return uiToolActive(c);});
     sketchPalette->setAvailable(sketching);
@@ -3939,8 +3943,9 @@ void CadWorkspacePanel::toggleVisibility(const juce::String& id)
 {
     const auto* f = service->document().find(id);
     if (f == nullptr) return;
-    juce::String e; const auto name = f->name; const bool nowVisible = !f->visible;
-    if (!service->setVisible(id, nowVisible, e)) { showError(e); return; }
+    const bool sketch=f->type=="sketch";juce::String e; const auto name = f->name; const bool nowVisible = sketch?!sketchShown(id):!f->visible;
+    if(f->visible!=nowVisible&&!service->setVisible(id, nowVisible, e)) { showError(e); return; }
+    if(sketch){referenceVisibility.getDynamicObject()->setProperty(id,nowVisible);if(nowVisible)showReferenceSketches=true;referencePreferencesChanged();}
     refreshFromDocument(true);
     if (task == Task::body && selectedId == id) rebuildTaskPanel(false);
     setMessage(name + (nowVisible ? " is shown." : " is hidden."), 0);
@@ -4392,13 +4397,19 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
     if(editingSketchId.isNotEmpty()&&juce::StringArray{"sketchBox","sketchCircleSelect","sketchFreehand","sketchMultiple","ellipse","sketchRotate","sketchMirror","sketchSplit","sketchPaste","sketchCopy"}.contains(command))
     {if(command=="sketchCopy")return sketchCanvas->copySelection();setSketchTool(command=="sketchBox"?"box_select":command=="sketchCircleSelect"?"circle_select":command=="sketchFreehand"?"freehand_select":command=="sketchMultiple"?"multi_select":command=="sketchRotate"?"rotate":command=="sketchMirror"?"mirror":command=="sketchSplit"?"split":command=="sketchPaste"?"paste":command);return true;}
     if(command=="deleteSketchEntities")return deleteSelectedSketchEntities();
-    if(command=="selectionToolbox"){selectionPalette->toggleVisible();return true;}
-    if(command=="dockSelectionToolbox"){selectionPalette->toggleDocked();return true;}
+    if(command=="selectionToolbox"){if(editingSketchId.isNotEmpty())selectionPalette->toggleVisible();else modelSelectionPalette->toggleVisible();return true;}
+    if(command=="dockSelectionToolbox"){if(editingSketchId.isNotEmpty())selectionPalette->toggleDocked();else modelSelectionPalette->toggleDocked();return true;}
     if(command=="sketchToolbox"){sketchPalette->toggleVisible();return true;}
     if(command=="dockSketchToolbox"){sketchPalette->toggleDocked();return true;}
-    if (command == "pointer" || command == "boxSelect" || command == "circleSelect")
+    if(command=="selectAll"||command=="clearSelection"){chooseAll(command=="clearSelection");return true;}
+    if(command=="focusSelected"||command=="orbitSelected"){modelView.setFlyMode(false);if(!modelView.fitSelection())setMessage("Select an object to focus and establish its orbit centre.",1);return true;}
+    if(command=="flyMode"){modelView.setFlyMode(!modelView.isFlyMode());modelView.grabKeyboardFocus();return true;}
+    if(command=="orbitPoint"){modelView.chooseOrbitPoint();return true;}
+    if(command=="showAllSketches"||command=="hideAllSketches"){showSketches(command=="showAllSketches");return true;}
+    if (command == "pointer" || command == "boxSelect" || command == "circleSelect"||command=="multipleSelect")
     {
-        if (selection != nullptr) selection->setTool(command == "pointer" ? djehuti::cad::CadSelection::Tool::pointer : command == "boxSelect" ? djehuti::cad::CadSelection::Tool::box : djehuti::cad::CadSelection::Tool::circle);
+        if(selection&&(task==Task::fillet||task==Task::chamfer))selection->setMode(djehuti::cad::CadSelection::Mode::edge);
+        if (selection != nullptr) selection->setTool(command == "pointer" ? djehuti::cad::CadSelection::Tool::pointer : command == "boxSelect" ? djehuti::cad::CadSelection::Tool::box : command=="multipleSelect"?djehuti::cad::CadSelection::Tool::multiple:djehuti::cad::CadSelection::Tool::circle);
         return true;
     }
     if(djehuti::cad::isModelingType(command)){startTask(Task::modeling,command);return true;}
@@ -4427,7 +4438,7 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
     if(juce::StringArray{"extrude","revolve","lathe","cut","fillet","chamfer","hole","subtract","union","intersect"}.contains(command))return !sketch;
     if(djehuti::cad::isModelingType(command)||djehuti::cad::isReplicationType(command))return !sketch;
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
-    if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","interference","materials"}.contains(command)) return !sketch;
+    if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","multipleSelect","selectAll","clearSelection","focusSelected","orbitSelected","flyMode","orbitPoint","interference","materials"}.contains(command)) return !sketch;
     if (command == "clearInterference") return interferenceActive;
     return true;
 }
@@ -4439,6 +4450,10 @@ bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
         for(const auto& mode:modes)if(command==mode.first)return sketchCanvas->tool()==mode.second;
     }
 
+    if(selection&&editingSketchId.isEmpty()){
+        if(command=="pointer"||command=="boxSelect"||command=="circleSelect"||command=="multipleSelect")return selection->tool()==(command=="pointer"?djehuti::cad::CadSelection::Tool::pointer:command=="boxSelect"?djehuti::cad::CadSelection::Tool::box:command=="circleSelect"?djehuti::cad::CadSelection::Tool::circle:djehuti::cad::CadSelection::Tool::multiple);
+        if(command=="bodyMode"||command=="faceMode"||command=="edgeMode")return selection->mode()==(command=="bodyMode"?djehuti::cad::CadSelection::Mode::body:command=="faceMode"?djehuti::cad::CadSelection::Mode::face:djehuti::cad::CadSelection::Mode::edge);
+    }
     if(djehuti::cad::isModelingType(command))return task==Task::modeling&&modelingKind==command;
     if(djehuti::cad::isReplicationType(command))return task==Task::replication&&replicationKind==command;
     if (editingSketchId.isNotEmpty()) return command == (sketchCanvas->tool() == "select" ? juce::String("sketchSelect") : sketchCanvas->tool());
@@ -4458,6 +4473,7 @@ bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
 
 void CadWorkspacePanel::viewContextCommand(const juce::String& command,const djehuti::cad::CadPick& pick)
 {
+    if((task==Task::fillet||task==Task::chamfer)&&(command=="inspect"||command=="inspectRegion"))return;
     if(task==Task::modeling&&(command=="inspect"||command=="inspectRegion")){pickModeling(pick);return;}
     if(task==Task::replication&&(command=="inspect"||command=="inspectRegion")){pickReplication(pick);return;}
     if (command == "inspectRegion" && !pick.valid()) { selectFeature({}); return; }
@@ -4490,7 +4506,7 @@ juce::var CadWorkspacePanel::automationState()
     state->setProperty("showing", isShowing()); state->setProperty("mode", editingSketchId.isEmpty() ? "model" : "sketch");
     state->setProperty("task", taskTitle.getText()); state->setProperty("instruction", taskInstruction.getText());
     state->setProperty("message", messageLabel.getText()); state->setProperty("selected", selectedId);
-    state->setProperty("editingSketch", editingSketchId); state->setProperty("selectedEntity", sketchEntityId);state->setProperty("secondEntity",sketchSecondEntityId);{juce::Array<juce::var> selected;for(const auto& id:sketchSelection)selected.add(id);state->setProperty("selectedEntities",selected);}state->setProperty("sketchToolbox",sketchPalette->state());state->setProperty("selectionToolbox",selectionPalette->state());
+    state->setProperty("editingSketch", editingSketchId); state->setProperty("selectedEntity", sketchEntityId);state->setProperty("secondEntity",sketchSecondEntityId);{juce::Array<juce::var> selected;for(const auto& id:sketchSelection)selected.add(id);state->setProperty("selectedEntities",selected);}state->setProperty("sketchToolbox",sketchPalette->state());state->setProperty("selectionToolbox",selectionPalette->state());state->setProperty("modelSelectionToolbox",modelSelectionPalette->state());
     state->setProperty("profile", profileId); state->setProperty("target", targetId); state->setProperty("tool", toolId);
     state->setProperty("fields", form ? form->describe() : juce::var());
     state->setProperty("applyLabel", acceptButton.getButtonText()); state->setProperty("canApply", acceptButton.isVisible() && acceptButton.isEnabled());
@@ -4503,7 +4519,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox","selectionToolbox","dockSelectionToolbox","modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox","selectionToolbox","dockSelectionToolbox","selectAll","clearSelection","multipleSelect","focusSelected","flyMode","orbitPoint","showAllSketches","hideAllSketches","modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;
@@ -4553,8 +4569,8 @@ juce::var CadWorkspacePanel::automation(const juce::var& args)
     else if(action=="symmetry"){if(args.hasProperty("value"))symmetryOperation(args["value"]);}
     else if(action=="toolbar")
     {
-        auto* palette=args["field"].toString()=="modify"?modifyPalette.get():args["field"].toString()=="snap"?snapPalette.get():nullptr;
-        if(!palette)error="Choose modify or snap toolbar.";
+        auto* palette=args["field"].toString()=="modify"?modifyPalette.get():args["field"].toString()=="snap"?snapPalette.get():args["field"].toString()=="selection"?modelSelectionPalette.get():nullptr;
+        if(!palette)error="Choose modify, snap or selection toolbar.";
         else if(args.hasProperty("value"))palette->configure(args["value"],error);
         else if(args.hasProperty("command")&&!palette->invoke(args["command"].toString()))error="Toolbar command is absent or disabled.";
     }
@@ -4949,7 +4965,7 @@ std::vector<djehuti::cad::ui::ReferenceInput> CadWorkspacePanel::referenceInputs
     std::vector<djehuti::cad::ui::ReferenceInput> sources;juce::StringArray instanced;
     const auto& instances=d.mechanicsData().instances;for(const auto& i:instances)instanced.addIfNotAlreadyThere(i.featureId);
     const auto add=[&](const juce::String& id,const juce::String& feature,const juce::String& label,bool solid,bool visible,const gp_Trsf& transform)
-    {sources.push_back({id,feature,label,solid,(bool)referenceVisibility.getProperty(id,visible)&&(solid?showReferenceSolids:showReferenceSketches)&&referenceOpacity>0,transform});};
+    {sources.push_back({id,feature,label,solid,(solid?(bool)referenceVisibility.getProperty(id,visible):visible)&&(solid?showReferenceSolids:showReferenceSketches)&&referenceOpacity>0,transform});};
     for(const auto& f:d.features())if(f.id!=editingSketchId && f.sketchId!=editingSketchId)
     {
         if(f.type=="sketch")add(f.id,f.id,f.name,false,f.visible,{});
@@ -4963,7 +4979,7 @@ std::vector<djehuti::cad::ui::ReferenceInput> CadWorkspacePanel::referenceInputs
 juce::var CadWorkspacePanel::referenceState()
 {
     auto* s=new juce::DynamicObject();s->setProperty("showSketches",showReferenceSketches);s->setProperty("showSolids",showReferenceSolids);s->setProperty("snap",snapReferences);s->setProperty("select",referenceSelection);s->setProperty("opacity",referenceOpacity);s->setProperty("selected",selectedReference);
-    juce::Array<juce::var> sources;for(const auto& source:referenceInputs()){auto* v=new juce::DynamicObject();v->setProperty("id",source.id);v->setProperty("label",source.label);v->setProperty("solid",source.solid);v->setProperty("visible",source.visible);const auto* f=service->document().find(source.feature);v->setProperty("enabled",referenceVisibility.getProperty(source.id,f?f->visible:true));sources.add(v);}s->setProperty("sources",sources);return s;
+    juce::Array<juce::var> sources;for(const auto& source:referenceInputs()){auto* v=new juce::DynamicObject();v->setProperty("id",source.id);v->setProperty("label",source.label);v->setProperty("solid",source.solid);v->setProperty("visible",source.visible);const auto* f=service->document().find(source.feature);v->setProperty("enabled",f&&f->type=="sketch"?juce::var(f->visible):referenceVisibility.getProperty(source.id,f?f->visible:true));sources.add(v);}s->setProperty("sources",sources);return s;
 }
 bool CadWorkspacePanel::configureReferences(const juce::var& value,juce::String& error)
 {
@@ -4976,12 +4992,12 @@ bool CadWorkspacePanel::configureReferences(const juce::var& value,juce::String&
         else{error="Unknown reference preference: "+k;return false;}
     }
     showReferenceSketches=value.getProperty("showSketches",showReferenceSketches);showReferenceSolids=value.getProperty("showSolids",showReferenceSolids);snapReferences=value.getProperty("snap",snapReferences);referenceSelection=value.getProperty("select",referenceSelection);referenceOpacity=(float)(double)value.getProperty("opacity",referenceOpacity);
-    if(auto* v=value["visibility"].getDynamicObject())for(const auto& p:v->getProperties())referenceVisibility.getDynamicObject()->setProperty(p.name,p.value);
+    if(auto* v=value["visibility"].getDynamicObject())for(const auto& p:v->getProperties()){referenceVisibility.getDynamicObject()->setProperty(p.name,p.value);if(const auto* feature=service->document().find(p.name.toString());feature&&feature->type=="sketch"&&feature->visible!=(bool)p.value){juce::String message;if(!service->setVisible(feature->id,(bool)p.value,message)){error=message;return false;}}}
     if(referenceFileKey.isNotEmpty())referenceDocuments.getDynamicObject()->setProperty(referenceFileKey,referenceVisibility.clone());
     referencePreferencesChanged();return true;
 }
 void CadWorkspacePanel::referencePreferencesChanged()
-{++referenceSerial;sketchCanvas->referencesChanged();sketchCanvas->repaint();updateFloatingTools();}
+{++referenceSerial;sketchCanvas->referencesChanged();sketchCanvas->repaint();tree.repaint();updateFloatingTools();}
 void CadWorkspacePanel::showReferenceControls()
 {
     if(editingSketchId.isEmpty())return;auto panel=std::make_unique<CadReferenceControls>(referenceState());
@@ -5094,3 +5110,7 @@ bool runCadWorkflowUiCheck(juce::var& report)
 #include "CadMainToolbarChecks.inc"
 
 #include "CadSaveProtectionChecks.inc"
+
+#include "CadWorkspaceNavigation.inc"
+
+#include "CadWorkspaceNavigationChecks.inc"

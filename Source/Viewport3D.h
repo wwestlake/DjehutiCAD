@@ -6,6 +6,7 @@
 #include "CadDocument.h"
 #include "CadMotionRuntime.h"
 #include "CadSelection.h"
+#include "CadTooltipWindow.h"
 
 #include <atomic>
 
@@ -23,6 +24,21 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress&) override;
+    bool keyStateChanged(bool) override;
+    void focusLost(FocusChangeType) override;
+    std::function<bool(const juce::KeyPress&)> onWorkspaceKey;
+    std::function<bool()> wantsEdgePick;
+    std::function<juce::String()> edgeTarget;
+    void setFlyMode(bool);
+    bool isFlyMode() const {return flyMode;}
+    void moveFly(float forward,float right,float up);
+    void lookFly(float yawDelta,float pitchDelta);
+    bool setOrbitPoint(const std::array<float,3>&);
+    void chooseOrbitPoint();
+    bool isChoosingOrbitPoint() const {return orbitPointPicking;}
+    juce::Rectangle<int> contextMenuAnchor(juce::Point<int> screen) const;
+    std::vector<djehuti::cad::CadPick> allPicks() const;
+
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -77,6 +93,7 @@ public:
 
 private:
     friend bool runViewportInteractionCheck(juce::String&);
+    friend bool runWorkspaceNavigationCheck(juce::var&);
     friend bool runViewportRangeCheck(juce::var&);
     std::array<float,2> clippingPlanes() const;
     std::array<float,2> navigationRange() const;
@@ -97,7 +114,8 @@ private:
     float gridSpacing=10.0f;
     std::vector<djehuti::cad::CadPick> pickRegion(juce::Point<float> start, juce::Point<float> end, bool circle) const;
     void showContextMenu(const juce::MouseEvent&);
-    bool selectingRegion = false;
+    bool selectingRegion = false, flyMode=false, orbitPointPicking=false;
+    double flyTick=0;
     juce::Point<float> regionEnd;
     bool showFloor = true, showWorld = false, showLocal = false, showJoints = false;
     bool rayThrough(juce::Point<float> position, std::array<float, 3>& origin, std::array<float, 3>& direction) const;
@@ -185,6 +203,7 @@ public:
     void paint(juce::Graphics&) override;
 
 private:
+    CadTooltipWindow tooltipWindow{*this};
     std::function<void(const juce::String&,const djehuti::cad::CadPick&)> contextCommand;
     void timerCallback() override;
     void closeView(int viewId);

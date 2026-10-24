@@ -160,7 +160,7 @@ void Viewport3D::drawReferenceGuides(juce::Graphics& g)
 void Viewport3D::showContextMenu(const juce::MouseEvent& e)
 {
     const auto hit=pick(e.position,selection!=nullptr?selection->mode():djehuti::cad::CadSelection::Mode::body);
-    if(selection!=nullptr) selection->setSelected(hit);
+    if(selection!=nullptr&&!(wantsEdgePick&&wantsEdgePick())) selection->setSelected(hit);
     juce::PopupMenu menu;
     if(hit.valid())
     {
@@ -169,15 +169,23 @@ void Viewport3D::showContextMenu(const juce::MouseEvent& e)
         else if(hit.edge<0) { menu.addItem(3,"Export selected..."); if(hit.drawId==hit.featureId) { menu.addItem(4,"Hide selected"); menu.addItem(5,"Delete selected"); } }
         menu.addSeparator();
     }
-    menu.addItem(12,"Fit selection",hit.valid());menu.addItem(10,"Fit all"); menu.addItem(11,"Reset camera"); menu.addSeparator();
+    menu.addItem(12,"Focus Selected (Shift+F)",selection&&selection->selected().valid());
+    menu.addItem(13,"Orbit Selected",selection&&selection->selected().valid());menu.addItem(14,"Set orbit point...");menu.addItem(15,"Fly Mode (Ctrl+Shift+F)",true,flyMode);
+    if(wantsEdgePick&&wantsEdgePick()){menu.addItem(16,"Select All Edges (Ctrl+A)");menu.addItem(17,"Clear Selected Edges (Ctrl+Shift+A)");menu.addItem(18,"Box select edges (B)");menu.addItem(19,"Circle select edges (C)");}
+    menu.addItem(10,"Fit all"); menu.addItem(11,"Reset camera"); menu.addSeparator();
     const juce::StringArray labels{"Floor grid","World reference planes","Selected local planes","Joint frames and limits"};
     const juce::StringArray keys{"floor","world","local","joints"};
     for(int i=0;i<4;++i) menu.addItem(20+i,labels[i],true,guideEnabled(keys[i]));
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),[safe=juce::Component::SafePointer<Viewport3D>(this),hit](int id)
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(contextMenuAnchor(e.getScreenPosition())).withParentComponent(nullptr),[safe=juce::Component::SafePointer<Viewport3D>(this),hit](int id)
     {
         if(safe==nullptr || id==0) return;
-        if(id==12) safe->fitSelection();else if(id==10) safe->fitAll(); else if(id==11) safe->resetCamera();
+        if(id==12||id==13) safe->fitSelection();else if(id==14)safe->chooseOrbitPoint();else if(id==15)safe->setFlyMode(!safe->flyMode);else if(id>=16&&id<=19){if(safe->onContextCommand)safe->onContextCommand(juce::StringArray{"selectAll","clearSelection","boxSelect","circleSelect"}[id-16],{});}else if(id==10) safe->fitAll(); else if(id==11) safe->resetCamera();
         else if(id>=20 && id<24) safe->toggleGuide(juce::StringArray{"floor","world","local","joints"}[id-20]);
         else if(safe->onContextCommand) safe->onContextCommand(juce::StringArray{"inspect","sketch","export","hide","delete"}[id-1],hit);
     });
+}
+
+juce::Rectangle<int> Viewport3D::contextMenuAnchor(juce::Point<int> screen) const
+{
+    const auto* display=juce::Desktop::getInstance().getDisplays().getDisplayForPoint(screen);const auto area=display?display->userArea:getScreenBounds();return {juce::jlimit(area.getX(),juce::jmax(area.getX(),area.getRight()-1),screen.x),juce::jlimit(area.getY(),juce::jmax(area.getY(),area.getBottom()-1),screen.y),1,1};
 }
