@@ -461,11 +461,22 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
 void Viewport3D::newOpenGLContextCreated()
 {
     const char* vertex = "#version 410 core\nlayout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(std140) uniform FrameData { mat4 uMVP; mat4 uModel; }; uniform mat4 uInstance; out vec3 n; out float viewDepth; void main(){ n=mat3(uModel)*mat3(uInstance)*normal; gl_Position=uMVP*uInstance*vec4(position,1.0); viewDepth=gl_Position.w; }";
-    const char* fragment = "#version 410 core\nin vec3 n; in float viewDepth; uniform vec3 uColour; uniform vec2 uClip; uniform float uDepthBias; out vec4 colour; void main(){ if(viewDepth<uClip.x || viewDepth>uClip.y)discard; gl_FragDepth=(uClip.y/uClip.x>50000.0 ? log2(1.0+viewDepth/uClip.x)/log2(1.0+uClip.y/uClip.x) : gl_FragCoord.z)+uDepthBias; vec3 l=normalize(vec3(0.4,0.8,0.6)); float d=max(dot(normalize(gl_FrontFacing?n:-n),l),0.0); colour=vec4(uColour*(0.25+0.75*d),1.0); }";
+    // Shared illumination for ordinary and logarithmic-depth passes; world-space
+    // lights keep model shading stable as the camera orbits.
+    const juce::String lighting=R"(
+float surfaceLight(vec3 normal){
+    vec3 N=normalize(normal);
+    float key=max(dot(N,normalize(vec3(.4,.8,.6))),0.0);
+    float fill=max(dot(N,normalize(vec3(-.8,-.4,.4))),0.0);
+    float lower=max(dot(N,normalize(vec3(.2,-.6,-.8))),0.0);
+    return min(1.0,.42+.40*key+.16*fill+.10*lower);
+}
+)";
+    const juce::String fragment = "#version 410 core\nin vec3 n; in float viewDepth; uniform vec3 uColour; uniform vec2 uClip; uniform float uDepthBias; out vec4 colour; "+lighting+" void main(){ if(viewDepth<uClip.x || viewDepth>uClip.y)discard; gl_FragDepth=(uClip.y/uClip.x>50000.0 ? log2(1.0+viewDepth/uClip.x)/log2(1.0+uClip.y/uClip.x) : gl_FragCoord.z)+uDepthBias; colour=vec4(uColour*surfaceLight(gl_FrontFacing?n:-n),1.0); }";
     shader = std::make_unique<juce::OpenGLShaderProgram>(context);
-    const char* regular=R"(#version 410 core
+    const juce::String regular=juce::String(R"(#version 410 core
 in vec3 n; uniform vec3 uColour; out vec4 colour;
-void main(){vec3 l=normalize(vec3(.4,.8,.6));float d=max(dot(normalize(gl_FrontFacing?n:-n),l),0.0);colour=vec4(uColour*(.25+.75*d),1.0);})";
+)")+lighting+"void main(){colour=vec4(uColour*surfaceLight(gl_FrontFacing?n:-n),1.0);}";
     if (!shader->addVertexShader(vertex) || !shader->addFragmentShader(regular) || !shader->link()) { glStatus = "Shader error: " + shader->getLastError(); juce::Logger::writeToLog(glStatus); shader.reset(); repaint(); return; }
     rangeShader=std::make_unique<juce::OpenGLShaderProgram>(context);
     if(!rangeShader->addVertexShader(vertex)||!rangeShader->addFragmentShader(fragment)||!rangeShader->link()){glStatus="Range shader error: "+rangeShader->getLastError();juce::Logger::writeToLog(glStatus);rangeShader.reset();return;}

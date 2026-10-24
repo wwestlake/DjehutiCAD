@@ -115,6 +115,7 @@ public:
         juce::FileOutputStream image(folder.getChildFile("fixture-workspace.png"));check(image.openedOk()&&juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()),image),"Fixture workspace component render saved");
         auto v=obj();put(v,"passed",passed);put(v,"checks",checks);put(v,"folder",folder.getFullPathName());put(v,"verification","Actual JUCE controls and component render; OpenGL pixels and Windows input require desktop smoke testing");report=v;return passed;
     }
+    void saveForClose(djehuti::cad::saveprotection::Completion done){saveFile(false,std::move(done));}
 private:
     juce::String selectedSource()const{const auto index=source.getSelectedId()-1;return index>=0?fixture->configuration()["sources"][index]["id"].toString():juce::String();}
     juce::String selectedModel()const{const auto index=models.getSelectedId()-1;return index>=0?fixture->configuration()["models"][index]["id"].toString():juce::String();}
@@ -134,11 +135,15 @@ private:
         chooser=std::make_unique<juce::FileChooser>(relinking?"Relocate the same protected source model":"Add a saved CAD model",juce::File(),"*.djo;*.json");const juce::Component::SafePointer<FixtureEditor> safe(this);
         chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe,relinking](const juce::FileChooser& fc){if(safe==nullptr||fc.getResult()==juce::File())return;auto a=obj();put(a,"path",fc.getResult().getFullPathName());if(relinking)put(a,"source",safe->selectedSource());safe->call(relinking?"relocateSource":"addSource",a);});
     }
-    void saveFile(bool saveNew)
+    void saveFile(bool saveNew,djehuti::cad::saveprotection::Completion done=[](bool){})
     {
-        if(!saveNew&&fixture->file()!=juce::File()){call("save");return;}
+        if(!saveNew&&fixture->file()!=juce::File()){const auto r=call("save");done((bool)r["ok"]&&!fixture->modified());return;}
         chooser=std::make_unique<juce::FileChooser>("Save independent test fixture",fixture->file(),"*.djfixture");const juce::Component::SafePointer<FixtureEditor> safe(this);
-        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe](const juce::FileChooser& fc){if(safe==nullptr||fc.getResult()==juce::File())return;if(!fc.getResult().hasFileExtension("djfixture")){safe->show("Save with the .djfixture file extension.");return;}auto a=obj();put(a,"path",fc.getResult().getFullPathName());put(a,"overwrite",true);safe->call("save",a);});
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,done=std::move(done)](const juce::FileChooser& fc){
+            if(safe==nullptr)return;const auto file=fc.getResult();safe->chooser.reset();if(file==juce::File()){done(false);return;}
+            if(!file.hasFileExtension("djfixture")){safe->show("Save with the .djfixture file extension.");done(false);return;}
+            auto a=obj();put(a,"path",file.getFullPathName());put(a,"overwrite",true);const auto r=safe->call("save",a);done((bool)r["ok"]&&!safe->fixture->modified());
+        });
     }
     bool number(const juce::String& key,double& value,juce::String& error)
     {const auto raw=draft[key].trim().toStdString();char* end=nullptr;value=std::strtod(raw.c_str(),&end);if(raw.empty()||end!=raw.c_str()+raw.size()||!std::isfinite(value)){error=key+" requires a finite number.";return false;}return true;}
@@ -269,12 +274,28 @@ void CadFixturesPanel::manage(const juce::String& action)
 {
     const auto index=tabs.getCurrentTabIndex();if(!juce::isPositiveAndBelow(index,tabIds.size()))return;const auto doc=service->find(tabIds[index]);if(!doc)return;
     const auto perform=[safe=juce::Component::SafePointer<CadFixturesPanel>(this),id=doc->id(),action](bool consent){if(safe==nullptr||!consent)return;auto a=obj();put(a,"action",action);put(a,"fixture",id);put(a,"confirm",true);put(a,"discard",true);auto r=safe->service->command(a);if(!(bool)r["ok"])safe->message.setText(r["error"].toString(),juce::dontSendNotification);safe->synchronize(r["id"].toString());};
-    if(action=="delete"||(action=="close"&&doc->modified()))juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,action=="delete"?"Delete fixture":"Unsaved fixture",action=="delete"?"Delete this independent fixture and its saved file? Source CAD files remain protected.":"Discard this fixture's unsaved changes and close its tab?","Continue","Cancel",this,juce::ModalCallbackFunction::create([perform](int r){perform(r!=0);}));else perform(true);
+    if(action=="close"){confirmFixture(doc->id(),perform);return;}
+    if(action=="delete")juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,action=="delete"?"Delete fixture":"Unsaved fixture",action=="delete"?"Delete this independent fixture and its saved file? Source CAD files remain protected.":"Discard this fixture's unsaved changes and close its tab?","Continue","Cancel",this,juce::ModalCallbackFunction::create([perform](int r){perform(r!=0);}));else perform(true);
 }
-void CadFixturesPanel::confirmClose(std::function<void()> callback)
+void CadFixturesPanel::confirmFixture(const juce::String& id,djehuti::cad::saveprotection::Completion complete)
 {
-    bool dirty=false;for(const auto& f:service->documents())dirty|=f->modified();if(!dirty){callback();return;}
-    juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,"Unsaved test fixtures","Close DjehutiCAD and discard unsaved fixture changes? Cancel to save the fixture tabs first.","Discard and close","Cancel",this,juce::ModalCallbackFunction::create([callback](int r){if(r)callback();}));
+    const auto doc=service->find(id);if(!doc){complete(true);return;}
+    synchronize(id);auto* editor=dynamic_cast<FixtureEditor*>(tabs.getTabContentComponent(tabIds.indexOf(id)));
+    const juce::Component::SafePointer<CadFixturesPanel> safe(this);auto prompt=unsavedPrompt;
+    if(!prompt)prompt=[safe](const auto& name,auto answer){if(safe!=nullptr)djehuti::cad::saveprotection::showPrompt(safe.getComponent(),name,std::move(answer));};
+    djehuti::cad::saveprotection::confirm(doc->modified(),doc->name(),std::move(prompt),
+        [safeEditor=juce::Component::SafePointer<FixtureEditor>(editor)](auto saved){if(safeEditor!=nullptr)safeEditor->saveForClose(std::move(saved));else saved(false);},std::move(complete));
+}
+void CadFixturesPanel::confirmNext(const juce::StringArray& ids,int index,std::function<void()> done,std::function<void()> cancelled)
+{
+    if(index>=ids.size()){if(done)done();return;}
+    confirmFixture(ids[index],[safe=juce::Component::SafePointer<CadFixturesPanel>(this),ids,index,done=std::move(done),cancelled=std::move(cancelled)](bool proceed){
+        if(safe==nullptr)return;if(proceed)safe->confirmNext(ids,index+1,done,cancelled);else if(cancelled)cancelled();
+    });
+}
+void CadFixturesPanel::confirmClose(std::function<void()> callback,std::function<void()> cancelled)
+{
+    juce::StringArray ids;for(const auto& doc:service->documents())ids.add(doc->id());confirmNext(ids,0,std::move(callback),std::move(cancelled));
 }
 void CadFixturesPanel::timerCallback(){synchronize();}
 bool CadFixturesPanel::smokeCheck(const juce::File& folder,juce::var& report){synchronize();auto* editor=dynamic_cast<FixtureEditor*>(tabs.getCurrentContentComponent());return editor&&editor->smoke(folder,report);}
@@ -287,3 +308,5 @@ bool runCadFixtureUiCheck(juce::var& report,const juce::File& folder,bool keepOp
     if(keepOpen){panel->synchronize(id);report=obj();put(report,"folder",folder.getFullPathName());put(report,"verification","Prepared protected beam source and one occurrence. No programmatic GUI controls invoked; native interaction is pending.");return true;}
     const bool ok=panel->smokeCheck(folder,report);dialog->exitModalState(0);return ok;
 }
+
+#include "CadFixtureSaveChecks.inc"

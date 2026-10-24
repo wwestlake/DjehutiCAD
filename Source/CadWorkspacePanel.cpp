@@ -925,12 +925,12 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     selectionPalette->layoutChanged=[this]{selectionPalette->setAvailable(editingSketchId.isNotEmpty());resized();workspaceMenu.refresh();};
     using Toolbar=CadFloatingToolbar;
     modifyPalette=std::make_unique<Toolbar>("Modify toolbar",std::vector<Toolbar::Tool>{
-        {"extrude","Extrude"},{"revolve","Revolve"},{"lathe","Virtual Lathe"},{"cut","Cut sketch"},{"fillet","Fillet"},{"chamfer","Chamfer"},{"hole","Drill Press / Hole"},
-        {"mirror","Mirror"},{"linearPattern","Linear Pattern"},{"circularPattern","Circular Pattern"},{"sweep","Sweep"},{"loft","Loft"},{"mill","Virtual Router / Mill"},
-        {"surface","Create Surface"},{"surface_trim","Trim Surface"},{"surface_extend","Extend Surface"},{"surface_sew","Sew Surfaces"},{"surface_solidify","Solidify Shell"},{"surface_thicken","Thicken Surface"},
-        {"subtract","Subtract"},{"union","Union"},{"intersect","Intersect"}},true,juce::Point<int>{12,12});
+        {"extrude","Extrude a sketch profile into a solid"},{"revolve","Revolve a sketch around an axis"},{"lathe","Virtual Lathe: edit a turned profile"},{"cut","Cut a sketch profile from a body"},{"fillet","Fillet selected edges with a radius"},{"chamfer","Chamfer selected edges"},{"hole","Drill Press / Hole: place a hole on a planar face"},
+        {"mirror","Mirror a body across a plane"},{"linearPattern","Repeat a body along a line"},{"circularPattern","Repeat a body around an axis"},{"sweep","Sweep a profile along a path"},{"loft","Loft between sketch profiles"},{"mill","Virtual Router / Mill: cut along a toolpath"},
+        {"surface","Create a surface from sketch geometry"},{"surface_trim","Trim a surface with cutting geometry"},{"surface_extend","Extend surface boundaries"},{"surface_sew","Sew adjoining surface boundaries"},{"surface_solidify","Solidify a closed surface shell"},{"surface_thicken","Thicken a surface into a solid"},
+        {"subtract","Subtract one body from another"},{"union","Join bodies with Boolean union"},{"intersect","Keep the common volume of bodies"}},true,juce::Point<int>{12,12});
     snapPalette=std::make_unique<Toolbar>("Snap toolbar",std::vector<Toolbar::Tool>{{"grid","Grid"},{"vertex","Vertex"},{"edge","Nearest edge"},{"midpoint","Midpoint"},{"center","Circle / arc centre"},{"intersection","Intersection"},{"face","Planar face point (Drill Press)"},{"off","Temporarily disable snapping"},{"references","Reference geometry visibility..."}},false,juce::Point<int>{76,100});
-    {juce::String error;snapPalette->configure(juce::JSON::parse(R"({"docked":true,"edge":"bottom"})"),error);}
+    {juce::String error;snapPalette->configure(juce::JSON::parse(R"({"docked":true,"edge":"right"})"),error);}
     centre.addChildComponent(*modifyPalette);centre.addChildComponent(*snapPalette);
     modifyPalette->command=[this](const auto& c){executeUiCommand(c);};
     snapPalette->command=[this](const auto& c){
@@ -1011,6 +1011,7 @@ void CadWorkspacePanel::resized()
     auto treeArea = tree.getBounds(); treeHeading.setBounds(treeArea.removeFromTop(30).reduced(10, 4)); tree.setBounds(treeArea.reduced(4, 0));
     auto sketchArea = centre.getLocalBounds();
     const bool inSketch = editingSketchId.isNotEmpty();
+    if(snapPalette)snapPalette->setSketchContext(inSketch);
     if (!inSketch)
     {
         modelView.setBounds(sketchArea);
@@ -1019,13 +1020,14 @@ void CadWorkspacePanel::resized()
         {
             if (modifyPalette->getParentComponent() != &modelView)
                 modelView.addChildComponent(*modifyPalette);
-            modifyPalette->place(modelView.getLocalBounds(), true);
+            modifyPalette->place(modelView.getLocalBounds().withTrimmedTop(30).withTrimmedBottom(28), true);
         }
         if (snapPalette)
         {
             if (snapPalette->getParentComponent() != &modelView)
                 modelView.addChildComponent(*snapPalette);
-            snapPalette->place(modelView.getLocalBounds(), true);
+            auto toolbarArea=modelView.getLocalBounds().withTrimmedTop(30).withTrimmedBottom(28);
+            modifyPalette->reserve(toolbarArea);snapPalette->place(toolbarArea,true);if(modifyPalette->isVisible())snapPalette->avoid(modifyPalette->getBounds());
         }
         if (sketchPalette)
             sketchPalette->place(sketchArea);
@@ -1052,6 +1054,11 @@ void CadWorkspacePanel::resized()
         if(!selectionPalette->isDocked())selectionPalette->place(sketchArea);
         if (!sketchPalette->isDocked())
             sketchPalette->place(sketchArea);
+        if(snapPalette&&!snapPalette->isDocked()){
+            snapPalette->place(sketchArea,true);
+            if(sketchPalette->isVisible())snapPalette->avoid(sketchPalette->getBounds());
+            if(selectionPalette->isVisible())snapPalette->avoid(selectionPalette->getBounds());
+        }
         sketchCanvas->setBounds(sketchArea);
         modelView.setBounds(sketchArea);
     }
@@ -3954,8 +3961,11 @@ void CadWorkspacePanel::deleteFeature(const juce::String& id)
 bool CadWorkspacePanel::isSolid(const juce::String& id) const { const auto* f = service->document().find(id); return f != nullptr && isSolidType(f->type) && !f->shape.IsNull() && TopExp_Explorer(f->shape,TopAbs_SOLID).More(); }
 juce::String CadWorkspacePanel::featureName(const juce::String& id) const { if (const auto* f = service->document().find(id)) return f->name; const auto& model = service->document().mechanicsData(); if (const auto* i = model.findInstance(id)) return i->name; if (const auto* j = model.findJoint(id)) return j->name; if (const auto* c = model.findCoupling(id)) return c->name; return id; }
 
-void CadWorkspacePanel::newDocument()
+void CadWorkspacePanel::newDocument(bool discardConfirmed)
 {
+    if(!discardConfirmed&&service->document().modified()){
+        confirmClose([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)](bool proceed){if(safe!=nullptr&&proceed)safe->newDocument(true);});return;
+    }
     service->newDocument();
     if (editingSketchId.isNotEmpty()) { editingSketchId.clear(); sketchCanvas->setVisible(false); modelView.setVisible(true); }
     selectedId.clear(); targetId.clear(); toolId.clear(); profileId.clear(); sketchEntityId.clear(); sketchSecondEntityId.clear();
@@ -3963,9 +3973,47 @@ void CadWorkspacePanel::newDocument()
     refreshFromDocument(true); selectFeature({});
     setMessage("New CAD document.", 0);
 }
-void CadWorkspacePanel::openDocument(){fileChooser=std::make_unique<juce::FileChooser>("Open CAD document",juce::File(),"*.djo;*.djc");fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[this](const juce::FileChooser& chooser){if(auto file=chooser.getResult();file.existsAsFile()){juce::String e;if(!service->load(file,e))showError(e);else{if(editingSketchId.isNotEmpty()){editingSketchId.clear();sketchCanvas->setVisible(false);modelView.setVisible(true);}refreshFromDocument(true);selectFeature({});modelView.fitAll();}}fileChooser.reset();});}
-void CadWorkspacePanel::saveDocument(){auto file=service->document().file();if(file==juce::File())saveDocumentAs();else{juce::String e;if(!service->save(file,e))showError(e);else service->document().markSaved();}}
-void CadWorkspacePanel::saveDocumentAs(){fileChooser=std::make_unique<juce::FileChooser>("Save native CAD document",juce::File(),"*.djo");fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[this](const juce::FileChooser& chooser){auto file=chooser.getResult().withFileExtension("djo");if(file!=juce::File()){juce::String e;if(!service->save(file,e))showError(e);else{service->document().setFile(file);service->document().markSaved();}}fileChooser.reset();});}
+void CadWorkspacePanel::confirmClose(djehuti::cad::saveprotection::Completion complete)
+{
+    if(closePending||fileChooser){complete(false);return;}
+    closePending=true;const juce::Component::SafePointer<CadWorkspacePanel> safe(this);
+    const auto instance=service->document().documentInstance();
+    auto prompt=unsavedPrompt;if(!prompt)prompt=[safe](const auto& name,auto answer){if(safe!=nullptr)djehuti::cad::saveprotection::showPrompt(safe.getComponent(),name,std::move(answer));};
+    auto name=service->document().file().getFileName();if(name.isEmpty())name="Untitled CAD document";
+    djehuti::cad::saveprotection::confirm(service->document().modified(),name,std::move(prompt),
+        [safe](auto saved){if(safe!=nullptr)safe->saveWithCompletion(false,std::move(saved));},
+        [safe,instance,complete=std::move(complete)](bool proceed){if(safe==nullptr)return;safe->closePending=false;complete(proceed&&safe->service->document().documentInstance()==instance);});
+}
+void CadWorkspacePanel::openDocument()
+{
+    confirmClose([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)](bool proceed){
+        if(safe==nullptr||!proceed)return;
+        safe->fileChooser=std::make_unique<juce::FileChooser>("Open CAD document",juce::File(),"*.djo;*.djc");
+        safe->fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe](const juce::FileChooser& chooser){
+            if(safe==nullptr)return;const auto file=chooser.getResult();safe->fileChooser.reset();if(!file.existsAsFile())return;
+            juce::String e;if(!safe->service->load(file,e))safe->showError(e);else{if(safe->editingSketchId.isNotEmpty()){safe->editingSketchId.clear();safe->sketchCanvas->setVisible(false);safe->modelView.setVisible(true);}safe->refreshFromDocument(true);safe->selectFeature({});safe->modelView.fitAll();}
+        });
+    });
+}
+void CadWorkspacePanel::saveWithCompletion(bool saveAs,djehuti::cad::saveprotection::Completion complete)
+{
+    if(fileChooser){complete(false);return;}
+    const auto file=service->document().file();
+    if(!saveAs&&file!=juce::File()){juce::String e;const bool ok=service->save(file,e);if(!ok)showError(e);complete(ok&&!service->document().modified());return;}
+    fileChooser=std::make_unique<juce::FileChooser>("Save native CAD document",file,"*.djo");
+    const juce::Component::SafePointer<CadWorkspacePanel> safe(this);const auto instance=service->document().documentInstance();
+    fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,instance,complete=std::move(complete)](const juce::FileChooser& chooser){
+        if(safe==nullptr)return;const auto chosen=chooser.getResult();safe->fileChooser.reset();
+        safe->finishSaveAs(chosen,instance,std::move(complete));
+    });
+}
+void CadWorkspacePanel::finishSaveAs(const juce::File& chosen,std::uint64_t instance,djehuti::cad::saveprotection::Completion complete)
+{
+    if(chosen==juce::File()||service->document().documentInstance()!=instance){complete(false);return;}
+    juce::String e;const bool ok=service->save(chosen.withFileExtension("djo"),e);if(!ok)showError(e);complete(ok&&!service->document().modified());
+}
+void CadWorkspacePanel::saveDocument(){saveWithCompletion(false,[](bool){});}
+void CadWorkspacePanel::saveDocumentAs(){saveWithCompletion(true,[](bool){});}
 
 
 //==============================================================================
@@ -4581,7 +4629,7 @@ juce::var CadWorkspacePanel::automation(const juce::var& args)
         const auto op = args.getProperty("operation", "").toString();
         const auto path = args.getProperty("path", "").toString();
         if ((op == "new" || op == "open") && service->document().modified() && !(bool)args.getProperty("discard", false)) error = "Save the modified document first, or explicitly set discard=true.";
-        else if (op == "new") newDocument();
+        else if (op == "new") newDocument(true);
         else if (op == "open" || op == "save")
         {
             if (!juce::File::isAbsolutePath(path)) error = "An absolute document path is required.";
@@ -4974,11 +5022,11 @@ bool runCadWorkflowUiCheck(juce::var& report)
     check((bool)call(R"({"action":"toolbar","field":"modify","value":{"horizontal":false,"docked":true,"edge":"right","x":24,"y":36}})")["ok"]&&panel.modifyPalette->isDocked()&&!panel.modifyPalette->isHorizontal(),"Modify vertical docking and position preferences");
     call(R"({"action":"toolbar","field":"snap","value":{"docked":true,"edge":"bottom","visible":false}})");const auto prefs=panel.viewState();
     {CadWorkspacePanel restored(service);restored.setSize(1500,950);restored.restoreViewState(prefs);check(restored.modifyPalette->isDocked()&&!restored.modifyPalette->isHorizontal()&&!restored.snapPalette->visiblePreference(),"Toolbar preferences round-trip through existing application settings");}
-    check(!(bool)call(R"({"action":"toolbar","field":"snap","value":{"horizontal":false}})")["ok"],"Snap toolbar rejects vertical orientation");
-    call(R"({"action":"toolbar","field":"modify","value":{"horizontal":true,"docked":false,"visible":true}})");call(R"({"action":"toolbar","field":"snap","value":{"docked":false,"visible":true}})");
+    check((bool)call(R"({"action":"toolbar","field":"snap","value":{"horizontal":false}})")["ok"],"Snap toolbar supports vertical model layout");
+    call(R"({"action":"toolbar","field":"modify","value":{"horizontal":false,"docked":false,"visible":true}})");call(R"({"action":"toolbar","field":"snap","value":{"docked":false,"visible":true}})");
     const auto pointerEvent=[](juce::Component& c,juce::Point<float> position,juce::Point<float> down){return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),position,juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier),1,0,0,0,0,&c,&c,juce::Time::getCurrentTime(),down,juce::Time::getCurrentTime(),1,true);};
     auto& palette=*panel.modifyPalette;const auto beforeDrag=palette.getPosition();palette.mouseDown(pointerEvent(palette,{10,10},{10,10}));palette.mouseDrag(pointerEvent(palette,{55,55},{10,10}));palette.mouseUp(pointerEvent(palette,{55,55},{10,10}));check(palette.getPosition()!=beforeDrag&&!palette.isDocked(),"Modify toolbar grip/drag callbacks reposition and undock");
-    palette.mouseDown(pointerEvent(palette,{10,10},{10,10}));palette.setTopLeftPosition(palette.getX(),0);palette.mouseUp(pointerEvent(palette,{10,10},{10,10}));check(palette.isDocked(),"Toolbar drop callback docks at viewport edge");call(R"({"action":"toolbar","field":"modify","value":{"docked":false}})");
+    palette.mouseDown(pointerEvent(palette,{10,10},{10,10}));palette.mouseDrag(pointerEvent(palette,{30,30},{10,10}));palette.setTopLeftPosition(palette.getX(),30);palette.mouseUp(pointerEvent(palette,{10,10},{10,10}));check(palette.isDocked(),"Toolbar drop callback docks at viewport edge");call(R"({"action":"toolbar","field":"modify","value":{"docked":false}})");
     juce::String sketch,first,second,circle,curve;service->createSketch("XY",0,sketch,error);service->addSketchLine(sketch,0,0,10,0,first,error);service->addSketchLine(sketch,5,-5,5,5,second,error);service->addSketchCircle(sketch,20,20,3,circle,error);service->addSketchBezier(sketch,30,0,33,3,36,3,40,0,curve,error);panel.enterSketch(sketch);
     check(!panel.modifyPalette->isVisible()&&!panel.modifyPalette->invoke("extrude"),"Modify commands unavailable during Sketch editing");
     SketchReferenceScene scene;scene.rebuild(service->document(),sketch,{});SnapPreferences snaps;snaps.modes.fill(false);
@@ -5035,10 +5083,14 @@ bool runCadWorkflowUiCheck(juce::var& report)
     mutateSym(sketch,R"({"mode":"off"})");service->addSketchCircle(sketch,0,0,3,circle,error);juce::String extrusion;check(service->document().findSketch(sketch)->entities.size()==41&&service->document().createExtrude(sketch,50,false,extrusion,error),"One-quadrant T-slot forms a closed profile accepted by existing Extrude");
     const auto source=service->document().findSketch(sketch)->entities.front().id;check(service->document().setSketchLineGeometry(sketch,source,0,12,4,12,error)&&!service->document().find(extrusion)->shape.IsNull(),"Source quadrant dimension edit rebuilds all quadrants and dependent extrusion");
     for(const auto& ext:juce::StringArray{"djo","djc"}){const auto file=folder.getChildFile("four-sided-t-slot."+ext);check(ext=="djo"?service->save(file,error):service->document().exportJson(file,error),"T-slot "+ext+" save");CadCommandService loaded;check(loaded.load(file,error)&&loaded.document().findSketch(sketch)->entities.size()==41&&!loaded.document().find(extrusion)->shape.IsNull(),"T-slot "+ext+" reload preserves linked profile and solid");}
-    panel.refreshFromDocument(true);panel.enterSketch(sketch);panel.sketchPalette->restore(juce::JSON::parse(R"({"visible":true,"docked":true,"symmetryExpanded":true})"));panel.updateFloatingTools();panel.resized();panel.sketchCanvas->fitToContent();check(!panel.sketchPalette->getBounds().intersects(panel.snapPalette->getBounds()),"Expanded docked Symmetry toolbox coexists with Snap toolbar");const auto capture=panel.createComponentSnapshot(panel.getLocalBounds());if(auto stream=folder.getChildFile("four-sided-t-slot.png").createOutputStream()){stream->setPosition(0);stream->truncate();juce::PNGImageFormat().writeImageToStream(capture,*stream);}
+    panel.refreshFromDocument(true);panel.enterSketch(sketch);panel.sketchPalette->restore(juce::JSON::parse(R"({"visible":true,"docked":true,"symmetryExpanded":true})"));panel.updateFloatingTools();panel.resized();panel.sketchCanvas->fitToContent();check(!panel.sketchPalette->getBounds().intersects(panel.snapPalette->getBounds()),"Expanded docked Symmetry toolbox coexists with Snap toolbar");check(!panel.selectionPalette->getBounds().intersects(panel.snapPalette->getBounds()),"Floating Selection and Snap controls coexist without overlap");const auto capture=panel.createComponentSnapshot(panel.getLocalBounds());if(auto stream=folder.getChildFile("four-sided-t-slot.png").createOutputStream()){stream->setPosition(0);stream->truncate();juce::PNGImageFormat().writeImageToStream(capture,*stream);}
     auto* r=new juce::DynamicObject();r->setProperty("checks",checks);r->setProperty("total",checks.size());r->setProperty("failed",failed);r->setProperty("ok",failed==0);r->setProperty("nativePointerInteraction",false);report=r;return failed==0;
 }
 
 #include "CadAdvancedSketchChecks.inc"
 
 #include "CadSketchToolboxChecks.inc"
+
+#include "CadMainToolbarChecks.inc"
+
+#include "CadSaveProtectionChecks.inc"

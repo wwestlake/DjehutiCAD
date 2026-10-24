@@ -63,7 +63,7 @@ void CadTestFixture::writeOCAF() { const auto text=juce::JSON::toString(config);
 bool CadTestFixture::restoreOCAF(juce::String& error)
 {
     Handle(TDataStd_AsciiString) text;if(!authored->Main().FindChild(1,false).FindAttribute(TDataStd_AsciiString::GetID(),text)){error="Missing fixture configuration.";return false;}
-    auto next=juce::JSON::parse(juce::String::fromUTF8(text->Get().ToCString()));if(!checkStructure(next,error))return false;config=next;++serial;dirty=true;return true;
+    auto next=juce::JSON::parse(juce::String::fromUTF8(text->Get().ToCString()));if(!checkStructure(next,error))return false;config=next;++serial;dirty=juce::JSON::toString(config)+juce::JSON::toString(result)!=savedState;return true;
 }
 bool CadTestFixture::checkStructure(const juce::var& c,juce::String& error) const
 {
@@ -266,12 +266,12 @@ bool CadTestFixture::save(const juce::File& file,bool overwrite,juce::String& er
     if(file.existsAsFile()&&file!=savedFile&&!overwrite){error="Destination exists; explicit overwrite is required.";return false;}
     if(file==savedFile&&file.existsAsFile()&&!overwrite&&hashFile(file)!=savedDigest){error="Fixture changed on disk. Save to another file or explicitly approve replacing it.";return false;}
     auto envelope=object();put(envelope,"format","djehuti-test-fixture");put(envelope,"schemaVersion",1);put(envelope,"configuration",config);if(result.isObject())put(envelope,"result",result);
-    juce::TemporaryFile temp(file);if(!temp.getFile().replaceWithText(juce::JSON::toString(envelope))||!temp.overwriteTargetFileWithTemporary()){error="Unable to save fixture: "+file.getFullPathName();return false;}savedFile=file;savedDigest=hashFile(file);dirty=false;return true;
+    juce::TemporaryFile temp(file);if(!temp.getFile().replaceWithText(juce::JSON::toString(envelope))||!temp.overwriteTargetFileWithTemporary()){error="Unable to save fixture: "+file.getFullPathName();return false;}savedFile=file;savedDigest=hashFile(file);savedState=juce::JSON::toString(config)+juce::JSON::toString(result);dirty=false;return true;
 }
 bool CadTestFixture::open(const juce::File& file,juce::String& error)
 {
     const auto root=juce::JSON::parse(file.loadFileAsString());if(root["format"].toString()!="djehuti-test-fixture"||(int)root["schemaVersion"]!=1){error="Unsupported or malformed fixture file.";return false;}
-    if(!checkStructure(root["configuration"],error))return false;config=copy(root["configuration"]);result=copy(root["result"]);writeOCAF();authored->ClearUndos();authored->ClearRedos();savedFile=file;savedDigest=hashFile(file);sources.clear();dirty=false;++serial;return true;
+    if(!checkStructure(root["configuration"],error))return false;config=copy(root["configuration"]);result=copy(root["result"]);writeOCAF();authored->ClearUndos();authored->ClearRedos();savedFile=file;savedDigest=hashFile(file);savedState=juce::JSON::toString(config)+juce::JSON::toString(result);sources.clear();dirty=false;++serial;return true;
 }
 std::shared_ptr<CadTestFixture> CadTestFixture::duplicate(const juce::String& name) const
 {auto next=std::make_shared<CadTestFixture>(name);next->config=copy(config);put(next->config,"id",uid("fixture-"));put(next->config,"name",name);put(next->config,"revision",1);next->result=juce::var();next->writeOCAF();return next;}

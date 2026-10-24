@@ -416,6 +416,12 @@ DjehutiCAD::DjehutiCAD(bool diagnostic) : diagnosticMode(diagnostic)
     bindDocking(craftWorkspace->workspaceMenu,"craft");bindDocking(craftBrowser->workspaceMenu,"craftStock");
     viewsPanel->setContextCommand([safe = juce::Component::SafePointer<CadWorkspacePanel>(cadWorkspace)](const juce::String& action, const djehuti::cad::CadPick& pick)
     { if (safe != nullptr) safe->viewContextCommand(action,pick); });
+    for(const auto* id:{"cad","craft"})if(auto* dockPanel=dockManager->findPanelById(id)){
+        const auto originalClose=dockPanel->onCloseRequested;
+        dockPanel->onCloseRequested=[safeThis,originalClose](CreationDock::DockPanel* panel){
+            if(safeThis==nullptr)return;safeThis->cadWorkspace->confirmClose([safeThis,originalClose,panel](bool proceed){if(safeThis!=nullptr&&proceed&&originalClose)originalClose(panel);});
+        };
+    }
     dockManager->activatePanel("cad"); defaultDockLayout = dockManager->captureLayout();
     defaultDockLayout.getDynamicObject()->setProperty("leftWidth",176); dockManager->applyLayout(defaultDockLayout);
     if (!diagnosticMode)
@@ -469,8 +475,13 @@ void DjehutiCAD::selectWorkspace(int tabIndex)
 
 void DjehutiCAD::confirmCloseThen(std::function<void()> closeCallback)
 {
-    saveSettings();
-    if (closeCallback) { if (fixturesPanel != nullptr) fixturesPanel->confirmClose(std::move(closeCallback)); else closeCallback(); }
+    if(closingPending)return;closingPending=true;
+    const juce::Component::SafePointer<DjehutiCAD> safe(this);
+    cadWorkspace->confirmClose([safe,closeCallback=std::move(closeCallback)](bool proceed){
+        if(safe==nullptr)return;if(!proceed){safe->closingPending=false;return;}
+        const auto done=[safe,closeCallback]{if(safe!=nullptr){safe->saveSettings();safe->closingPending=false;if(closeCallback)closeCallback();}};
+        if(safe->fixturesPanel!=nullptr)safe->fixturesPanel->confirmClose(done,[safe]{if(safe!=nullptr)safe->closingPending=false;});else done();
+    });
 }
 
 juce::StringArray DjehutiCAD::getMenuBarNames()

@@ -1,6 +1,7 @@
 #pragma once
 #include "CadTestFixture.h"
 #include "WorkspaceMenu.h"
+#include "CadSaveProtection.h"
 
 // Each tab owns an independently persisted engineering fixture; this workspace docks/floats with CreationDock.
 class CadFixturesPanel final : public juce::Component, private juce::Timer
@@ -13,11 +14,15 @@ public:
     void createFixture();
     void openFixture();
     void synchronize(const juce::String& activate={});
-    void confirmClose(std::function<void()>);
+    void confirmClose(std::function<void()>,std::function<void()> cancelled={});
     std::function<void(const juce::File&)> onOpenSource;
     WorkspaceMenu workspaceMenu;
     bool smokeCheck(const juce::File& folder,juce::var& report);
 private:
+    friend bool runFixtureSaveProtectionCheck(juce::var&);
+    djehuti::cad::saveprotection::Prompt unsavedPrompt;
+    void confirmFixture(const juce::String&,djehuti::cad::saveprotection::Completion);
+    void confirmNext(const juce::StringArray&,int,std::function<void()>,std::function<void()>);
     void timerCallback() override;
     void manage(const juce::String& action);
     std::shared_ptr<djehuti::cad::CadFixtureService> service;

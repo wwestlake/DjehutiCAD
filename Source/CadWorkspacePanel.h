@@ -8,6 +8,7 @@
 #include "CadSelection.h"
 #include "CadInterference.h"
 #include "WorkspaceMenu.h"
+#include "CadSaveProtection.h"
 
 // Mechanical CAD workspace: model tree on the left, the model view or active sketch in the centre, and a
 // contextual task panel on the right. All modeling goes through the shared CadCommandService.
@@ -32,10 +33,11 @@ public:
     // Undo/redo keys also arrive through the top-level window, for when keyboard focus is not inside this panel.
     bool keyPressed(const juce::KeyPress&, juce::Component*) override;
     void parentHierarchyChanged() override;
-    void newDocument();
+    void newDocument(bool discardConfirmed=false);
     void openDocument();
     void saveDocument();
     void saveDocumentAs();
+    void confirmClose(djehuti::cad::saveprotection::Completion);
     // Shared Export... dialog; the selected body or instance is checked initially, otherwise the whole visible model.
     void showExportDialog();
     void showMaterialsManager();
@@ -61,9 +63,15 @@ public:
     void setInspectionLines(std::vector<djehuti::cad::CadOverlayLine> lines) { modelView.setInspectionLines(std::move(lines)); }
 
 private:
+    friend bool runCadSaveProtectionCheck(juce::var&);
+    djehuti::cad::saveprotection::Prompt unsavedPrompt;
+    bool closePending=false;
+    void finishSaveAs(const juce::File&,std::uint64_t,djehuti::cad::saveprotection::Completion);
+    void saveWithCompletion(bool saveAs,djehuti::cad::saveprotection::Completion);
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    friend class CadMainToolbarCheck;
     friend bool runSketchToolboxCheck(juce::var&);
     friend bool runAdvancedSketchCheck(juce::var&);
     friend bool runSketchUsabilityCheck(juce::var&);

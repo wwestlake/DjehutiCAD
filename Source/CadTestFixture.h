@@ -49,7 +49,7 @@ private:
     Handle(TDocStd_Document) authored;
     std::map<juce::String, Resolved> sources;
     juce::File savedFile;
-    juce::String savedDigest;
+    juce::String savedDigest,savedState;
     bool dirty=true;
     std::uint64_t serial=1;
 };

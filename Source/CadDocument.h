@@ -365,7 +365,7 @@ public:
     // Changes on every New and Open (never reused within a process), unlike revision numbers that undo can restore.
     std::uint64_t documentInstance() const { return instanceId; }
     bool modified() const { return dirty; }
-    void markSaved() { dirty = false; }
+    void markSaved() { savedState = serialize(); dirty = false; }
     void setFile(const juce::File& file) { documentFile = file; }
     juce::File file() const { return documentFile; }
 
@@ -449,6 +449,7 @@ private:
     std::uint64_t documentRevision = 0;
     std::uint64_t instanceId = 0;
     int nextNumber = 1;
+    juce::String savedState;
     bool dirty = false;
     juce::File documentFile;
     mutable std::shared_ptr<CadRenderSnapshot> cachedSnapshot;

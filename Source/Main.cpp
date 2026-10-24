@@ -17,6 +17,8 @@
 #include "CadFixturesPanel.h"
 bool runAdvancedSketchCheck(juce::var&);
 bool runSketchToolboxCheck(juce::var&);
+void startMainToolbarCheck(std::function<void(bool,juce::var)>);
+bool runCadSaveProtectionCheck(juce::var&);
 bool runSketchUsabilityCheck(juce::var&);
 bool runCadWorkflowUiCheck(juce::var&);
 bool runSketchLineRepairCheck(juce::var&);
@@ -1387,6 +1389,14 @@ public:
         {
             juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runSketchLineRepairCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-line-repair-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
         }
+        if(commandLine.startsWith("--cad-save-protection-check"))
+        {
+            juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runCadSaveProtectionCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-save-protection-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
+        }
+        if(commandLine.startsWith("--cad-main-toolbar-check"))
+        {
+            juce::MessageManager::callAsync([this]{startMainToolbarCheck([this](bool ok,juce::var report){juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-main-toolbar-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});});return;
+        }
         if(commandLine.startsWith("--cad-sketch-toolbox-check"))
         {
             juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runSketchToolboxCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-toolbox-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
@@ -1555,6 +1565,9 @@ public:
 
     void systemRequestedQuit() override
     {
+        if(mainWindow!=nullptr)if(auto* cad=dynamic_cast<DjehutiCAD*>(mainWindow->getContentComponent())){
+            cad->confirmCloseThen([this]{frust_exec::Executor::instance().shutdown([this]{quit();},3000);});return;
+        }
         frust_exec::Executor::instance().shutdown([this] { quit(); }, 3000);
     }
 
@@ -1584,10 +1597,7 @@ private:
 
         void closeButtonPressed() override
         {
-            if (auto* cad = dynamic_cast<DjehutiCAD*>(getContentComponent()))
-                cad->confirmCloseThen([this] { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
-            else
-                juce::JUCEApplication::getInstance()->systemRequestedQuit();
+            juce::JUCEApplication::getInstance()->systemRequestedQuit();
         }
     };
 

@@ -41,6 +41,7 @@ private:
     // message thread it waits for the outcome: up to 120 s, or while keepWaiting() holds when it is given.
     static std::string runToolCommand(const juce::Component::SafePointer<DjehutiCAD>&, const std::string&, const juce::String&, std::function<bool()> keepWaiting = {});
     bool diagnosticMode = false;
+    bool closingPending=false;
     static std::string runWorkspaceCommand(const juce::Component::SafePointer<DjehutiCAD>&, const juce::String&);
     juce::StringArray getMenuBarNames() override;
     juce::PopupMenu getMenuForIndex(int, const juce::String&) override;
