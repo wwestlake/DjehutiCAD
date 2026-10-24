@@ -202,6 +202,7 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 else if (name == "cad_create_sketch") ok = safeThis->cadService->createSketch(parsed.getProperty("plane", "XY").toString(), number("offset"), id, error);
                 else if (name == "cad_sketch_line") ok = safeThis->cadService->addSketchLine(parsed.getProperty("sketch", "").toString(), number("x1"), number("y1"), number("x2"), number("y2"), id, error);
                 else if (name == "cad_sketch_rectangle") ok = safeThis->cadService->addSketchRectangle(parsed.getProperty("sketch", "").toString(), number("x"), number("y"), number("width"), number("height"), id, error);
+                else if(name=="cad_sketch_edit") {juce::StringArray selected,result;if(const auto* list=parsed["entities"].getArray())for(const auto& value:*list)selected.add(value.toString());ok=safeThis->cadService->document().editSketchGeometry(parsed["sketch"].toString(),selected,parsed["operation"].toString(),parsed.getProperty("parameters",juce::var(new juce::DynamicObject())),result,error);id=result.joinIntoString(",");}
                 else if (name == "cad_sketch_circle") ok = safeThis->cadService->addSketchCircle(parsed.getProperty("sketch", "").toString(), number("x"), number("y"), number("radius"), id, error);
                 else if (name == "cad_sketch_dimension") ok = safeThis->cadService->setSketchEntityDimension(parsed.getProperty("sketch", "").toString(), parsed.getProperty("entity", "").toString(), number("value"), error);
                 else if (name == "cad_sketch_position") ok = safeThis->cadService->setSketchEntityPosition(parsed.getProperty("sketch", "").toString(), parsed.getProperty("entity", "").toString(), number("x"), number("y"), error);
@@ -687,7 +688,7 @@ std::string DjehutiCAD::runWorkspaceCommand(const juce::Component::SafePointer<D
             else if(action=="tool")
             {
                 const auto tool=args.getProperty("tool","").toString();
-                if(!juce::StringArray{"pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","sketchSelect","line","rectangle","circle"}.contains(tool)) error="Unknown selection or sketch tool.";
+                if(!juce::StringArray{"pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","sketchSelect","line","rectangle","circle","curve","ellipse","sketchBox","sketchCircleSelect","sketchFreehand","sketchMultiple","sketchRotate","sketchMirror","sketchSplit","sketchCopy","sketchPaste"}.contains(tool)) error="Unknown selection or sketch tool.";
                 else if(!safe->cadWorkspace->executeUiCommand(tool)) error="That tool is unavailable in the current editing mode.";
             }
             else if(action=="guides")
@@ -734,7 +735,7 @@ std::string DjehutiCAD::runWorkspaceCommand(const juce::Component::SafePointer<D
             out->setProperty("cadGuides",juce::JSON::parse(safe->cadWorkspace->viewState()));
             out->setProperty("viewGuides",juce::JSON::parse(safe->viewsPanel->viewState()));
             out->setProperty("documentRevision",(juce::int64)safe->cadService->document().revision());
-            auto tools=std::make_unique<juce::DynamicObject>(); for(const auto& name:juce::StringArray{"pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","sketchSelect","line","rectangle","circle"}) tools->setProperty(name,safe->cadWorkspace->uiToolActive(name));
+            auto tools=std::make_unique<juce::DynamicObject>(); for(const auto& name:juce::StringArray{"pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","sketchSelect","line","rectangle","circle","curve","ellipse","sketchBox","sketchCircleSelect","sketchFreehand","sketchMultiple","sketchRotate","sketchMirror","sketchSplit","sketchCopy","sketchPaste"}) tools->setProperty(name,safe->cadWorkspace->uiToolActive(name));
             out->setProperty("activeTools",juce::var(tools.release()));
         }
         return juce::JSON::toString(juce::var(out.release())).toStdString();

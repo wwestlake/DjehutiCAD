@@ -105,6 +105,7 @@ std::vector<ai_provider::ToolDefinition> tools()
         { "cad_create_sketch", "Create an editable XY, XZ, or YZ planar sketch in millimeters.", sketch },
         { "cad_sketch_line", "Add a line entity to a managed sketch.", sketchLine },
         { "cad_sketch_rectangle", "Add a connected dimensioned rectangle to a managed sketch.", sketchRectangle },
+        {"cad_sketch_edit", "Edit selected sketch geometry atomically with undo/redo. Operations: ellipse (x/y centre, rx/ry semiaxes, angle radians), resize_ellipse, rotate (x/y centre, angle degrees), mirror (ax/ay,bx/by axis; creates independent editable copies), translate/paste (x/y offsets), split (t or nearest x/y; exact Bezier subdivision), resize_rectangle (x/y point, handle 0-3 edges,4-7 corners). Whole rectangle groups are included. Rotation removes absolute H/V drivers while preserving relative shape and dimensions.", R"({"type":"object","properties":{"sketch":{"type":"string"},"operation":{"type":"string"},"entities":{"type":"array","items":{"type":"string"}},"parameters":{"type":"object"}},"required":["sketch","operation"],"additionalProperties":false})"},
         { "cad_sketch_circle", "Add a dimensioned circle to a managed sketch.", sketchCircle },
         { "cad_sketch_dimension", "Change a sketch line length or circle radius in millimeters.", sketchDimension },
         { "cad_sketch_position", "Move a sketch entity start point or circle center in millimeters.", sketchPosition },

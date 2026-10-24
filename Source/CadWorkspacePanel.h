@@ -64,6 +64,7 @@ private:
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
     enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    friend bool runAdvancedSketchCheck(juce::var&);
     friend bool runSketchUsabilityCheck(juce::var&);
     friend bool djehuti::cad::runCadLatheCheck(juce::var&);
     friend bool runSketchLineRepairCheck(juce::var&);
@@ -202,6 +203,7 @@ private:
 
     Task task = Task::none;
     juce::String booleanKind, sketchPlane, formContext;
+    juce::StringArray sketchSelection;
     juce::String selectedId, editingSketchId, sketchEntityId, sketchSecondEntityId, sketchVertexRef;
     juce::String profileId, targetId, toolId;
     std::vector<int> filletEdges;

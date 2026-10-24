@@ -22,6 +22,11 @@ public:
             button->onClick=[this,key=juce::String(spec.first)]{if(command)command(key);};
             addAndMakeVisible(*button); buttons.push_back(std::move(button));
         }
+        selectionTitle.setText("Selection",juce::dontSendNotification);selectionTitle.setColour(juce::Label::textColourId,juce::Colour(0xff78dcca));addAndMakeVisible(selectionTitle);
+        const std::pair<const char*,const char*> editing[]{
+            {"sketchSelect","Single"},{"sketchBox","Box"},{"sketchCircleSelect","Circle region"},{"sketchFreehand","Freehand"},{"sketchMultiple","Multiple"},
+            {"sketchCopy","Copy (Ctrl+C)"},{"sketchPaste","Paste (Ctrl+V)"},{"sketchRotate","Rotate"},{"sketchMirror","Mirror"},{"sketchSplit","Split / Node"},{"ellipse","Ellipse"}};
+        for(const auto& spec:editing){auto button=std::make_unique<juce::TextButton>(spec.second);button->setName(spec.first);button->setTooltip(juce::String(spec.second)+" sketch geometry. Shift adds/removes selection; Rotate: pick centre then direction or A for exact degrees; Mirror: pick two axis points.");button->onClick=[this,key=juce::String(spec.first)]{if(command)command(key);};addAndMakeVisible(*button);editButtons.push_back(std::move(button));}
         close.setTooltip("Hide sketch toolbox; restore it from View > Sketch toolbox"); close.setTitle("Hide sketch toolbox");
         close.onClick=[this]{preferredVisible=false;changed();}; addAndMakeVisible(close);
         dock.setTooltip("Dock at the left edge or float over the sketch"); dock.setTitle("Dock or float sketch toolbox");
@@ -38,12 +43,13 @@ public:
     void setAvailable(bool editing) { setVisible(editing&&preferredVisible); }
     void refresh(const std::function<bool(const juce::String&)>& enabled,const std::function<bool(const juce::String&)>& active)
     {
+        for(auto& button:editButtons){button->setEnabled(enabled(button->getName()));button->setToggleState(active(button->getName()),juce::dontSendNotification);}
         for(auto& button:buttons){button->setEnabled(enabled(button->getName()));button->setToggleState(active(button->getName()),juce::dontSendNotification);}
     }
     void place(juce::Rectangle<int> area)
     {
         placement=area;if(area.isEmpty())return;
-        const int width=juce::jmin(expanded?328:58,area.getWidth()),height=juce::jmin(expanded?510:395,area.getHeight());
+        const int width=juce::jmin(expanded?450:188,area.getWidth()),height=juce::jmin(expanded?510:420,area.getHeight());
         const auto p=docked?juce::Point<int>{0,0}:juce::Point<int>{juce::jlimit(0,area.getWidth()-width,floating.x),juce::jlimit(0,area.getHeight()-height,floating.y)};
         setBounds(area.getX()+p.x,area.getY()+p.y,width,height); if(!docked)floating=p;toFront(false);
     }
@@ -66,7 +72,8 @@ public:
     }
     void resized() override
     {
-        auto area=getLocalBounds().reduced(5);if(symmetryPanel){symmetryPanel->setVisible(expanded);symmetryPanel->setBounds(62,24,juce::jmax(1,getWidth()-66),getHeight()-28);}
+        auto area=getLocalBounds().reduced(5);if(symmetryPanel){symmetryPanel->setVisible(expanded);symmetryPanel->setBounds(192,24,juce::jmax(1,getWidth()-196),getHeight()-28);}
+        selectionTitle.setBounds(64,20,120,25);int editY=48;for(auto& button:editButtons){button->setBounds(64,editY,118,26);editY+=30;}
         area.setWidth(48);close.setBounds(35,2,18,20);area.removeFromTop(20);symmetry.setBounds(area.removeFromBottom(26));symmetry.setToggleState(expanded,juce::dontSendNotification);
         dock.setButtonText(docked?"Float":"Dock");dock.setBounds(area.removeFromBottom(24));
         const int row=juce::jmax(1,area.getHeight()/(int)buttons.size());
@@ -110,6 +117,7 @@ private:
     };
     void changed(){dock.setButtonText(docked?"Float":"Dock");setTooltipText();if(layoutChanged)layoutChanged();}
     void setTooltipText(){setMouseCursor(juce::MouseCursor::DraggingHandCursor);}
+    juce::Label selectionTitle;std::vector<std::unique_ptr<juce::TextButton>> editButtons;
     bool preferredVisible=true,docked=true,dragging=false,expanded=false;juce::Component* symmetryPanel=nullptr;juce::TextButton symmetry{"Sym"};
     juce::Rectangle<int> placement;juce::Point<int> floating{12,12};juce::ComponentDragger dragger;
     juce::TextButton close{"x"},dock{"Float"};std::vector<std::unique_ptr<Icon>> buttons;

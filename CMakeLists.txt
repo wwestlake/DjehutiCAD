@@ -129,6 +129,7 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadWorkspacePanel.cpp
     Source/CadSketchReferences.cpp
     Source/CadSketchSymmetry.cpp
+    Source/CadSketchEditing.cpp
     Source/CadExport.h
     Source/CadExport.cpp
     Source/CadInterference.h

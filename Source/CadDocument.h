@@ -115,6 +115,8 @@ struct CadSketchEntity
     bool construction=false;
     double x1 = 0.0, y1 = 0.0, x2 = 0.0, y2 = 0.0, radius = 1.0;
     double cx1 = 0.0, cy1 = 0.0, cx2 = 0.0, cy2 = 0.0;
+    // Ellipse semiaxes and local rotation in radians; circles keep their original representation.
+    double radiusY = 1.0, angle = 0.0;
 };
 
 struct CadSketchConstraint
@@ -232,6 +234,9 @@ public:
     bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {});
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error);
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error);
+    bool editSketchGeometry(const juce::String& sketchId, const juce::StringArray& selection,
+                            const juce::String& operation, const juce::var& parameters,
+                            juce::StringArray& resultIds, juce::String& error);
     // Removes entities and their constraints atomically; dependent rebuild failures roll back.
     bool deleteSketchEntities(const juce::String& sketchId, const juce::StringArray& entityIds, juce::String& error);
     bool setSketchEntityDimension(const juce::String& sketchId, const juce::String& entityId, double value, juce::String& error);

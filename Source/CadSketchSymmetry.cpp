@@ -12,6 +12,7 @@ bool same(const CadSketchEntity& a,const CadSketchEntity& b)
 {
     if(a.type!=b.type||a.construction!=b.construction)return false;
     const auto p=[](double a,double b,double c,double d){return close(a,c)&&close(b,d);};
+    if(a.type=="ellipse")return p(a.x1,a.y1,b.x1,b.y1)&&close(a.radius,b.radius)&&close(a.radiusY,b.radiusY)&&close(std::remainder(a.angle-b.angle,juce::MathConstants<double>::pi),0);
     if(a.type=="circle")return p(a.x1,a.y1,b.x1,b.y1)&&close(a.radius,b.radius);
     const bool forward=p(a.x1,a.y1,b.x1,b.y1)&&p(a.x2,a.y2,b.x2,b.y2),reverse=p(a.x1,a.y1,b.x2,b.y2)&&p(a.x2,a.y2,b.x1,b.y1);
     if(a.type=="line")return forward||reverse;
@@ -43,7 +44,7 @@ std::vector<CadSketchEntity> reflectedSketchEntities(const CadSketch& sketch,con
             const auto reflect=[&](double& x,double& y)
             {if(mirror.axis=="line"){const auto px=x-ax,py=y-ay,t=px*dx+py*dy;x=ax+2*t*dx-px;y=ay+2*t*dy-py;}
              else{if(mirror.axis=="vertical"||(mirror.axis=="both"&&(i&1)))x=2*ax-x;if(mirror.axis=="horizontal"||(mirror.axis=="both"&&(i&2)))y=2*ay-y;}};
-            reflect(copy.x1,copy.y1);if(copy.type!="circle")reflect(copy.x2,copy.y2);if(copy.type=="bezier"){reflect(copy.cx1,copy.cy1);reflect(copy.cx2,copy.cy2);}
+            reflect(copy.x1,copy.y1);if(copy.type!="circle"&&copy.type!="ellipse")reflect(copy.x2,copy.y2);if(copy.type=="ellipse"){double ux=source->x1+std::cos(source->angle),uy=source->y1+std::sin(source->angle);reflect(ux,uy);copy.angle=std::atan2(uy-copy.y1,ux-copy.x1);}if(copy.type=="bezier"){reflect(copy.cx1,copy.cy1);reflect(copy.cx2,copy.cy2);}
             for(const auto coordinate:{copy.x1,copy.y1,copy.x2,copy.y2,copy.cx1,copy.cy1,copy.cx2,copy.cy2})if(!std::isfinite(coordinate)){error="Reflection exceeds the finite sketch coordinate range.";return {};}
             const auto duplicate=[&](const auto& items){return std::any_of(items.begin(),items.end(),[&](const auto& e){return same(e,copy);});};
             if(!duplicate(sketch.entities)&&!duplicate(result))
