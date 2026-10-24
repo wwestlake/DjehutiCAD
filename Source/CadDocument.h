@@ -77,7 +77,9 @@ juce::var replicationDefaults(const juce::String& type);
 bool validateReplication(const juce::String& type, const juce::var&, juce::String& error);
 juce::StringArray replicationDependencies(const juce::var&);
 inline bool isSurfaceType(const juce::String& type) { return juce::StringArray{"surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken"}.contains(type); }
-inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"||isSurfaceType(type); }
+// "gear": parametric gear solid (CadGear.h), stored and edited through the same modeling command boundary.
+inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"||type=="gear"||isSurfaceType(type); }
+namespace gear { struct PairPlan; }
 juce::var surfaceDefaults(const juce::String&);
 bool validateSurface(const juce::String&,const juce::var&,juce::String&);
 juce::var surfaceTopology(const TopoDS_Shape&);
@@ -273,6 +275,15 @@ public:
     juce::var modelingCommand(const juce::String& type,const juce::var& args);
     std::shared_ptr<const CadRenderSnapshot> modelingPreview(const juce::String& type,const juce::var&,juce::var& result,juce::String& error) const;
     std::shared_ptr<const CadRenderSnapshot> replicationPreview(const juce::String& type, const juce::var&, juce::var& result, juce::String& error) const;
+    // Parametric gears (CadGearCommands.cpp). cad_gear: one gear feature through modelingCommand("gear") plus
+    // derived dimensions and pair status. cad_gear_pair: plan/preview/create/update/check/couple/unpair a
+    // compatible external spur pair; create and update are single undoable transactions.
+    juce::var gearCommand(const juce::var& args);
+    juce::var gearPairCommand(const juce::var& args);
+    juce::var gearPairStatus(const juce::String& gearId) const;
+    // Current pair definition (cad_gear_pair parameters) of the pair containing gearId; void when unpaired.
+    juce::var gearPairParameters(const juce::String& gearId) const;
+    std::shared_ptr<const CadRenderSnapshot> gearPairPreview(const juce::var& args, juce::var& result, juce::String& error) const;
     std::shared_ptr<const CadRenderSnapshot> chamferPreview(const juce::var& args, juce::var& result, juce::String& error) const;
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error);
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error);
@@ -420,6 +431,9 @@ private:
     TopoDS_Shape evaluateModeling(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active,bool surfaceOutput=false);
     TopoDS_Shape evaluateSurface(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active);
     bool modelingProfile(const juce::String&,TopoDS_Wire&,CadSketchFrame&,juce::String&,juce::StringArray&);
+    juce::var gearPairRequest(const CadFeature& a, const CadFeature& b) const;
+    bool applyGearPair(const gear::PairPlan&, const juce::String& existingA, const juce::String& existingB, juce::var& reply, juce::String& error);
+    bool gearShaft(const CadFeature& gearFeature, const juce::String& instanceId, gp_Pnt& origin, gp_Dir& axis) const;
     bool surfaceInput(const juce::String&,const juce::String&,TopoDS_Shape&,CadFaceOrigins&,juce::String&,juce::StringArray&);
     static CadSketchFrame originPlaneFrame(const CadSketch& sketch);
     void initializeOCAF();
@@ -507,6 +521,8 @@ public:
     juce::var holeCommand(const juce::var& args) { return model.holeCommand(args); }
     juce::var replicationCommand(const juce::String& type, const juce::var& args) { return model.replicationCommand(type,args); }
     juce::var modelingCommand(const juce::String& type,const juce::var& args) { return model.modelingCommand(type,args); }
+    juce::var gearCommand(const juce::var& args) { return model.gearCommand(args); }
+    juce::var gearPairCommand(const juce::var& args) { return model.gearPairCommand(args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool updateFillet(const juce::String& id, const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& error) { return model.updateFillet(id, targetFeatureId, edgeIndices, radius, error); }

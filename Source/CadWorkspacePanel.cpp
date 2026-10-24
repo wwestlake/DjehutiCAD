@@ -9,6 +9,7 @@
 #include "CadReferenceControls.h"
 #include "CadSketchSymmetry.h"
 #include "CadSketchSymmetryControls.h"
+#include "CadGear.h"
 #include <BRep_Tool.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
@@ -849,7 +850,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         const bool sketching = editingSketchId.isNotEmpty();
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
-            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching} } },
+            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching} } },
             { "Modify", { E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
@@ -866,6 +867,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         else if(id>=53&&id<=55)executeUiCommand(juce::StringArray{"deleteSketchEntities","sketchToolbox","dockSketchToolbox"}[id-53]);
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
+        else if (id == 68 || id == 69) executeUiCommand(id == 68 ? "gear" : "gearPair");
         else if (id >= 44 && id <= 52) executeUiCommand(juce::StringArray{"sweep","loft","mill","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken"}[id-44]);
         else if (id >= 41 && id <= 43) executeUiCommand(juce::StringArray{"mirror","linearPattern","circularPattern"}[id-41]);
         else if (id == 40) executeUiCommand("hole");
@@ -1437,7 +1439,7 @@ void CadWorkspacePanel::bodyPicked(const juce::String& id)
     selectFeature(id);
 }
 
-bool CadWorkspacePanel::isCommandTask() const { return task == Task::lathe || task == Task::modeling || task == Task::replication || task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::hole || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling; }
+bool CadWorkspacePanel::isCommandTask() const { return task == Task::lathe || task == Task::modeling || task == Task::replication || task == Task::extrude || task == Task::revolve || task == Task::cut || task == Task::fillet || task == Task::chamfer || task == Task::hole || task == Task::boolean || task == Task::newInstance || task == Task::newJoint || task == Task::link || task == Task::newCoupling || task == Task::gearPair; }
 // "face <token> of <body>" for a face-attached sketch.
 juce::String CadWorkspacePanel::supportText(const djehuti::cad::CadSketch& sketch) const { return "face " + sketch.supportFace + " of " + featureName(sketch.supportFeature); }
 bool CadWorkspacePanel::isIkTask(const juce::String& id) const { return id.isNotEmpty() && service->document().mechanicsData().findIkTask(id) != nullptr; }
@@ -1649,14 +1651,15 @@ void CadWorkspacePanel::selectSketchEntity(const juce::String& id, bool second)
 void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
 {
     if (editingSketchId.isNotEmpty() && next != Task::sketchEdit) finishSketch();
-    clearLatheView();clearModelingView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
+    clearLatheView();clearModelingView();clearGearPairView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
     const auto* selected = service->document().find(selectedId);
     task = next; booleanKind = kind;
     if(next==Task::modeling)
     {
         modelingKind=kind;editingModelingId=selected!=nullptr&&selected->type==kind?selectedId:juce::String();modelingSettings=editingModelingId.isEmpty()?djehuti::cad::modelingDefaults(kind):juce::JSON::parse(juce::JSON::toString(selected->modeling,false,17));modelingRevision=service->document().revision();
         modelingPick=kind=="sweep"||kind=="surface"?"profile":kind=="loft"?"sections":kind=="surface_sew"?"sources":"target";
-        if(editingModelingId.isEmpty()&&selected!=nullptr)
+        if(kind=="gear")modelingPick={};
+        if(editingModelingId.isEmpty()&&selected!=nullptr&&kind!="gear")
         {
             if(selected->type=="sketch")
             {if(kind=="sweep"||kind=="surface"){modelingSettings.getDynamicObject()->setProperty("profile",selectedId);modelingPick="path";}else if(kind=="loft"){modelingSettings.getDynamicObject()->setProperty("sections",juce::Array<juce::var>{selectedId});}else {modelingSettings.getDynamicObject()->setProperty("region",selectedId);}}
@@ -1665,6 +1668,13 @@ void CadWorkspacePanel::startTask(Task next, const juce::String& kind)
             {if(kind=="surface_sew")modelingSettings.getDynamicObject()->setProperty("sources",juce::Array<juce::var>{selectedId});else if(kind!="surface")modelingSettings.getDynamicObject()->setProperty("target",selectedId);}
         }
         if(selection!=nullptr)selection->setMode(djehuti::cad::CadSelection::Mode::body);
+    }
+    if(next==Task::gearPair)
+    {
+        const auto current=selected!=nullptr&&selected->type=="gear"?service->document().gearPairParameters(selectedId):juce::var();
+        editingGearPairId=current.isObject()?selectedId:juce::String();
+        gearPairSettings=current.isObject()?current:djehuti::cad::gear::pairDefaults();
+        gearPairRevision=service->document().revision();
     }
     if(next==Task::replication)
     {
@@ -1895,6 +1905,7 @@ juce::var CadWorkspacePanel::readModelingForm(juce::String& error) const
 
 void CadWorkspacePanel::addModelingFields()
 {
+    if(modelingKind=="gear"){addGearFields();return;}
     const auto p=modelingSettings;const auto beginPick=[this](const juce::String& role,djehuti::cad::CadSelection::Mode mode)
     {juce::String ignored;const auto current=readModelingForm(ignored);if(current.isObject())modelingSettings=current;clearModelingView();modelingPick=role;if(selection!=nullptr)selection->setMode(mode);showModelingSources();setMessage(role=="path"?"Choose a path sketch in the tree, or click connected edges in a model view.":"Choose the "+role+" in the tree or model view.",0);};
     const auto slot=[&](const char* key,const char* label,const juce::String& id,const char* role)
@@ -1940,6 +1951,107 @@ void CadWorkspacePanel::addModelingFields()
         form->addNumber("adv_toolDiameter","Tool diameter",(double)p["toolDiameter"],"mm","Flat-ended axial cutter diameter; pocket corners retain this radius.",12);form->addNumber("adv_depth","Blind depth",(double)p["depth"],"mm","Depth measured inward from the entry plane.",12);form->addToggle("adv_throughAll","Through cut",(bool)p["throughAll"],"Recompute the full target extent in the inward direction.");form->addChoice("advCompensation","Profile cutter side",{"On path","Inside","Outside"},juce::StringArray{"on","inside","outside"}.indexOf(p["compensation"].toString()),"Closed profile only; select which side retains the intended boundary.");
     }
     form->addButton("modelingPreview","Preview",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->previewModeling();});},"Evaluate and display an isolated draft without live document or Undo changes.");form->addButton("modelingClearPreview","Clear preview",[this]{clearModelingView();showModelingSources();validateTask();},"Restore the source geometry for picking.");
+}
+
+juce::String CadWorkspacePanel::gearDerivedText(const juce::var& p) const
+{
+    djehuti::cad::gear::Spur s;juce::String error;if(!djehuti::cad::gear::spur(p,s,error))return error;
+    const auto n=[](double v){return juce::String(v,3).trimCharactersAtEnd("0").trimCharactersAtEnd(".");};
+    juce::String text="Pitch dia "+n(2*s.pitchRadius)+" mm | tip "+n(2*s.tipRadius)+" | root "+n(2*s.rootRadius)+" | base "+n(2*s.baseRadius)
+                     +"\nCircular pitch "+n(juce::MathConstants<double>::pi*s.module)+" mm | tooth "+n(s.toothThickness)+" | tip land "+n(s.tipLand)+" | root fillet "+n(s.rootFillet);
+    if(!s.warnings.isEmpty())text<<"\n"<<s.warnings[0];
+    return text;
+}
+
+void CadWorkspacePanel::addGearFields()
+{
+    const auto p=modelingSettings;
+    form->addHeader("Involute spur gear");
+    form->addNote({},"External involute spur gear. Bevel and worm gears are later stages.",1);
+    form->addNumber("adv_teeth","Teeth",(double)p["teeth"],{},"Number of teeth, a whole number from 5 to 400.",0);
+    form->addNumber("adv_module","Module",(double)p["module"],"mm","Pitch diameter divided by the tooth count. Mating gears share the module.");
+    form->addNumber("adv_pressureAngleDegrees","Pressure angle",(double)p["pressureAngleDegrees"],"deg","Usually 20 degrees. Mating gears share the pressure angle.");
+    form->addNumber("adv_faceWidth","Face width",(double)p["faceWidth"],"mm","Axial tooth length, along +Z from the gear origin.");
+    form->addNumber("adv_boreDiameter","Bore diameter",(double)p["boreDiameter"],"mm","Shaft bore; 0 makes a solid gear.");
+    form->addHeader("Tooth form");
+    form->addNumber("adv_backlash","Backlash allowance",(double)p["backlash"],"mm","Circular thinning of each tooth at the pitch circle. A pair's backlash is the sum of both gears.");
+    form->addNumber("adv_profileShift","Profile shift (x)",(double)p["profileShift"],{},"Moves the tooth outward (positive) or inward, in modules. Positive shift avoids undercut on small pinions.");
+    form->addNumber("adv_addendumCoefficient","Addendum coefficient",(double)p["addendumCoefficient"],{},"Tip height above the pitch circle in modules (standard 1).");
+    form->addNumber("adv_dedendumCoefficient","Dedendum coefficient",(double)p["dedendumCoefficient"],{},"Root depth below the pitch circle in modules (standard 1.25).");
+    form->addNumber("adv_rootFilletCoefficient","Root fillet coefficient",(double)p["rootFilletCoefficient"],{},"Root fillet radius in modules, at most dedendum minus addendum.");
+    form->addNote("gearDerived",gearDerivedText(p),4);
+    const auto mate=p["pair"]["mate"].toString();
+    if(editingModelingId.isNotEmpty()&&mate.isNotEmpty())
+        form->addNote({},"Paired with "+featureName(mate)+". Changing teeth, module, pressure angle or profile shift here breaks the pair; use Edit Gear Pair to keep both gears compatible.",3);
+    form->addButton("modelingPreview","Preview",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->previewModeling();});},"Evaluate and display an isolated draft without live document or Undo changes.");
+    form->addButton("modelingClearPreview","Clear preview",[this]{clearModelingView();validateTask();},"Restore the model view.");
+}
+
+void CadWorkspacePanel::addGearPairFields()
+{
+    const auto p=gearPairSettings;const bool editing=editingGearPairId.isNotEmpty();
+    form->addHeader("Shared tooth system");
+    form->addNumber("gpModule","Module",(double)p["module"],"mm","Shared by both gears.");
+    form->addNumber("gpPressure","Pressure angle",(double)p["pressureAngleDegrees"],"deg","Shared by both gears; usually 20 degrees.");
+    form->addNumber("gpFaceWidth","Face width",(double)p["faceWidth"],"mm","Axial tooth length of both gears.");
+    form->addNumber("gpBacklash","Total backlash",(double)p["backlash"],"mm","Total circular backlash; half is applied to each gear.");
+    form->addNumber("gpAddendum","Addendum coefficient",(double)p["addendumCoefficient"],{},"Tip height in modules (standard 1).");
+    form->addNumber("gpDedendum","Dedendum coefficient",(double)p["dedendumCoefficient"],{},"Root depth in modules (standard 1.25).");
+    form->addNumber("gpFillet","Root fillet coefficient",(double)p["rootFilletCoefficient"],{},"Root fillet radius in modules.");
+    for(const auto* key:{"gearA","gearB"})
+    {
+        const bool a=juce::String(key)=="gearA";const auto g=p[key];const juce::String suffix=a?"A":"B";
+        form->addHeader(a?"Gear A (driver)":"Gear B (driven)");
+        form->addNumber("gpTeeth"+suffix,"Teeth",(double)g["teeth"],{},"Whole number from 5 to 400.",0);
+        form->addNumber("gpShift"+suffix,"Profile shift (x)",(double)g["profileShift"],{},"Profile shift coefficient; the centre distance follows the combined shift.");
+        form->addNumber("gpBore"+suffix,"Bore diameter",(double)g["boreDiameter"],"mm","Shaft bore; 0 makes a solid gear.");
+    }
+    form->addHeader("Placement");
+    const auto origin=p["origin"];
+    for(int i=0;i<3;++i){const auto letter=juce::String::charToString("XYZ"[i]);form->addNumber("gpOrigin"+letter,"Gear A axis "+letter,(double)origin[i],"mm","Position of gear A's axis; both shafts are parallel to Z.");}
+    form->addNumber("gpLine","Line of centres",(double)p["lineOfCentersDegrees"],"deg","Direction from gear A to gear B in the XY plane.");
+    form->addToggle("gpMechanism",editing?"Create missing joints and coupling":"Create joints and gear coupling",p["mechanism"].toString()=="create","Adds an assembly instance and a world revolute joint per gear (A driver, B dependent) and a gear coupling with ratio -teethA/teethB.");
+    form->addNote("gearPairDerived",{},4);
+    form->addButton("gearPairPreview","Preview",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->previewGearPair();});},"Evaluate both gears on an isolated draft without changing the document.");
+    form->addButton("gearPairClearPreview","Clear preview",[this]{clearGearPairView();validateTask();},"Restore the model view.");
+}
+
+juce::var CadWorkspacePanel::readGearPairForm(juce::String& error) const
+{
+    auto r=juce::JSON::parse(juce::JSON::toString(gearPairSettings,false,17));
+    if(!r.isObject())r=djehuti::cad::gear::pairDefaults();
+    if(form==nullptr)return r;
+    const auto read=[&](const juce::String& field,const juce::String& label,double& value){if(!form->numberValid(field)){if(error.isEmpty())error=label+" must be a number.";return false;}value=form->number(field);return true;};
+    const std::pair<const char*,const char*> shared[]{{"gpModule","module"},{"gpPressure","pressureAngleDegrees"},{"gpFaceWidth","faceWidth"},{"gpBacklash","backlash"},{"gpAddendum","addendumCoefficient"},{"gpDedendum","dedendumCoefficient"},{"gpFillet","rootFilletCoefficient"}};
+    for(const auto& [field,key]:shared){double v=0;if(read(field,key,v))r.getDynamicObject()->setProperty(key,v);}
+    for(const auto* key:{"gearA","gearB"})
+    {
+        const juce::String suffix=juce::String(key)=="gearA"?"A":"B";auto g=r[key];if(!g.isObject()){g=juce::var(new juce::DynamicObject());r.getDynamicObject()->setProperty(key,g);}
+        double v=0;if(read("gpTeeth"+suffix,"Gear "+suffix+" teeth",v))g.getDynamicObject()->setProperty("teeth",v);
+        if(read("gpShift"+suffix,"Gear "+suffix+" profile shift",v))g.getDynamicObject()->setProperty("profileShift",v);
+        if(read("gpBore"+suffix,"Gear "+suffix+" bore",v))g.getDynamicObject()->setProperty("boreDiameter",v);
+    }
+    juce::Array<juce::var> origin;for(const auto* letter:{"X","Y","Z"}){double v=0;read(juce::String("gpOrigin")+letter,"Origin",v);origin.add(v);}
+    r.getDynamicObject()->setProperty("origin",origin);
+    double line=0;if(read("gpLine","Line of centres",line))r.getDynamicObject()->setProperty("lineOfCentersDegrees",line);
+    const bool mechanism=form->toggle("gpMechanism");
+    r.getDynamicObject()->setProperty("mechanism",mechanism?"create":editingGearPairId.isNotEmpty()?"keep":"none");
+    if(error.isEmpty()){djehuti::cad::gear::PairPlan plan;djehuti::cad::gear::planPair(r,plan,error);}
+    return r;
+}
+
+void CadWorkspacePanel::previewGearPair()
+{
+    juce::String error;const auto p=readGearPairForm(error);if(error.isNotEmpty()){showError(error);return;}
+    auto* a=new juce::DynamicObject();a->setProperty("id",editingGearPairId);a->setProperty("parameters",p);juce::var details;
+    const auto view=service->document().gearPairPreview(juce::var(a),details,error);if(view==nullptr){showError(error);return;}
+    modelView.setSnapshot(view);gearPairPreviewActive=true;wakeFrames();
+    setMessage("Preview: centre distance "+juce::String((double)details["plan"]["centreDistance"],4)+" mm. Apply commits; Cancel restores the model.",0);
+}
+
+void CadWorkspacePanel::clearGearPairView()
+{
+    if(!gearPairPreviewActive)return;gearPairPreviewActive=false;modelView.setSnapshot(service->snapshot());wakeFrames();
 }
 
 void CadWorkspacePanel::readSurfaceForm(juce::var& p,juce::String& error) const
@@ -2061,7 +2173,7 @@ void CadWorkspacePanel::editLoftSection(int index,int action)
 
 void CadWorkspacePanel::pickModeling(const djehuti::cad::CadPick& pick)
 {
-    if(!pick.valid()||pick.featureId==editingModelingId)return;if(djehuti::cad::isSurfaceType(modelingKind)&&pickSurface(pick))return;juce::String ignored;const auto current=readModelingForm(ignored);if(current.isObject())modelingSettings=current;auto* o=modelingSettings.getDynamicObject();const auto* sketch=service->document().findSketch(pick.featureId);
+    if(modelingKind=="gear"||!pick.valid()||pick.featureId==editingModelingId)return;if(djehuti::cad::isSurfaceType(modelingKind)&&pickSurface(pick))return;juce::String ignored;const auto current=readModelingForm(ignored);if(current.isObject())modelingSettings=current;auto* o=modelingSettings.getDynamicObject();const auto* sketch=service->document().findSketch(pick.featureId);
     if(modelingPick=="profile"||modelingPick=="region"||modelingPick=="sections")
     {
         if(sketch==nullptr){showError("Choose a sketch in the feature tree.");return;}
@@ -2463,7 +2575,21 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             {
                 form->addHeader(djehuti::cad::modelingLabel(f->type));
                 if(djehuti::cad::isSurfaceType(f->type)){const auto topology=djehuti::cad::surfaceTopology(f->shape);form->addNote({},topology["faces"].toString()+" faces | "+topology["unmatchedEdges"].toString()+" unmatched boundaries | "+(bool(topology["closed"])?"Closed":"Open"),2);}
-                form->addButton("modelingEdit","Edit sources and parameters...",[this,type=f->type]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),type]{if(safe!=nullptr)safe->startTask(Task::modeling,type);});},"Edit the parametric sources, settings and operation; preview before applying.");
+                if(f->type=="gear")
+                {
+                    form->addNote("gearDerived",gearDerivedText(f->modeling),3);
+                    const auto mate=f->modeling["pair"]["mate"].toString();
+                    if(mate.isNotEmpty())
+                    {
+                        const auto status=service->document().gearPairStatus(f->id);
+                        juce::String text="Paired with "+featureName(mate)+": ";
+                        if((bool)status["compatible"])text<<"meshes (centre distance "<<juce::String((double)status["expected"]["centreDistance"],4)<<" mm, ratio "<<juce::String((double)status["expected"]["ratio"],6)<<").";
+                        else {text<<"DOES NOT MESH. ";if(const auto* problems=status["problems"].getArray())for(const auto& problem:*problems)text<<problem.toString()<<" ";}
+                        form->addNote("gearPairStatus",text.trim(),(bool)status["compatible"]?2:5);
+                        form->addButton("gearPairEdit","Edit gear pair...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::gearPair);});},"Edit both gears together; placements, joints and the coupling stay compatible.");
+                    }
+                }
+                form->addButton("modelingEdit",f->type=="gear"?juce::String("Edit gear parameters..."):juce::String("Edit sources and parameters..."),[this,type=f->type]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this),type]{if(safe!=nullptr)safe->startTask(Task::modeling,type);});},"Edit the parametric sources, settings and operation; preview before applying.");
             }
             else if(djehuti::cad::isReplicationType(f->type))
             {
@@ -2726,6 +2852,8 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             break;
         case Task::modeling:
             title=djehuti::cad::modelingLabel(modelingKind);instruction="Select the source geometry and parameters. Preview validates the result before Apply.";accept=editingModelingId.isEmpty()?"Create":"Update";addModelingFields();break;
+        case Task::gearPair:
+            title=editingGearPairId.isEmpty()?"Gear Pair":"Edit Gear Pair";instruction="Shared module and pressure angle, individual tooth counts. Both gears sit on parallel Z shafts at the meshing centre distance with engaged teeth.";accept=editingGearPairId.isEmpty()?"Create pair":"Update pair";addGearPairFields();break;
         case Task::replication:
             title=replicationKind=="mirror"?"Mirror":replicationKind=="linearPattern"?"Linear Pattern":"Circular Pattern";instruction="Choose source bodies or a modeling feature, then references and distribution. Preview before applying.";accept=editingReplicationId.isEmpty()?"Create":"Update";addReplicationFields();break;
         case Task::hole:
@@ -2929,6 +3057,7 @@ void CadWorkspacePanel::validateTask()
         case Task::newBox: requirePositive("width", "Width"); requirePositive("depth", "Depth"); requirePositive("height", "Height"); break;
         case Task::newCylinder: requirePositive("radius", "Radius"); requirePositive("height", "Height"); break;
         case Task::modeling: {juce::String e;readModelingForm(e);if(e.isNotEmpty())problem=e;if(modelingRevision!=service->document().revision())problem="The model changed. Reopen this tool to refresh its sources.";break;}
+        case Task::gearPair: {juce::String e;readGearPairForm(e);if(e.isNotEmpty())problem=e;if(gearPairRevision!=service->document().revision())problem="The model changed. Reopen this tool to refresh the pair.";break;}
         case Task::replication: { juce::String e;readReplicationForm(e);if(e.isNotEmpty())problem=e;if(replicationRevision!=service->document().revision())problem="The model changed. Reopen this tool to refresh its references.";break; }
         case Task::hole: break;
         case Task::lathe: { juce::String e; readLatheForm(e); if(e.isNotEmpty()){problem=e;severity=2;} break; }
@@ -2982,9 +3111,22 @@ void CadWorkspacePanel::validateTask()
         if(e.isNotEmpty()){problem=e;severity=2;}
         if(task==Task::hole&&holeSelectionRevision!=service->document().revision()){problem="The model changed. Reopen Drill Press and choose its face again.";severity=2;}
     }
+    if(task==Task::gearPair)
+    {
+        if(auto* button=form->control("gearPairPreview"))button->setEnabled(problem.isEmpty());
+        juce::String e;const auto request=readGearPairForm(e);djehuti::cad::gear::PairPlan plan;
+        if(e.isEmpty()&&djehuti::cad::gear::planPair(request,plan,e))
+        {
+            juce::String text="Centre distance "+juce::String(plan.values.centreDistance,4)+" mm | ratio "+juce::String(plan.values.ratio,6)+" (B turns opposite to A)\nContact ratio "+juce::String(plan.values.contactRatio,3)+" | tip clearance "+juce::String(std::min(plan.values.tipClearanceA,plan.values.tipClearanceB),4)+" mm";
+            if(!plan.warnings.isEmpty())text<<"\n"<<plan.warnings[0];
+            form->setCaption("gearPairDerived",text);
+        }
+        else form->setCaption("gearPairDerived",e);
+    }
     if(task==Task::modeling)
     {
         if(auto* button=form->control("modelingPreview"))button->setEnabled(problem.isEmpty());
+        if(modelingKind=="gear"){juce::String e;const auto current=readModelingForm(e);form->setCaption("gearDerived",current.isObject()?gearDerivedText(current):e);}
         if(!djehuti::cad::isSurfaceType(modelingKind)&&modelingKind!="mill")form->setRowVisible("advTarget",form->choice("advOperation")!=0);
         if(modelingKind=="sweep")for(const auto* component:{"X","Y","Z"})form->setRowVisible(juce::String("advBinormal")+component,form->choice("advOrientation")==2);
         if(modelingKind=="mill")
@@ -3154,6 +3296,15 @@ void CadWorkspacePanel::acceptTask()
             const auto p=readModelingForm(e);if(e.isNotEmpty()){showError(e);return;}auto* a=new juce::DynamicObject();a->setProperty("action",editingModelingId.isEmpty()?"create":"update");a->setProperty("id",editingModelingId);a->setProperty("parameters",p);clearModelingView();const auto result=service->modelingCommand(modelingKind,a);
             if(!(bool)result["ok"]){showModelingSources();showError(result["error"].toString());return;}id=result["id"].toString();refreshFromDocument(true);selectFeature(id);setMessage("Modeling feature applied.",0);return;
         }
+        case Task::gearPair:
+        {
+            const auto request=readGearPairForm(e);if(e.isNotEmpty()){showError(e);return;}
+            auto* a=new juce::DynamicObject();a->setProperty("action",editingGearPairId.isEmpty()?"create":"update");a->setProperty("id",editingGearPairId);a->setProperty("parameters",request);
+            clearGearPairView();const auto result=service->gearPairCommand(juce::var(a));
+            if(!(bool)result["ok"]){showError(result["error"].toString());return;}
+            id=result["gearA"].toString();refreshFromDocument(true);selectFeature(id);
+            setMessage("Gear pair applied: centre distance "+juce::String((double)result["plan"]["centreDistance"],4)+" mm, ratio "+juce::String((double)result["plan"]["ratio"],6)+".",0);return;
+        }
         case Task::replication:
         {
             auto p=readReplicationForm(e);if(e.isNotEmpty()){showError(e);return;}auto* a=new juce::DynamicObject();a->setProperty("action",editingReplicationId.isEmpty()?"create":"update");a->setProperty("id",editingReplicationId);a->setProperty("parameters",p);clearReplicationView();const auto r=service->replicationCommand(replicationKind,a);
@@ -3243,7 +3394,7 @@ void CadWorkspacePanel::acceptTask()
 
 void CadWorkspacePanel::cancelTask()
 {
-    clearLatheView();clearModelingView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
+    clearLatheView();clearModelingView();clearGearPairView();clearReplicationView();clearHoleSource();clearChamferPreview(false);
     if (task == Task::fillet || task == Task::chamfer)
     {
         filletEdges.clear();
@@ -4450,6 +4601,7 @@ bool CadWorkspacePanel::executeUiCommand(const juce::String& command)
         if (selection != nullptr) selection->setTool(command == "pointer" ? djehuti::cad::CadSelection::Tool::pointer : command == "boxSelect" ? djehuti::cad::CadSelection::Tool::box : command=="multipleSelect"?djehuti::cad::CadSelection::Tool::multiple:djehuti::cad::CadSelection::Tool::circle);
         return true;
     }
+    if(command=="gearPair"){startTask(Task::gearPair);return true;}
     if(djehuti::cad::isModelingType(command)){startTask(Task::modeling,command);return true;}
     if(djehuti::cad::isReplicationType(command)){startTask(Task::replication,command);return true;}
     if (command == "materials") { showMaterialsManager(); return true; }
@@ -4474,7 +4626,7 @@ bool CadWorkspacePanel::uiCommandEnabled(const juce::String& command) const
     if(command=="deleteSketchEntities")return sketch&&sketchEntityId.isNotEmpty();
     if(command=="dockSketchToolbox"||command=="references")return sketch;
     if(juce::StringArray{"extrude","revolve","lathe","cut","fillet","chamfer","hole","subtract","union","intersect"}.contains(command))return !sketch;
-    if(djehuti::cad::isModelingType(command)||djehuti::cad::isReplicationType(command))return !sketch;
+    if(command=="gearPair"||djehuti::cad::isModelingType(command)||djehuti::cad::isReplicationType(command))return !sketch;
     if (juce::StringArray{"sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch"}.contains(command)) return sketch;
     if (juce::StringArray{"bodyMode","faceMode","edgeMode","pointer","boxSelect","circleSelect","multipleSelect","selectAll","clearSelection","focusSelected","orbitSelected","flyMode","orbitPoint","interference","materials"}.contains(command)) return !sketch;
     if (command == "clearInterference") return interferenceActive;
@@ -4492,6 +4644,7 @@ bool CadWorkspacePanel::uiToolActive(const juce::String& command) const
         if(command=="pointer"||command=="boxSelect"||command=="circleSelect"||command=="multipleSelect")return selection->tool()==(command=="pointer"?djehuti::cad::CadSelection::Tool::pointer:command=="boxSelect"?djehuti::cad::CadSelection::Tool::box:command=="circleSelect"?djehuti::cad::CadSelection::Tool::circle:djehuti::cad::CadSelection::Tool::multiple);
         if(command=="bodyMode"||command=="faceMode"||command=="edgeMode")return selection->mode()==(command=="bodyMode"?djehuti::cad::CadSelection::Mode::body:command=="faceMode"?djehuti::cad::CadSelection::Mode::face:djehuti::cad::CadSelection::Mode::edge);
     }
+    if(command=="gearPair")return task==Task::gearPair;
     if(djehuti::cad::isModelingType(command))return task==Task::modeling&&modelingKind==command;
     if(djehuti::cad::isReplicationType(command))return task==Task::replication&&replicationKind==command;
     if (editingSketchId.isNotEmpty()) return command == (sketchCanvas->tool() == "select" ? juce::String("sketchSelect") : sketchCanvas->tool());
@@ -4557,7 +4710,7 @@ juce::var CadWorkspacePanel::automationState()
                                             : isParentOf(focused) ? juce::String("inside cadWorkspace: ") + typeid(*focused).name() : juce::String("outside cadWorkspace: ") + typeid(*focused).name());
     }
     juce::Array<juce::var> commands;
-    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox","selectionToolbox","dockSelectionToolbox","selectAll","clearSelection","multipleSelect","focusSelected","flyMode","orbitPoint","showAllSketches","hideAllSketches","modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"})
+    for (const auto& name : juce::StringArray{"undo","redo","sketch","box","cylinder","extrude","revolve","lathe","chamfer","hole","mirror","linearPattern","circularPattern","sweep","loft","mill","gear","gearPair","surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken","cut","subtract","union","intersect","sketchSelect","line","rectangle","circle","curve","constrain","fitSketch","finishSketch","instance","joint","coupling","link","ik","fit","reset","views","pointer","boxSelect","circleSelect","bodyMode","faceMode","edgeMode","interference","clearInterference","materials","deleteSketchEntities","sketchToolbox","dockSketchToolbox","selectionToolbox","dockSelectionToolbox","selectAll","clearSelection","multipleSelect","focusSelected","flyMode","orbitPoint","showAllSketches","hideAllSketches","modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"})
     { auto* c = new juce::DynamicObject(); c->setProperty("name", name); c->setProperty("enabled", uiCommandEnabled(name)); c->setProperty("active", uiToolActive(name)); commands.add(c); }
     state->setProperty("commands", commands);
     juce::Array<juce::var> features;

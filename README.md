@@ -34,6 +34,10 @@ structured APIs, FRust hosts, CAD nodes and [version 13 interchange](docs/ADVANC
 The [Order 4 completion report](docs/PROFESSIONAL_MODELING_ORDER4.md) records
 verification and current limitations.
 
+[Gears](docs/GEARS.md) generates editable involute spur gears as real solids and
+compatible spur pairs (centre distance, phase, joints and the existing gear
+coupling) through Create > Gear / Gear Pair, `cad_gear` and `cad_gear_pair`.
+
 [Surface modeling](docs/SURFACE_MODELING.md) provides planar, extruded, revolved,
 swept and lofted surfaces, region trimming, eligible U/V boundary extension,
 shell sewing, separate solidification, and positive/negative/symmetric thickening.

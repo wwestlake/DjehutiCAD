@@ -71,7 +71,7 @@ private:
     void saveWithCompletion(bool saveAs,djehuti::cad::saveprotection::Completion);
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, gearPair, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     friend bool runWorkspaceNavigationCheck(juce::var&);
     friend class CadMainToolbarCheck;
     friend bool runSketchToolboxCheck(juce::var&);
@@ -240,6 +240,17 @@ private:
     void clearModelingView();
     void showModelingSources();
     void defaultMillFace(const juce::String& target);
+    // Gear tools: a single gear uses Task::modeling ("gear"); a matched pair uses Task::gearPair.
+    juce::String editingGearPairId;
+    juce::var gearPairSettings;
+    bool gearPairPreviewActive=false;
+    std::uint64_t gearPairRevision=0;
+    void addGearFields();
+    juce::String gearDerivedText(const juce::var& parameters) const;
+    void addGearPairFields();
+    juce::var readGearPairForm(juce::String& error) const;
+    void previewGearPair();
+    void clearGearPairView();
     juce::String replicationKind, editingReplicationId, replicationPick="sources";
     juce::var replicationSettings;
     bool replicationPreviewActive=false, replicationSourcesActive=false;

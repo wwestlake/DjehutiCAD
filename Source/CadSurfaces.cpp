@@ -107,7 +107,7 @@ void track(Operation& operation,const TopoDS_Shape& source,const CadFaceOrigins&
 
 juce::String modelingLabel(const juce::String& type)
 {
-    if(type=="sweep")return "Sweep";if(type=="loft")return "Loft";if(type=="mill")return "Virtual Router / Mill";
+    if(type=="gear")return "Gear";    if(type=="sweep")return "Sweep";if(type=="loft")return "Loft";if(type=="mill")return "Virtual Router / Mill";
     if(type=="surface")return "Surface";if(type=="surface_trim")return "Trim Surface";if(type=="surface_extend")return "Extend Surface";
     if(type=="surface_sew")return "Sew Surfaces";if(type=="surface_solidify")return "Solidify Shell";return "Thicken Surface";
 }

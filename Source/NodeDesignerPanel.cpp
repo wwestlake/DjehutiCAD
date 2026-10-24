@@ -2166,6 +2166,8 @@ std::vector<NodeDesignerPanel::NodeTemplate> NodeDesignerPanel::buildTemplates()
         { "cad_surface_thicken", "Thicken Surface", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_sweep", "Sweep", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_loft", "Loft", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_gear", "Gear", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
+        { "cad_gear_pair", "Gear Pair", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_mill", "Virtual Router / Mill", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_mirror", "Mirror", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },
         { "cad_linear_pattern", "Linear Pattern", "CAD", juce::Colour(0xff4b8fc8), 0, { in("args json", "string") }, { out("result", "string") } },

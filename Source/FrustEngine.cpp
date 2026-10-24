@@ -415,6 +415,24 @@ extern "C" const char* djehuti_cad_loft(const char* argsJson)
     }
     setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
 }
+extern "C" const char* djehuti_cad_gear(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->gearCommand(juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_gear_pair(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->gearPairCommand(juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
 extern "C" const char* djehuti_cad_mill(const char* argsJson)
 {
     if(auto service=activeCadService())
@@ -568,6 +586,8 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_sweep", reinterpret_cast<void*>(&djehuti_cad_sweep));
         frust_plugin_register_host_function("djehuti_cad_loft", reinterpret_cast<void*>(&djehuti_cad_loft));
         frust_plugin_register_host_function("djehuti_cad_mill", reinterpret_cast<void*>(&djehuti_cad_mill));
+        frust_plugin_register_host_function("djehuti_cad_gear", reinterpret_cast<void*>(&djehuti_cad_gear));
+        frust_plugin_register_host_function("djehuti_cad_gear_pair", reinterpret_cast<void*>(&djehuti_cad_gear_pair));
         frust_plugin_register_host_function("djehuti_cad_mirror", reinterpret_cast<void*>(&djehuti_cad_mirror));
         frust_plugin_register_host_function("djehuti_cad_linear_pattern", reinterpret_cast<void*>(&djehuti_cad_linear_pattern));
         frust_plugin_register_host_function("djehuti_cad_circular_pattern", reinterpret_cast<void*>(&djehuti_cad_circular_pattern));
@@ -878,6 +898,8 @@ std::string cadPrelude()
            "extern fn djehuti_cad_sweep(args_json: String) -> String;\n"
            "extern fn djehuti_cad_loft(args_json: String) -> String;\n"
            "extern fn djehuti_cad_mill(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_gear(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_gear_pair(args_json: String) -> String;\n"
            "extern fn djehuti_cad_mirror(args_json: String) -> String;\n"
            "extern fn djehuti_cad_linear_pattern(args_json: String) -> String;\n"
            "extern fn djehuti_cad_circular_pattern(args_json: String) -> String;\n"

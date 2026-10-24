@@ -106,6 +106,10 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadSurfaceChecks.cpp
     Source/CadModeling.cpp
     Source/CadModelingChecks.cpp
+    Source/CadGear.h
+    Source/CadGear.cpp
+    Source/CadGearCommands.cpp
+    Source/CadGearChecks.cpp
     Source/CadReplication.cpp
     Source/CadReplicationChecks.cpp
     Source/CadHole.cpp

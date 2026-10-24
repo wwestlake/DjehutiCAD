@@ -153,6 +153,11 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
+        if(name=="cad_gear"||name=="cad_gear_pair")
+        {
+            auto result=name=="cad_gear"?safeThis->cadService->gearCommand(parsedArgs):safeThis->cadService->gearPairCommand(parsedArgs);
+            return juce::JSON::toString(result,false,17).toStdString();
+        }
         if(name=="cad_sweep"||name=="cad_loft"||name=="cad_mill"||djehuti::cad::isSurfaceType(juce::String(name).substring(4)))
         {
             const juce::String type=juce::String(name).substring(4);
