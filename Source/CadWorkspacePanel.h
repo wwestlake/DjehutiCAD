@@ -114,6 +114,7 @@ private:
     juce::PopupMenu::Options sketchEntityMenuOptions(juce::Point<int> screenPosition);
     void syncLineProperties(bool polar);
     bool lineAnglesInRadians = false;
+    bool lineClickAndDrag = false;
     void updateFloatingTools();
     void symmetryOperation(const juce::var&);
     bool pickingSymmetryCentre=false;

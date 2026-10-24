@@ -14,7 +14,7 @@ public:
         setName(selectionTools?"Selection toolbox":"Sketch toolbox"); setTitle(getName());
         const std::pair<const char*,const char*> specs[]{
             {"sketchSelect","Select geometry (Esc returns to Select; Shift-click selects a second entity)"},
-            {"line","Line: drag between endpoints"},{"rectangle","Rectangle: drag between opposite corners"},
+            {"line","Line: click connected endpoints; Enter/Esc ends. Drag mode is available in Line input."},{"rectangle","Rectangle: drag between opposite corners"},
             {"circle","Circle: drag from centre to radius"},{"curve","Bezier curve: drag endpoints, then edit handles"},
             {"constrain","Constrain selected geometry"},{"deleteSketchEntities","Delete selected sketch entities (Delete; Undo restores them)"},
             {"fitSketch","Fit all sketch geometry"},{"finishSketch","Finish sketch and keep completed geometry"}};

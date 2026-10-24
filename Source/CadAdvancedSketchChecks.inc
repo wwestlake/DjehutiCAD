@@ -96,6 +96,7 @@ bool runAdvancedSketchCheck(juce::var& report)
     panel.sketchCanvas->mouseDown(event(centre,juce::ModifierKeys::leftButtonModifier,centre));panel.sketchCanvas->mouseDrag(event(anglePoint,juce::ModifierKeys::leftButtonModifier,centre));panel.sketchCanvas->mouseUp(event(anglePoint,0,centre));
     check(service->document().revision()==beforeRotation+1,"Interactive group rotation commits once on drag release");
     check(service->undo(error),"Interactive rotation undoes as a group");
+    panel.lineClickAndDrag=true; // These gestures explicitly validate the optional legacy drag interaction.
     panel.setSketchTool("line");panel.handleSketchKey(juce::KeyPress('h'));auto a=panel.sketchCanvas->toPoint(-30,-30),b=panel.sketchCanvas->toPoint(-10,-12);
     panel.sketchCanvas->mouseDown(event(a,juce::ModifierKeys::leftButtonModifier,a));panel.sketchCanvas->mouseDrag(event(b,juce::ModifierKeys::leftButtonModifier,a));panel.sketchCanvas->mouseUp(event(b,0,a));
     auto drawn=service->document().findSketch(sketch)->entities.back();check(approximately(drawn.y1,drawn.y2),"H drawing shortcut produces exact horizontal line");

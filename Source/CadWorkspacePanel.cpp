@@ -543,6 +543,20 @@ public:
             if (hoverRef.isNotEmpty() && !e.mods.isShiftDown()) { pointDragActive = true; dragMoved = false; dragRef = hoverRef; dragPress = e.position; dragTo = hoverPoint; }
             return;
         }
+        if (mode == "line" && !owner.lineClickAndDrag && gestureActive)
+        {
+            updateLinePreview(e);
+            if ((toPoint(current.x,current.y)-toPoint(start.x,start.y)).getDistanceFromOrigin()<3.0f) return;
+            const auto endpoint=current;
+            juce::String error;
+            if(commitDrawing(endpoint.x,endpoint.y,snapTarget,error))
+            {
+                // Document refresh may reset transient state. Chain from the exact committed endpoint.
+                start=current=endpoint;gestureActive=true;startConnection.clear();snapTarget.clear();
+                directionDegrees=std::numeric_limits<double>::quiet_NaN();
+            }
+            repaint();return;
+        }
         gestureActive = true; start = current = fromPoint(e.position); startConnection.clear(); snapTarget.clear();
         if (snapsEnds()) { const auto snap = nearestSnap(start); start = current = snap.point; startConnection = snap.target; snapTarget = snap.target; snapPoint = snap.point; }
         repaint();
@@ -596,6 +610,7 @@ public:
             owner.selectSketchEntity(hit, e.mods.isShiftDown() && hit.isNotEmpty());
             return;
         }
+        if (mode=="line" && !owner.lineClickAndDrag) return;
         if (!gestureActive) return;
         gestureActive = false;
         const auto endSnap = snapsEnds() ? nearestSnap(fromPoint(e.position)) : Snap { fromPoint(e.position), {} };
@@ -645,7 +660,16 @@ public:
         auto* o = new juce::DynamicObject(); o->setProperty("active", gestureActive); o->setProperty("tool", mode);
         o->setProperty("startX", start.x); o->setProperty("startY", start.y); o->setProperty("x", current.x); o->setProperty("y", current.y);o->setProperty("snap",lastSnap.state());o->setProperty("pixelsPerMm",scale);o->setProperty("gridStep",gridStep()); return o;
     }
-    void mouseMove(const juce::MouseEvent& e) override { updateHover(e.position); updateCursor(e.position); }
+    void updateLinePreview(const juce::MouseEvent& e)
+    {
+        const auto snap=nearestSnap(fromPoint(e.position));
+        current=constrainDrawing(start,snap.point,e.mods);snapTarget=snap.target;snapPoint=current;repaint();
+    }
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        updateHover(e.position);updateCursor(e.position);
+        if(mode=="line" && !owner.lineClickAndDrag && gestureActive && !panning) updateLinePreview(e);
+    }
     void mouseExit(const juce::MouseEvent&) override { hasCursor = false; hoverRef.clear(); repaint(); }
     // Double-click on a line (Select tool) inserts a vertex there.
     void mouseDoubleClick(const juce::MouseEvent& e) override
@@ -864,7 +888,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
                               ToolSpec { &undoButton, "Undo the last modeling command." }, ToolSpec { &redoButton, "Redo the last undone modeling command." },
                               ToolSpec { &fitButton, "Frame all visible bodies in the model view." }, ToolSpec { &resetViewButton, "Return the model view to the default orientation." },
                               ToolSpec { &viewsButton, "Open the multi-view 3D Views workspace." }, ToolSpec { &selectToolButton, "Select sketch entities. Shift-click adds or removes entities." },
-                              ToolSpec { &lineButton, "Draw lines: drag from start to end. Endpoints snap to existing line ends." }, ToolSpec { &rectangleButton, "Draw rectangles: drag from corner to corner." },
+                              ToolSpec { &lineButton, "Draw connected lines with clicks (default), or choose click-and-drag in Line input. Enter/Esc ends a sequence." }, ToolSpec { &rectangleButton, "Draw rectangles: drag from corner to corner." },
                               ToolSpec { &circleButton, "Draw circles: drag from the centre outwards." }, ToolSpec { &curveButton, "Draw a cubic Bezier curve: drag from start to end, then drag its square handles to shape it." }, ToolSpec { &constrainButton, "Add a constraint to the selected sketch entity." },
                               ToolSpec { &fitSketchButton, "Frame the whole sketch in the canvas." },
                               ToolSpec { &instanceButton, "Create an assembly instance of a solid body so it can move." },
@@ -1312,6 +1336,12 @@ bool CadWorkspacePanel::handleSketchKey(const juce::KeyPress& key)
     if(editingSketchId.isEmpty())return false;
     if(sketchCanvas->editKey(key))return true;
     if(key==juce::KeyPress::escapeKey)return sketchCanvas->escape();
+    if(key==juce::KeyPress::returnKey && sketchCanvas->tool()=="line" && sketchCanvas->hasActiveGesture())
+    {
+        auto* focus=juce::Component::getCurrentlyFocusedComponent();
+        if(focus&&(dynamic_cast<juce::TextEditor*>(focus)||focus->findParentComponentOfClass<juce::TextEditor>()))return false;
+        sketchCanvas->cancelGesture();setMessage("Line sequence finished. Click to start another, or choose Select.",0);return true;
+    }
     if(key.getKeyCode()!=juce::KeyPress::deleteKey||key.getModifiers().isAnyModifierKeyDown())return false;
     auto* focus=juce::Component::getCurrentlyFocusedComponent();
     if(focus!=nullptr&&(dynamic_cast<juce::TextEditor*>(focus)!=nullptr||focus->findParentComponentOfClass<juce::TextEditor>()!=nullptr))return false;
@@ -1324,6 +1354,7 @@ juce::String CadWorkspacePanel::viewState() const
     auto state=modelView.viewState();state.getDynamicObject()->setProperty("sketchToolbox",sketchPalette->state());state.getDynamicObject()->setProperty("selectionToolbox",selectionPalette->state());state.getDynamicObject()->setProperty("modelSelectionToolbox",modelSelectionPalette->state());
     state.getDynamicObject()->setProperty("modifyToolbar",modifyPalette->state());state.getDynamicObject()->setProperty("snapToolbar",snapPalette->state());
     state.getDynamicObject()->setProperty("snapping",snapPreferences->state());state.getDynamicObject()->setProperty("references",const_cast<CadWorkspacePanel*>(this)->referenceState());state.getDynamicObject()->setProperty("referenceDocuments",referenceDocuments);
+    state.getDynamicObject()->setProperty("sketchLineClickAndDrag",lineClickAndDrag);
     state.getDynamicObject()->setProperty("sketchLineAngleUnit",lineAnglesInRadians?"radians":"degrees");return juce::JSON::toString(state);
 }
 void CadWorkspacePanel::restoreViewState(const juce::String& json)
@@ -1337,6 +1368,7 @@ void CadWorkspacePanel::restoreViewState(const juce::String& json)
     if(state["referenceDocuments"].isObject())referenceDocuments=state["referenceDocuments"];
     if(state["references"].isObject()){auto prefs=state["references"].clone();prefs.getDynamicObject()->removeProperty("sources");prefs.getDynamicObject()->removeProperty("selected");configureReferences(prefs,ignored);}
     updateFloatingTools();resized();
+    lineClickAndDrag=(bool)state.getProperty("sketchLineClickAndDrag",false);
     lineAnglesInRadians=state["sketchLineAngleUnit"].toString()=="radians";
 }
 
@@ -2525,11 +2557,17 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             const auto plane = sketch != nullptr ? (sketch->onFace() ? juce::String("UV") : sketch->plane) : juce::String("XY");
             const djehuti::cad::CadSketchEntity* entity = nullptr;
             if (sketch != nullptr) for (const auto& e : sketch->entities) if (e.id == sketchEntityId) entity = &e;
+            const auto tool = sketchCanvas->tool();
+            if(tool=="line")
+            {
+                auto& interaction=form->addChoice("lineInteraction","Line input",{"Click-click (connected)","Click-and-drag"},lineClickAndDrag?1:0,"Remembered across sessions. Enter or Esc ends a connected line sequence without adding geometry.");
+                interaction.onChange=[this]{lineClickAndDrag=form->choice("lineInteraction")==1;sketchCanvas->cancelGesture();};
+                form->addButton("finishLineSequence","End line sequence (Enter)",[this]{sketchCanvas->cancelGesture();setMessage("Line sequence finished. Click to start another.",0);},"Keep completed segments and the Line tool; discard only the uncommitted preview.");
+            }
             if (entity == nullptr)
             {
-                const auto tool = sketchCanvas->tool();
                 title = featureName(editingSketchId) + "  |  " + (sketch != nullptr && sketch->onFace() ? "on " + supportText(*sketch) : plane + " plane");
-                instruction = tool == "line" ? "Line: drag from start to end. Ends snap to existing line ends (a ring shows the snap). Esc cancels the gesture."
+                instruction = tool == "line" ? (lineClickAndDrag ? "Line: drag from start to end. Ends snap to existing geometry. Esc cancels." : "Line: click the start, then click connected endpoints. Move freely to preview. Enter or Esc ends the sequence.")
                             : tool == "rectangle" ? "Rectangle: drag from one corner to the opposite corner. Esc cancels the gesture."
                             : tool == "circle" ? "Circle: drag from the centre outwards. Esc cancels the gesture."
                             : tool == "curve" ? "Curve: drag from start to end (ends snap like lines). Then, with Select, drag its square handles to shape it."
@@ -4784,6 +4822,42 @@ bool runSketchUsabilityCheck(juce::var& report)
     check(!panel.entityTreeItems.at(sketch+"/"+first)->getParentItem()->isOpen(),"Tree collapse survives a document refresh");
     const auto event=[&](juce::Component& component,juce::Point<float> position,int mods,juce::Point<float> down=juce::Point<float>())
     {return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),position,juce::ModifierKeys(mods),1,0,0,0,0,&component,&component,juce::Time::getCurrentTime(),down,juce::Time::getCurrentTime(),1,true);};
+    {
+        auto lines=std::make_shared<CadCommandService>();CadWorkspacePanel drawing(lines);drawing.setSize(1400,850);
+        juce::String id;lines->createSketch("XY",0,id,error);drawing.refreshFromDocument(true);drawing.enterSketch(id);drawing.setSketchTool("line");
+        auto& canvas=*drawing.sketchCanvas;
+        const auto count=[&]{return lines->document().findSketch(id)->entities.size();};
+        const auto click=[&](double x,double y){const auto p=canvas.toPoint(x,y);canvas.mouseDown(event(canvas,p,juce::ModifierKeys::leftButtonModifier));canvas.mouseUp(event(canvas,p,0));};
+        const auto move=[&](double x,double y){canvas.mouseMove(event(canvas,canvas.toPoint(x,y),0));};
+        check(!drawing.lineClickAndDrag&&drawing.form->control("lineInteraction"),"Click-click defaults and exposes a Sketch line preference");
+        click(0,0);check(count()==0&&canvas.hasActiveGesture(),"First click and release starts preview without geometry");
+        move(20,0);check(std::abs((double)canvas.gestureState()["x"]-20)<0.01&&count()==0,"Unpressed mouse movement updates snapped live preview");
+        click(20,0);check(count()==1&&canvas.hasActiveGesture()&&canvas.tool()=="line","Second click commits once and continues line tool");
+        click(20,20);click(0,20);click(0,0);
+        const auto entities=lines->document().findSketch(id)->entities;
+        bool joined=entities.size()==4;for(size_t i=1;i<entities.size();++i)joined=joined&&entities[i].x1==entities[i-1].x2&&entities[i].y1==entities[i-1].y2;
+        check(joined&&entities.back().x2==entities.front().x1&&entities.back().y2==entities.front().y1,"Connected clicks create a precisely closed four-segment profile");
+        click(0,0);check(count()==4,"Repeated endpoint click creates no zero length segment");
+        move(-20,10);drawing.handleSketchKey(juce::KeyPress(juce::KeyPress::escapeKey));check(count()==4&&!canvas.hasActiveGesture()&&canvas.tool()=="line","Escape drops only preview and stays in Sketch Line");
+        click(30,30);move(40,40);drawing.handleSketchKey(juce::KeyPress(juce::KeyPress::returnKey));check(count()==4&&!canvas.hasActiveGesture(),"Enter finishes without unintended geometry");
+        check(lines->undo(error)&&count()==3&&lines->redo(error)&&count()==4,"Completed connected segments retain individual undo and redo");drawing.refreshFromDocument(true);
+        const auto saved=folder.getChildFile("connected-lines.djc");CadCommandService reopened;
+        check(lines->save(saved,error)&&reopened.load(saved,error)&&reopened.document().findSketch(id)->entities.size()==4,"Connected profile persists through existing save and load");
+        drawing.setSketchTool("line");auto* choice=dynamic_cast<juce::ComboBox*>(drawing.form->control("lineInteraction"));choice->setSelectedItemIndex(1,juce::sendNotificationSync);
+        check(drawing.lineClickAndDrag&&!canvas.hasActiveGesture(),"Preference control selects drag mode without adding geometry");
+        {CadWorkspacePanel restored(lines);restored.restoreViewState(drawing.viewState());check(restored.lineClickAndDrag,"Drag preference round-trips through session settings");}
+        const auto start=canvas.toPoint(40,40),end=canvas.toPoint(60,40);
+        canvas.mouseDown(event(canvas,start,juce::ModifierKeys::leftButtonModifier));canvas.mouseDrag(event(canvas,end,juce::ModifierKeys::leftButtonModifier,start));check(count()==4,"Drag mode previews before release");canvas.mouseUp(event(canvas,end,0,start));
+        check(count()==5&&!canvas.hasActiveGesture(),"Drag release commits one segment using legacy semantics");click(60,40);check(count()==5,"Stationary drag-mode click creates no geometry");
+        drawing.setSketchTool("line");choice=dynamic_cast<juce::ComboBox*>(drawing.form->control("lineInteraction"));choice->setSelectedItemIndex(0,juce::sendNotificationSync);
+        {CadWorkspacePanel restored(lines);restored.restoreViewState(drawing.viewState());check(!restored.lineClickAndDrag,"Click-click preference round-trips through session settings");}
+        click(70,40);move(80,40);auto* finish=dynamic_cast<juce::TextButton*>(drawing.form->control("finishLineSequence"));finish->onClick();check(count()==5&&!canvas.hasActiveGesture(),"End sequence button keeps completed geometry");
+        click(60.1,40.1);check(std::abs((double)canvas.gestureState()["startX"]-60)<0.01&&std::abs((double)canvas.gestureState()["startY"]-40)<0.01,"Click-click start snaps to an existing endpoint");
+        canvas.mouseMove(event(canvas,canvas.toPoint(80,50),juce::ModifierKeys::shiftModifier));
+        const auto guide=canvas.gestureState();check(std::abs(((double)guide["x"]-60)-((double)guide["y"]-40))<0.01,"Unpressed preview retains Shift direction guide");
+        drawing.handleSketchKey(juce::KeyPress(juce::KeyPress::escapeKey));check(count()==5,"Guide cancellation leaves only committed segments");
+
+    }
     panel.entityTreeItems.at(sketch+"/"+first)->itemClicked(event(panel.tree,{},juce::ModifierKeys::leftButtonModifier));panel.handleUpdateNowIfNeeded();
     check(panel.sketchEntityId==first&&panel.sketchCanvas->tool()=="select"&&panel.entityTreeItems.at(sketch+"/"+first)->getParentItem()->isOpen(),"Tree click selects the entity, expands it and opens the shared properties");
     auto pixel=panel.sketchCanvas->toPoint(0,30);panel.sketchCanvas->mouseDown(event(*panel.sketchCanvas,pixel,juce::ModifierKeys::leftButtonModifier));panel.sketchCanvas->mouseUp(event(*panel.sketchCanvas,pixel,0));panel.handleUpdateNowIfNeeded();
