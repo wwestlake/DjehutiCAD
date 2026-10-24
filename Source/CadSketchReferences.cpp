@@ -2,6 +2,12 @@
 #include <BRep_Tool.hxx>
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <Bnd_Box.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <Geom_Line.hxx>
@@ -71,7 +77,7 @@ void SketchReferenceScene::addCurve(const Handle(Geom_Curve)& world,double first
 }
 void SketchReferenceScene::rebuild(const CadDocument& document,const juce::String& sketchId,const std::vector<ReferenceInput>& sources)
 {
-    active=sketchId;symmetryMode="off";if(const auto* sketch=document.findSketch(active)){symmetryMode=sketch->symmetryMode;symmetryCentre={sketch->symmetryX,sketch->symmetryY};}curves.clear();points.clear();ghosts.clear();CadSketchFrame plane;if(!document.sketchFrame(active,plane))return;
+    active=sketchId;symmetryMode="off";if(const auto* sketch=document.findSketch(active)){symmetryMode=sketch->symmetryMode;symmetryCentre={sketch->symmetryX,sketch->symmetryY};}curves.clear();points.clear();solids.clear();CadSketchFrame plane;if(!document.sketchFrame(active,plane))return;
     const auto addSketch=[&](const juce::String& id,const juce::String& source,bool reference)
     {
         const auto* sketch=document.findSketch(id);CadSketchFrame frame;if(sketch==nullptr||!document.sketchFrame(id,frame))return;
@@ -91,15 +97,27 @@ void SketchReferenceScene::rebuild(const CadDocument& document,const juce::Strin
             }catch(const Standard_Failure&){}
         }
     };
+    const auto clock=[]{return juce::Time::getMillisecondCounterHiRes();};const auto started=clock();double sectionMs=0,edgeMs=0,vertexMs=0,ghostMs=0;int prepared=0,reused=0;
+    std::map<juce::String,std::shared_ptr<const SolidData>> nextCache;
+    const auto exactText=[](double v){return juce::String(v,17);};
+    const auto trsfKey=[&](const gp_Trsf& t){juce::String k;for(int r=1;r<=3;++r)for(int c=1;c<=4;++c)k<<exactText(t.Value(r,c))<<",";return k;};
+    const auto planeKey=exactText(plane.origin.X())+","+exactText(plane.origin.Y())+","+exactText(plane.origin.Z())+"|"+exactText(plane.u.X())+","+exactText(plane.u.Y())+","+exactText(plane.u.Z())+"|"+exactText(plane.v.X())+","+exactText(plane.v.Y())+","+exactText(plane.v.Z());
     addSketch(active,active,false);
-    const auto meshes=document.snapshot(false);
+    std::shared_ptr<const CadRenderSnapshot> meshes;   // fetched only when a solid must be prepared
+    const auto solidKey=[&](const ReferenceInput& source,const CadFeature& feature){return source.id+"|"+juce::String::toHexString((juce::pointer_sized_int)feature.shape.TShape().get())+"|"+trsfKey(feature.shape.Location().Transformation())+"|"+trsfKey(source.transform)+"|"+planeKey;};
+    for(const auto& source:sources)if(source.solid&&!source.visible)   // hidden now: keep prepared data for a quick re-show
+        if(const auto* feature=document.find(source.feature);feature!=nullptr&&!feature->shape.IsNull())if(const auto found=solidCache.find(solidKey(source,*feature));found!=solidCache.end())nextCache.insert(*found);
     for(const auto& source:sources)if(source.visible&&source.id!=active)
     {
         if(!source.solid){addSketch(source.feature,source.id,true);continue;}
         const auto* feature=document.find(source.feature);if(feature==nullptr||feature->shape.IsNull())continue;
+        const auto key=solidKey(source,*feature);
+        if(const auto found=solidCache.find(key);found!=solidCache.end()){solids.push_back(found->second);nextCache[key]=found->second;++reused;continue;}
+        std::vector<Curve> ownCurves;std::vector<Point> ownPoints;std::swap(curves,ownCurves);std::swap(points,ownPoints);
+        auto data=std::make_shared<SolidData>();data->source=feature->shape;
         try
         {
-            const auto shape=BRepBuilderAPI_Transform(feature->shape,source.transform,false).Shape();
+            const auto shape=BRepBuilderAPI_Transform(feature->shape,source.transform,false).Shape();++prepared;auto mark=clock();
             int vertex=0;for(TopExp_Explorer ex(shape,TopAbs_VERTEX);ex.More();ex.Next())addPoint(BRep_Tool::Pnt(TopoDS::Vertex(ex.Current())),plane,source.id,"vertex-"+juce::String(vertex++),"vertex",true);
             const auto edges=[&](const TopoDS_Shape& geometry,bool section)
             {
@@ -109,9 +127,61 @@ void SketchReferenceScene::rebuild(const CadDocument& document,const juce::Strin
                     if(!curve.IsNull())addCurve(Handle(Geom_Curve)::DownCast(curve->Transformed(location.Transformation())),first,last,plane,source.id,(section?"section-":"edge-")+juce::String(index++),true,true,section);
                 }
             };
-            BRepAlgoAPI_Section section(shape,gp_Pln(plane.origin,plane.normal),false);section.Approximation(false);section.Build();if(section.IsDone())
-            {edges(section.Shape(),true);int i=0;for(TopExp_Explorer ex(section.Shape(),TopAbs_VERTEX);ex.More();ex.Next())addPoint(BRep_Tool::Pnt(TopoDS::Vertex(ex.Current())),plane,source.id,"section-vertex-"+juce::String(i++),"vertex",true);}
-            edges(shape,false);
+            vertexMs+=clock()-mark;mark=clock();
+            // Section only the faces that cross the sketch plane. Faces on or touching the plane are already shown by
+            // their own edges; a solid entirely to one side needs no section at all.
+            const gp_Pln cut(plane.origin,plane.normal);const double tolerance=1e-7;
+            const auto straddles=[&](const TopoDS_Shape& s)
+            {
+                Bnd_Box box;BRepBndLib::Add(s,box,false);if(box.IsVoid())return false;double x0,y0,z0,x1,y1,z1;box.Get(x0,y0,z0,x1,y1,z1);double lo=1e300,hi=-1e300;
+                for(double x:{x0,x1})for(double y:{y0,y1})for(double z:{z0,z1}){const double d=gp_Vec(plane.origin,gp_Pnt(x,y,z)).Dot(gp_Vec(plane.normal));lo=std::min(lo,d);hi=std::max(hi,d);}
+                return lo<-tolerance&&hi>tolerance;
+            };
+            // A face swept straight along the sketch normal (extrusion side walls: planes, cylinders and extrusion
+            // surfaces bounded by two profile levels) is cut exactly by its lower profile edges moved onto the plane.
+            const auto distance=[&](const gp_Pnt& p){return gp_Vec(plane.origin,p).Dot(gp_Vec(plane.normal));};
+            const auto prismCut=[&](const TopoDS_Face& face,TopoDS_Compound& out,BRep_Builder& builder)
+            {
+                BRepAdaptor_Surface surface(face,false);bool swept=false;
+                switch(surface.GetType())
+                {
+                    case GeomAbs_Plane:swept=std::abs(surface.Plane().Axis().Direction().Dot(plane.normal))<1e-9;break;
+                    case GeomAbs_Cylinder:swept=std::abs(surface.Cylinder().Axis().Direction().Dot(plane.normal))>1-1e-9;break;
+                    case GeomAbs_SurfaceOfExtrusion:swept=std::abs(surface.Direction().Dot(plane.normal))>1-1e-9;break;
+                    default:break;
+                }
+                if(!swept)return false;
+                std::vector<std::pair<double,TopoDS_Edge>> profiles;
+                for(TopExp_Explorer ex(face,TopAbs_EDGE);ex.More();ex.Next())
+                {
+                    const auto edge=TopoDS::Edge(ex.Current());BRepAdaptor_Curve curve(edge);const double a=curve.FirstParameter(),b=curve.LastParameter();
+                    const double d0=distance(curve.Value(a)),d1=distance(curve.Value(.5*(a+b))),d2=distance(curve.Value(b));
+                    if(std::abs(d0-d1)<tolerance&&std::abs(d0-d2)<tolerance){profiles.push_back({d0,edge});continue;}
+                    if(curve.GetType()==GeomAbs_Line&&std::abs(curve.Line().Direction().Dot(plane.normal))>1-1e-9)continue;   // a straight wall edge
+                    return false;
+                }
+                double low=1e300,high=-1e300;for(const auto& p:profiles){low=std::min(low,p.first);high=std::max(high,p.first);}
+                if(profiles.empty()||!(low<-tolerance&&high>tolerance))return false;
+                for(const auto& p:profiles)if(std::abs(p.first-low)>=tolerance&&std::abs(p.first-high)>=tolerance)return false;   // exactly two profile levels
+                gp_Trsf drop;drop.SetTranslation(gp_Vec(plane.normal)*-low);
+                for(const auto& p:profiles)if(std::abs(p.first-low)<tolerance)builder.Add(out,BRepBuilderAPI_Transform(p.second,drop,true).Shape());
+                return true;
+            };
+            if(straddles(shape))
+            {
+                TopoDS_Compound crossing,swept;BRep_Builder builder;builder.MakeCompound(crossing);builder.MakeCompound(swept);int count=0,sweptCount=0;
+                for(TopExp_Explorer ex(shape,TopAbs_FACE);ex.More();ex.Next())if(straddles(ex.Current()))
+                {if(prismCut(TopoDS::Face(ex.Current()),swept,builder))++sweptCount;else{builder.Add(crossing,ex.Current());++count;}}
+                if(sweptCount>0){edges(swept,true);int i=0;for(TopExp_Explorer ex(swept,TopAbs_VERTEX);ex.More();ex.Next())addPoint(BRep_Tool::Pnt(TopoDS::Vertex(ex.Current())),plane,source.id,"section-wall-vertex-"+juce::String(i++),"vertex",true);}
+                if(count>0)
+                {
+                    BRepAlgoAPI_Section section(crossing,cut,false);section.SetRunParallel(true);section.Approximation(false);section.Build();if(section.IsDone())
+                    {edges(section.Shape(),true);int i=0;for(TopExp_Explorer ex(section.Shape(),TopAbs_VERTEX);ex.More();ex.Next())addPoint(BRep_Tool::Pnt(TopoDS::Vertex(ex.Current())),plane,source.id,"section-vertex-"+juce::String(i++),"vertex",true);}
+                }
+            }
+            sectionMs+=clock()-mark;mark=clock();
+            edges(shape,false);edgeMs+=clock()-mark;mark=clock();
+            if(meshes==nullptr)meshes=document.snapshot(false);
             Ghost ghost;ghost.source=source.id;ghost.fill.setUsingNonZeroWinding(true);
             for(const auto& mesh:meshes->meshes)if(mesh.featureId==source.feature)for(size_t i=0;i+2<mesh.indices.size();i+=3)
             {
@@ -119,9 +189,13 @@ void SketchReferenceScene::rebuild(const CadDocument& document,const juce::Strin
                 const auto area=(p[1].x-p[0].x)*(p[2].y-p[0].y)-(p[1].y-p[0].y)*(p[2].x-p[0].x);if(std::abs(area)<1e-12)continue;if(area<0)std::swap(p[1],p[2]);
                 ghost.fill.startNewSubPath((float)p[0].x,(float)p[0].y);ghost.fill.lineTo((float)p[1].x,(float)p[1].y);ghost.fill.lineTo((float)p[2].x,(float)p[2].y);ghost.fill.closeSubPath();
             }
-            ghosts.push_back(std::move(ghost));
+            data->ghost=std::move(ghost);ghostMs+=clock()-mark;
         }catch(const Standard_Failure&){}
+        data->curves=std::move(curves);data->points=std::move(points);std::swap(curves,ownCurves);std::swap(points,ownPoints);
+        solids.push_back(data);nextCache[key]=data;++solidPreparations;
     }
+    solidCache=std::move(nextCache);   // current sources only: deleted, regenerated or moved solids drop out
+    ++rebuilds;auto* t=new juce::DynamicObject();t->setProperty("totalMs",clock()-started);t->setProperty("sectionMs",sectionMs);t->setProperty("edgeMs",edgeMs);t->setProperty("vertexMs",vertexMs);t->setProperty("ghostMs",ghostMs);t->setProperty("prepared",prepared);t->setProperty("reused",reused);timing=t;
 }
 juce::Point<double> SketchReferenceScene::closest(const Curve& curve,juce::Point<double> p)
 {
@@ -133,11 +207,11 @@ SnapHit SketchReferenceScene::snap(juce::Point<double> raw,double scale,double g
     SnapHit hit;hit.point=raw;if(!preferences.enabled||scale<=0)return hit;const auto tolerance=8.0/scale;int priority=100;double best=tolerance;
     const auto offer=[&](juce::Point<double> p,const juce::String& type,const juce::String& source,const juce::String& entity,bool reference,int rank)
     {const auto distance=raw.getDistanceFrom(p);if(distance>tolerance+1e-12||rank>priority||(rank==priority&&distance>=best-1e-12))return;priority=rank;best=distance;hit={true,reference,p,type,source,entity};};
-    for(const auto& p:points)if((!p.reference||references)&&!(p.source==active&&excluded.isNotEmpty()&&(p.entity==excluded||p.entity.contains("_"+excluded+"_"))))
-    {const int mode=p.type=="vertex"?1:p.type=="center"?4:3;if(preferences.modes[(size_t)mode])offer(p.position,p.type,p.source,p.entity,p.reference,p.type=="vertex"?0:p.type=="center"?2:3);}
+    eachPoint([&](const Point& p){if((!p.reference||references)&&!(p.source==active&&excluded.isNotEmpty()&&(p.entity==excluded||p.entity.contains("_"+excluded+"_"))))
+    {const int mode=p.type=="vertex"?1:p.type=="center"?4:3;if(preferences.modes[(size_t)mode])offer(p.position,p.type,p.source,p.entity,p.reference,p.type=="vertex"?0:p.type=="center"?2:3);}});
     std::vector<const Curve*> nearby;
-    for(const auto& c:curves)if((!c.reference||references)&&!(c.source==active&&excluded.isNotEmpty()&&(c.entity==excluded||c.entity.contains("_"+excluded+"_"))))
-    {if(!c.bounds.isEmpty()&&!c.bounds.expanded(tolerance+1e-6).contains(raw))continue;const auto p=closest(c,raw);if(raw.getDistanceFrom(p)<=tolerance){nearby.push_back(&c);if(preferences.modes[2])offer(p,"edge",c.source,c.entity,c.reference,4);}}
+    eachCurve([&](const Curve& c){if((!c.reference||references)&&!(c.source==active&&excluded.isNotEmpty()&&(c.entity==excluded||c.entity.contains("_"+excluded+"_"))))
+    {if(!c.bounds.isEmpty()&&!c.bounds.expanded(tolerance+1e-6).contains(raw))return;const auto p=closest(c,raw);if(raw.getDistanceFrom(p)<=tolerance){nearby.push_back(&c);if(preferences.modes[2])offer(p,"edge",c.source,c.entity,c.reference,4);}}});
     if(preferences.modes[5]&&priority>0)for(size_t i=0;i<nearby.size();++i)for(size_t j=i+1;j<nearby.size();++j)
     {
         try
@@ -155,7 +229,7 @@ SnapHit SketchReferenceScene::snap(juce::Point<double> raw,double scale,double g
     return hit;
 }
 juce::String SketchReferenceScene::referenceAt(juce::Point<double> point,double tolerance) const
-{juce::String id;double best=tolerance;for(const auto& c:curves)if(c.reference){const auto distance=closest(c,point).getDistanceFrom(point);if(distance<best){best=distance;id=c.source;}}return id;}
+{juce::String id;double best=tolerance;eachCurve([&](const Curve& c){if(c.reference){const auto distance=closest(c,point).getDistanceFrom(point);if(distance<best){best=distance;id=c.source;}}});return id;}
 void SketchReferenceScene::buildPath(const Curve& c,double scale)
 {
     if(c.pathScale>0&&scale/c.pathScale>.8&&scale/c.pathScale<1.25)return;c.path.clear();c.pathScale=scale;
@@ -172,19 +246,20 @@ void SketchReferenceScene::buildPath(const Curve& c,double scale)
 }
 void SketchReferenceScene::paint(juce::Graphics& g,const juce::AffineTransform& transform,double scale,float opacity,const juce::String& selected,const SnapHit& highlight) const
 {
-    for(const auto& ghost:ghosts){g.setColour(juce::Colour(0xff8194b0).withAlpha(opacity*(selected==ghost.source?.35f:.16f)));g.fillPath(ghost.fill,transform);}
-    for(const auto& c:curves)
+    for(const auto& solid:solids){const auto& ghost=solid->ghost;g.setColour(juce::Colour(0xff8194b0).withAlpha(opacity*(selected==ghost.source?.35f:.16f)));g.fillPath(ghost.fill,transform);}
+    eachCurve([&](const Curve& c)
     {
         const bool hovered=highlight.found&&highlight.source==c.source&&highlight.entity==c.entity;
-        if(!c.reference&&!hovered)continue;buildPath(c,scale);auto path=c.path;path.applyTransform(transform);
+        if(!c.reference&&!hovered)return;buildPath(c,scale);auto path=c.path;path.applyTransform(transform);
         const bool chosen=selected==c.source;g.setColour((hovered?juce::Colour(0xffffda72):chosen?juce::Colour(0xff75d9ff):c.solid?juce::Colour(0xffa6adc8):juce::Colour(0xff72b8cf)).withAlpha(hovered||chosen?.95f:opacity*(c.section?1.0f:.65f)));
         if(c.reference&&!c.solid&&!chosen&&!hovered){const float dash[]{5,4};juce::Path dashed;juce::PathStrokeType(1).createDashedStroke(dashed,path,dash,2);g.fillPath(dashed);}else g.strokePath(path,juce::PathStrokeType(hovered||chosen?2.f:c.section?1.4f:1.f));
-    }
+    });
 }
 juce::Rectangle<double> SketchReferenceScene::referenceBounds() const
 {
-    juce::Rectangle<double> bounds;bool found=false;for(const auto& c:curves)if(c.reference){buildPath(c,1);const auto next=c.path.getBounds().toDouble();bounds=found?bounds.getUnion(next):next;found=true;}return bounds;
+    juce::Rectangle<double> bounds;bool found=false;eachCurve([&](const Curve& c){if(c.reference){buildPath(c,1);const auto next=c.path.getBounds().toDouble();bounds=found?bounds.getUnion(next):next;found=true;}});return bounds;
 }
 juce::var SketchReferenceScene::state() const
-{auto* v=new juce::DynamicObject();v->setProperty("curves",(int)curves.size());v->setProperty("points",(int)points.size());v->setProperty("solids",(int)ghosts.size());return v;}
+{int curveCount=0,pointCount=0,sectionCount=0;eachCurve([&](const Curve& c){++curveCount;if(c.section)++sectionCount;});eachPoint([&](const Point&){++pointCount;});juce::StringArray shown;for(const auto& s:solids)shown.add(s->ghost.source);
+ auto* v=new juce::DynamicObject();v->setProperty("curves",curveCount);v->setProperty("points",pointCount);v->setProperty("sectionCurves",sectionCount);v->setProperty("solids",(int)solids.size());v->setProperty("solidSources",shown.joinIntoString(","));v->setProperty("rebuilds",rebuilds);v->setProperty("solidPreparations",solidPreparations);v->setProperty("timing",timing);return v;}
 }

@@ -3,6 +3,7 @@
 #include <Geom2d_Curve.hxx>
 #include <Geom_Curve.hxx>
 #include <map>
+#include <memory>
 
 namespace djehuti::cad::ui
 {
@@ -51,10 +52,17 @@ private:
     };
     struct Point{juce::Point<double> position;juce::String source,entity,type;bool reference=false;};
     struct Ghost{juce::String source;juce::Path fill;};
-    std::vector<Curve> curves;
+    // Prepared display/snap data of one solid reference. Reused while the solid's shape identity, placement and the
+    // sketch plane are unchanged, so sketch edits and visibility toggles do not repeat the OCCT section/projection.
+    struct SolidData{std::vector<Curve> curves;std::vector<Point> points;Ghost ghost;TopoDS_Shape source;};   // source keeps the keyed shape alive
+    std::vector<Curve> curves;     // sketches (active and referenced)
     std::vector<Point> points;
-    std::vector<Ghost> ghosts;
+    std::vector<std::shared_ptr<const SolidData>> solids;   // visible solid references, in source order
+    std::map<juce::String,std::shared_ptr<const SolidData>> solidCache;
+    template<typename F> void eachCurve(F&& f) const{for(const auto& c:curves)f(c);for(const auto& s:solids)for(const auto& c:s->curves)f(c);}
+    template<typename F> void eachPoint(F&& f) const{for(const auto& p:points)f(p);for(const auto& s:solids)for(const auto& p:s->points)f(p);}
     juce::String active,symmetryMode;juce::Point<double> symmetryCentre;
+    int rebuilds=0,solidPreparations=0;juce::var timing;   // diagnostics: rebuilds, solid preparations and the last rebuild's cost
     void addCurve(const Handle(Geom_Curve)&,double,double,const CadSketchFrame&,const juce::String&,const juce::String&,bool,bool,bool);
     void addPoint(const gp_Pnt&,const CadSketchFrame&,const juce::String&,const juce::String&,const juce::String&,bool);
     static juce::Point<double> closest(const Curve&,juce::Point<double>);

@@ -313,13 +313,18 @@ public:
         g.setFont(juce::Font(14.0f));
         g.drawText(name, 8, 0, w - 66, h, juce::Justification::centredLeft, true);
         g.setColour(dimTextColour); g.setFont(juce::Font(11.5f));
-        if(type=="sketch"){
-            const auto eye=juce::Rectangle<float>((float)w-23,h*.5f-5,18,10);g.setColour(panel.sketchShown(id)?accentColour:dimTextColour);g.drawEllipse(eye,1.3f);g.fillEllipse(eye.getCentreX()-2,eye.getCentreY()-2,4,4);if(!panel.sketchShown(id))g.drawLine(eye.getX(),eye.getBottom()+2,eye.getRight(),eye.getY()-2,1.5f);
+        if(hasEye()){
+            const bool on=type=="sketch"?panel.sketchShown(id):panel.sketchReferenceShown(id);
+            const auto eye=juce::Rectangle<float>((float)w-23,h*.5f-5,18,10);g.setColour(on?accentColour:dimTextColour);g.drawEllipse(eye,1.3f);g.fillEllipse(eye.getCentreX()-2,eye.getCentreY()-2,4,4);if(!on)g.drawLine(eye.getX(),eye.getBottom()+2,eye.getRight(),eye.getY()-2,1.5f);
+            if(type!="sketch"){g.setColour(dimTextColour);g.drawText(visible?type:"hidden",w-86,0,58,h,juce::Justification::centredRight,true);}
         }else g.drawText(visible?type:"hidden",w-60,0,56,h,juce::Justification::centredRight,true);
     }
-    void itemClicked(const juce::MouseEvent& e) override { if(type=="sketch"&&!e.mods.isPopupMenu()&&e.x>=getItemPosition(true).getWidth()-26){panel.toggleVisibility(id);return;}if (e.mods.isPopupMenu()) panel.showFeatureMenu(id); else panel.featureClicked(id); }
-    void itemDoubleClicked(const juce::MouseEvent& e) override { if(type=="sketch"&&e.x>=getItemPosition(true).getWidth()-26)return;if (type == "sketch") {if(panel.editingSketchId.isNotEmpty()&&id!=panel.editingSketchId)panel.featureClicked(id);else panel.enterSketch(id);} }
-    juce::String getTooltip() override { return (type=="sketch"?"Click the eye to show/hide; double-click the name to edit. ":juce::String())+name + " (" + type + (visible ? "" : ", hidden") + ")  Right-click for actions."; }
+    // Sketches always have a visibility eye; while a sketch is open every other displayable item gets a
+    // sketch-reference eye. The toggle runs after the click: it may rebuild the tree that owns this item.
+    bool hasEye() const { return type=="sketch"||panel.sketchReferenceApplicable(id); }
+    void itemClicked(const juce::MouseEvent& e) override { if(hasEye()&&!e.mods.isPopupMenu()&&e.x>=getItemPosition(true).getWidth()-26){panel.postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(&panel),target=id]{if(safe!=nullptr)safe->toggleVisibility(target);});return;}if (e.mods.isPopupMenu()) panel.showFeatureMenu(id); else panel.featureClicked(id); }
+    void itemDoubleClicked(const juce::MouseEvent& e) override { if(hasEye()&&e.x>=getItemPosition(true).getWidth()-26)return;if (type == "sketch") {if(panel.editingSketchId.isNotEmpty()&&id!=panel.editingSketchId)panel.featureClicked(id);else panel.enterSketch(id);} }
+    juce::String getTooltip() override { return (panel.editingSketchId.isNotEmpty()&&panel.sketchReferenceApplicable(id)?"Click the eye to show/hide this item as a reference in the open sketch (3D visibility is unchanged). ":type=="sketch"?"Click the eye to show/hide; double-click the name to edit. ":juce::String())+name + " (" + type + (visible ? "" : ", hidden") + ")  Right-click for actions."; }
 private:
     CadWorkspacePanel& panel;
     juce::String id, name, type;
@@ -3566,7 +3571,13 @@ void CadWorkspacePanel::showExportDialog()
 
 void CadWorkspacePanel::showFeatureMenu(const juce::String& id)
 {
-    if(editingSketchId.isNotEmpty()&&id!=editingSketchId){featureClicked(id);showReferenceControls();return;}
+    if(editingSketchId.isNotEmpty()&&id!=editingSketchId)
+    {
+        featureClicked(id);
+        sketchReferenceMenu(id).showMenuAsync(juce::PopupMenu::Options(),[safe=juce::Component::SafePointer<CadWorkspacePanel>(this),sketch=editingSketchId,id](int result)
+        {if(safe!=nullptr)safe->runSketchReferenceMenu(sketch,id,result);});
+        return;
+    }
     const auto* f = service->document().find(id);
     if (f == nullptr)
     {
@@ -4130,11 +4141,12 @@ void CadWorkspacePanel::previewJoint(bool reset)
 
 void CadWorkspacePanel::toggleVisibility(const juce::String& id)
 {
+    if(editingSketchId.isNotEmpty()&&sketchReferenceApplicable(id)){toggleSketchReference(id);tree.repaint();return;}
     const auto* f = service->document().find(id);
     if (f == nullptr) return;
-    const bool sketch=f->type=="sketch";juce::String e; const auto name = f->name; const bool nowVisible = sketch?!sketchShown(id):!f->visible;
-    if(f->visible!=nowVisible&&!service->setVisible(id, nowVisible, e)) { showError(e); return; }
-    if(sketch){referenceVisibility.getDynamicObject()->setProperty(id,nowVisible);if(nowVisible)showReferenceSketches=true;referencePreferencesChanged();}
+    const bool sketch=f->type=="sketch";juce::String e; const auto name = f->name; const bool nowVisible = !f->visible;
+    if(!service->setVisible(id, nowVisible, e)) { showError(e); return; }
+    if(sketch)referencePreferencesChanged();
     refreshFromDocument(true);
     if (task == Task::body && selectedId == id) rebuildTaskPanel(false);
     setMessage(name + (nowVisible ? " is shown." : " is hidden."), 0);
@@ -5191,8 +5203,9 @@ std::vector<djehuti::cad::ui::ReferenceInput> CadWorkspacePanel::referenceInputs
     }
     std::vector<djehuti::cad::ui::ReferenceInput> sources;juce::StringArray instanced;
     const auto& instances=d.mechanicsData().instances;for(const auto& i:instances)instanced.addIfNotAlreadyThere(i.featureId);
-    const auto add=[&](const juce::String& id,const juce::String& feature,const juce::String& label,bool solid,bool visible,const gp_Trsf& transform)
-    {sources.push_back({id,feature,label,solid,(solid?(bool)referenceVisibility.getProperty(id,visible):visible)&&(solid?showReferenceSolids:showReferenceSketches)&&referenceOpacity>0,transform});};
+    const auto* open=d.findSketch(editingSketchId);const auto chosen=open!=nullptr?open->references:juce::StringArray();
+    const auto add=[&](const juce::String& id,const juce::String& feature,const juce::String& label,bool solid,bool,const gp_Trsf& transform)
+    {sources.push_back({id,feature,label,solid,chosen.contains(id)&&(solid?showReferenceSolids:showReferenceSketches)&&referenceOpacity>0,transform});};
     for(const auto& f:d.features())if(f.id!=editingSketchId && f.sketchId!=editingSketchId)
     {
         if(f.type=="sketch")add(f.id,f.id,f.name,false,f.visible,{});
@@ -5206,7 +5219,7 @@ std::vector<djehuti::cad::ui::ReferenceInput> CadWorkspacePanel::referenceInputs
 juce::var CadWorkspacePanel::referenceState()
 {
     auto* s=new juce::DynamicObject();s->setProperty("showSketches",showReferenceSketches);s->setProperty("showSolids",showReferenceSolids);s->setProperty("snap",snapReferences);s->setProperty("select",referenceSelection);s->setProperty("opacity",referenceOpacity);s->setProperty("selected",selectedReference);
-    juce::Array<juce::var> sources;for(const auto& source:referenceInputs()){auto* v=new juce::DynamicObject();v->setProperty("id",source.id);v->setProperty("label",source.label);v->setProperty("solid",source.solid);v->setProperty("visible",source.visible);const auto* f=service->document().find(source.feature);v->setProperty("enabled",f&&f->type=="sketch"?juce::var(f->visible):referenceVisibility.getProperty(source.id,f?f->visible:true));sources.add(v);}s->setProperty("sources",sources);return s;
+    juce::Array<juce::var> sources;for(const auto& source:referenceInputs()){auto* v=new juce::DynamicObject();v->setProperty("id",source.id);v->setProperty("label",source.label);v->setProperty("solid",source.solid);v->setProperty("visible",source.visible);const auto* open=service->document().findSketch(editingSketchId);v->setProperty("enabled",open!=nullptr&&open->references.contains(source.id));sources.add(v);}s->setProperty("sources",sources);return s;
 }
 bool CadWorkspacePanel::configureReferences(const juce::var& value,juce::String& error)
 {
@@ -5219,8 +5232,14 @@ bool CadWorkspacePanel::configureReferences(const juce::var& value,juce::String&
         else{error="Unknown reference preference: "+k;return false;}
     }
     showReferenceSketches=value.getProperty("showSketches",showReferenceSketches);showReferenceSolids=value.getProperty("showSolids",showReferenceSolids);snapReferences=value.getProperty("snap",snapReferences);referenceSelection=value.getProperty("select",referenceSelection);referenceOpacity=(float)(double)value.getProperty("opacity",referenceOpacity);
-    if(auto* v=value["visibility"].getDynamicObject())for(const auto& p:v->getProperties()){referenceVisibility.getDynamicObject()->setProperty(p.name,p.value);if(const auto* feature=service->document().find(p.name.toString());feature&&feature->type=="sketch"&&feature->visible!=(bool)p.value){juce::String message;if(!service->setVisible(feature->id,(bool)p.value,message)){error=message;return false;}}}
-    if(referenceFileKey.isNotEmpty())referenceDocuments.getDynamicObject()->setProperty(referenceFileKey,referenceVisibility.clone());
+    if(auto* v=value["visibility"].getDynamicObject())
+    {
+        // Per-sketch reference choices live in the open sketch's document record, never in 3D visibility.
+        const auto* open=service->document().findSketch(editingSketchId);if(open==nullptr){error="Open a sketch to choose its reference geometry.";return false;}
+        juce::StringArray list;for(const auto& existing:open->references)if(service->document().find(existing)!=nullptr||service->document().mechanicsData().findInstance(existing)!=nullptr)list.add(existing);
+        for(const auto& p:v->getProperties()){const auto id=p.name.toString();if(!sketchReferenceApplicable(id)){error=featureName(id)+" cannot be shown in this sketch.";return false;}if((bool)p.value)list.addIfNotAlreadyThere(id);else list.removeString(id);}
+        if(!service->setSketchReferences(editingSketchId,list,error))return false;
+    }
     referencePreferencesChanged();return true;
 }
 void CadWorkspacePanel::referencePreferencesChanged()
@@ -5333,6 +5352,8 @@ bool runCadWorkflowUiCheck(juce::var& report)
 #include "CadAdvancedSketchChecks.inc"
 
 #include "CadSketchToolboxChecks.inc"
+
+#include "CadSketchReferenceChecks.inc"
 
 #include "CadMainToolbarChecks.inc"
 

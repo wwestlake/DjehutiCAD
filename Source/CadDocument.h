@@ -145,6 +145,9 @@ struct CadSketch
     std::vector<CadSketchConstraint> constraints;
     juce::String symmetryMode="off";double symmetryX=0,symmetryY=0;
     std::vector<CadSketchMirror> mirrors;
+    // Display only: features, other sketches and assembly instances shown as background references while this
+    // sketch is edited. Empty for a new sketch. Never part of the geometry signature, so changing it rebuilds nothing.
+    juce::StringArray references;
 };
 
 struct CadMesh
@@ -233,6 +236,8 @@ public:
     bool sketchFrame(const juce::String& sketchId, CadSketchFrame& frame) const;
     juce::var sketchSymmetryState(const juce::String&) const;
     bool sketchSymmetryCommand(const juce::String&,const juce::var&,juce::String&);
+    // Replaces the sketch's background reference list (one undoable command; unchanged lists are not recorded).
+    bool setSketchReferences(const juce::String& sketchId, const juce::StringArray& ids, juce::String& error);
     bool addSketchLine(const juce::String& sketchId, double x1, double y1, double x2, double y2, juce::String& entityId, juce::String& error, const juce::String& firstConnection = {}, const juce::String& secondConnection = {});
     bool addSketchRectangle(const juce::String& sketchId, double x, double y, double width, double height, juce::String& groupId, juce::String& error);
     bool addSketchCircle(const juce::String& sketchId, double x, double y, double radius, juce::String& entityId, juce::String& error);
@@ -487,6 +492,7 @@ class CadCommandService
 public:
     bool sketchSymmetryCommand(const juce::String& id,const juce::var& args,juce::String& error){return model.sketchSymmetryCommand(id,args,error);}
     juce::var sketchSymmetryState(const juce::String& id) const{return model.sketchSymmetryState(id);}
+    bool setSketchReferences(const juce::String& sketchId,const juce::StringArray& ids,juce::String& error){return model.setSketchReferences(sketchId,ids,error);}
     CadDocument& document() { return model; }
     const CadDocument& document() const { return model; }
     bool newDocument();

@@ -48,11 +48,58 @@ bool CadWorkspacePanel::handleModelKey(const juce::KeyPress& key)
 bool CadWorkspacePanel::sketchShown(const juce::String& id) const
 {
     const auto* f=service->document().find(id);if(!f)return false;
-    return editingSketchId.isNotEmpty()&&id!=editingSketchId?showReferenceSketches&&f->visible:f->visible;
+    return editingSketchId.isNotEmpty()&&id!=editingSketchId?sketchReferenceShown(id):f->visible;
+}
+bool CadWorkspacePanel::sketchReferenceApplicable(const juce::String& id) const
+{
+    // Mirrors referenceInputs(): every source it can draw, and nothing else.
+    if(editingSketchId.isEmpty()||id.isEmpty()||id==editingSketchId)return false;
+    const auto& d=service->document();
+    if(const auto* instance=d.mechanicsData().findInstance(id)){const auto* f=d.find(instance->featureId);return f!=nullptr&&!f->shape.IsNull();}
+    const auto* f=d.find(id);if(f==nullptr)return false;
+    if(f->type=="sketch")return true;
+    if(f->shape.IsNull()||f->sketchId==editingSketchId)return false;
+    for(const auto& instance:d.mechanicsData().instances)if(instance.featureId==id)return false;   // shown through its instances
+    return true;
+}
+bool CadWorkspacePanel::sketchReferenceShown(const juce::String& id) const
+{
+    const auto* sketch=service->document().findSketch(editingSketchId);
+    if(sketch==nullptr||!sketch->references.contains(id)||referenceOpacity<=0)return false;
+    const auto* f=service->document().find(id);
+    return f!=nullptr&&f->type=="sketch"?showReferenceSketches:showReferenceSolids;
+}
+juce::PopupMenu CadWorkspacePanel::sketchReferenceMenu(const juce::String& id) const
+{
+    juce::PopupMenu menu;
+    if(sketchReferenceApplicable(id))menu.addItem(1,sketchReferenceShown(id)?"Hide in this sketch":"Show in this sketch");
+    else menu.addItem(1,"Not displayable as a sketch reference",false);
+    menu.addItem(2,"Reference geometry settings...");
+    return menu;
+}
+void CadWorkspacePanel::runSketchReferenceMenu(const juce::String& sketch,const juce::String& id,int result)
+{
+    // The menu is asynchronous: the sketch may have closed or the item been deleted while it was open.
+    if(result==0||sketch.isEmpty()||editingSketchId!=sketch)return;
+    if(result==1&&sketchReferenceApplicable(id))toggleSketchReference(id);
+    else if(result==2)showReferenceControls();
+    tree.repaint();
+}
+void CadWorkspacePanel::toggleSketchReference(const juce::String& id)
+{
+    const auto& d=service->document();const auto* sketch=d.findSketch(editingSketchId);
+    if(sketch==nullptr||!sketchReferenceApplicable(id))return;
+    juce::StringArray list;for(const auto& existing:sketch->references)if(existing!=id&&(d.find(existing)!=nullptr||d.mechanicsData().findInstance(existing)!=nullptr))list.add(existing);
+    const bool show=!sketchReferenceShown(id);if(show)list.add(id);
+    const auto* f=d.find(id);const bool isSketch=f!=nullptr&&f->type=="sketch";const auto name=featureName(id);
+    juce::String error;if(!service->setSketchReferences(editingSketchId,list,error)){showError(error);return;}
+    if(show){(isSketch?showReferenceSketches:showReferenceSolids)=true;if(referenceOpacity<=0)referenceOpacity=.4f;}
+    referencePreferencesChanged();
+    setMessage(name+(show?" is shown as a reference in this sketch.":" is hidden in this sketch. Its 3D visibility is unchanged."),0);
 }
 void CadWorkspacePanel::showSketches(bool visible)
 {
     juce::StringArray ids;for(const auto& feature:service->document().features())if(feature.type=="sketch")ids.add(feature.id);
-    juce::String error;for(const auto& id:ids){const auto* f=service->document().find(id);if(f&&f->visible!=visible&&!service->setVisible(id,visible,error)){showError(error);return;}referenceVisibility.getDynamicObject()->setProperty(id,visible);}
+    juce::String error;for(const auto& id:ids){const auto* f=service->document().find(id);if(f&&f->visible!=visible&&!service->setVisible(id,visible,error)){showError(error);return;}}
     showReferenceSketches=visible;referencePreferencesChanged();refreshFromDocument(true);modelView.markDirty();
 }

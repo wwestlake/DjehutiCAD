@@ -75,6 +75,7 @@ private:
     friend bool runWorkspaceNavigationCheck(juce::var&);
     friend class CadMainToolbarCheck;
     friend bool runSketchToolboxCheck(juce::var&);
+    friend bool runSketchReferenceCheck(juce::var&);
     friend bool runAdvancedSketchCheck(juce::var&);
     friend bool runSketchUsabilityCheck(juce::var&);
     friend bool djehuti::cad::runCadLatheCheck(juce::var&);
@@ -143,6 +144,12 @@ private:
     bool handleModelKey(const juce::KeyPress&);
     void showSketches(bool);
     bool sketchShown(const juce::String&) const;
+    // Sketch-reference visibility (per active sketch, stored in its document record; independent of 3D visibility).
+    bool sketchReferenceApplicable(const juce::String& id) const;
+    bool sketchReferenceShown(const juce::String& id) const;
+    void toggleSketchReference(const juce::String& id);
+    juce::PopupMenu sketchReferenceMenu(const juce::String& id) const;
+    void runSketchReferenceMenu(const juce::String& sketch, const juce::String& id, int result);
     bool handleHistoryKey(const juce::KeyPress& key);
     bool moveSketchPoint(const juce::String& pointRef, double u, double v);
     bool insertSketchVertex(const juce::String& lineId, double u, double v);

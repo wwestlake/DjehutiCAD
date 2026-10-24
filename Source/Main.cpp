@@ -17,6 +17,7 @@
 #include "CadFixturesPanel.h"
 bool runAdvancedSketchCheck(juce::var&);
 bool runSketchToolboxCheck(juce::var&);
+bool runSketchReferenceCheck(juce::var&);
 void startMainToolbarCheck(std::function<void(bool,juce::var)>);
 bool runCadSaveProtectionCheck(juce::var&);
 bool runWorkspaceNavigationCheck(juce::var&);
@@ -1402,6 +1403,10 @@ public:
         if(commandLine.startsWith("--cad-main-toolbar-check"))
         {
             juce::MessageManager::callAsync([this]{startMainToolbarCheck([this](bool ok,juce::var report){juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-main-toolbar-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});});return;
+        }
+        if(commandLine.startsWith("--cad-sketch-reference-check"))
+        {
+            juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runSketchReferenceCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-reference-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
         }
         if(commandLine.startsWith("--cad-sketch-toolbox-check"))
         {
