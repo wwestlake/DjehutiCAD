@@ -89,6 +89,45 @@ turns through the normal joint preview and mechanism tools.
 geometry is labelled as such in each record. It is not a manufacturing-qualified
 interface.
 
+## Slip rings
+
+**Electrical / Slip rings** in the library holds seven records:
+
+- Senring M065-06, M065-08, M065-12
+- Senring M125-06, M125-12
+- MOFLON MMC182, MMC1829
+
+Their values come from the 2026-10-24 slip-ring reference document and the
+manufacturers' pages. Each record holds:
+
+- channels, current and voltage ratings, maximum speed
+- housing OD and length
+- lead wire and length, lead colour order, IP rating
+- insulation and dielectric ratings
+- flange options
+- sources and confidence, plus per-ring electrical channel entries
+
+Each inserts as a grounded **stator** and a **rotor** on a revolute joint about
+the housing axis.
+
+- **Stator:** the manufacturer's housing envelope (OD x L).
+- **Rotor:** only a small reference marker at the assumed rotating end. Its
+  size is not from a drawing.
+- **Attachment frames:** the axis, stator and rotor frames are stored in each
+  part's `references`. They are marked unverified: the stator is assumed at
+  z = 0 and the rotor at z = L.
+
+Not modelled, because the drawings are images that were not captured:
+
+- rotor and stator split
+- lead exits
+- flange patterns
+
+No manufacturer STEP files were acquired. MOFLON releases them through a
+request form, and Senring by technical inquiry. Confirm the exact variant and
+drawing before designing mating parts. Do not derive fits, clamp pressure,
+bearing loads or tolerances from these envelopes.
+
 ## Validation
 
 `bin\Debug\djehuti_cad.exe --cad-placement-workflow-check` writes

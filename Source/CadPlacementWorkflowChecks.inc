@@ -171,6 +171,19 @@ bool runPlacementWorkflowCheck(juce::var& report)
         check(rig->undo(error) && rig->undo(error) && rig->document().mechanicsData().instances.empty() && rig->document().features().empty(), "Undo removes the move, then the whole two-part insertion");
     }
 
+    // Slip ring from the bundled library: same insert/placement workflow as any component.
+    {
+        auto lib = std::make_shared<CadCommandService>(); lib->setComponentLibraryFile(folder.getChildFile("slip-library-" + juce::Uuid().toDashedString() + ".json"));
+        const auto reply = lib->componentCommand(juce::JSON::parse(R"({"action":"insert","component":"component-slipring-moflon-mmc182","placement":{"x":30,"y":0,"z":0,"rx":0,"ry":0,"rz":0}})"));
+        const auto& m = lib->document().mechanicsData();
+        juce::String stator; for (const auto& i : m.instances) if (i.grounded) stator = i.id;
+        check((bool) reply["ok"] && m.instances.size() == 2 && m.joints.size() == 1 && m.joints[0].type == "revolute" && stator.isNotEmpty(),
+              "MOFLON MMC182 inserts from the library as a grounded stator and a rotor on a revolute axis", juce::JSON::toString(reply).substring(0, 300));
+        CadWorkspacePanel slipPanel(lib); slipPanel.setSize(1500, 950); slipPanel.refreshFromDocument(true);
+        slipPanel.focusInsertedComponent(stator); Viewport3D::Manipulation nudge; nudge.axis = 2; nudge.amount = 5.0;
+        check(slipPanel.applyManipulation(nudge) && closeTo(m.findInstance(stator)->placement.z, 5.0, 1e-9), "The slip ring stator is placed with Move / Rotate like any component");
+    }
+
     // 11. Existing gear behaviour: moving a paired gear is a placement change the pair check reports; undo restores it.
     {
         auto gears = std::make_shared<CadCommandService>();
