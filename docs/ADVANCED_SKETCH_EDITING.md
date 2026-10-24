@@ -59,4 +59,3 @@ exited; no test application was left running.
 
 Final build log: `build/sketch-edit-build-regression-fix.log`.
 The checks use synthetic events on production widgets, rather than native mouse input.
-
