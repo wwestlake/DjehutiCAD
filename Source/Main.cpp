@@ -16,6 +16,7 @@
 #include "CadMaterialsManager.h"
 #include "CadFixturesPanel.h"
 bool runAdvancedSketchCheck(juce::var&);
+bool runSketchToolboxCheck(juce::var&);
 bool runSketchUsabilityCheck(juce::var&);
 bool runCadWorkflowUiCheck(juce::var&);
 bool runSketchLineRepairCheck(juce::var&);
@@ -1385,6 +1386,10 @@ public:
         if(commandLine.startsWith("--cad-sketch-line-repair-check"))
         {
             juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runSketchLineRepairCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-line-repair-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
+        }
+        if(commandLine.startsWith("--cad-sketch-toolbox-check"))
+        {
+            juce::MessageManager::callAsync([this]{juce::var report;const bool ok=runSketchToolboxCheck(report);juce::File::getCurrentWorkingDirectory().getChildFile("build/cad-sketch-toolbox-check.result.json").replaceWithText(juce::JSON::toString(report,false));setApplicationReturnValue(ok?0:1);juce::MessageManager::callAsync([this]{quit();});});return;
         }
         if(commandLine.startsWith("--cad-advanced-sketch-check"))
         {
