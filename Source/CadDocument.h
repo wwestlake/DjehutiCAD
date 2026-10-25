@@ -23,6 +23,7 @@
 #include <gp_Trsf.hxx>
 
 #include "CadMechanics.h"
+#include "CadConstruction.h"
 #include "CadMaterials.h"
 #include "CadSheetStock.h"
 #include "CadEngineeringCatalog.h"
@@ -285,6 +286,16 @@ public:
     // compatible external spur pair; create and update are single undoable transactions.
     juce::var gearCommand(const juce::var& args);
     juce::var gearPairCommand(const juce::var& args);
+    // Construction references (CadConstruction.cpp): document-owned points, axes, coordinate systems and planes, plus
+    // reference-based move/rotate/align/mirror/scale. Each mutation is one undoable command.
+    const std::vector<CadConstructionRef>& constructionData() const { return constructionRefs; }
+    const CadConstructionRef* findConstruction(const juce::String& id) const;
+    CadResolvedRef resolveConstruction(const juce::String& id) const;
+    juce::var constructionToJson(const CadConstructionRef&) const;
+    juce::var referenceCommand(const juce::var& args);
+    juce::var transformCommand(const juce::var& args);
+    std::vector<CadSnapPoint> snapPoints(const juce::String& bodyId) const;   // body or occurrence id, world millimetres
+    bool transformBody(const juce::String& id, const gp_Trsf& delta, juce::String& error);   // rigid placement change of a body or occurrence
     juce::var gearPairStatus(const juce::String& gearId) const;
     // Current pair definition (cad_gear_pair parameters) of the pair containing gearId; void when unpaired.
     juce::var gearPairParameters(const juce::String& gearId) const;
@@ -440,6 +451,12 @@ private:
     TopoDS_Shape evaluateSurface(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active);
     bool modelingProfile(const juce::String&,TopoDS_Wire&,CadSketchFrame&,juce::String&,juce::StringArray&);
     juce::var gearPairRequest(const CadFeature& a, const CadFeature& b) const;
+    bool constructionSource(const juce::String& id, gp_Trsf& frame, gp_Trsf& shapeTransform, const CadFeature*& feature, juce::String& why) const;
+    CadResolvedRef resolveConstructionImpl(const CadConstructionRef&, juce::StringArray visiting) const;
+    bool buildConstruction(const juce::var& definition, const CadConstructionRef* existing, CadConstructionRef& out, juce::String& error) const;
+    bool applyRigidDelta(const juce::String& id, const gp_Trsf& delta, juce::String& error);
+    bool restoreConstructionFromOCAF(juce::String& error);
+    std::vector<CadConstructionRef> constructionRefs;
     bool applyGearPair(const gear::PairPlan&, const juce::String& existingA, const juce::String& existingB, juce::var& reply, juce::String& error);
     bool gearShaft(const CadFeature& gearFeature, const juce::String& instanceId, gp_Pnt& origin, gp_Dir& axis) const;
     bool surfaceInput(const juce::String&,const juce::String&,TopoDS_Shape&,CadFaceOrigins&,juce::String&,juce::StringArray&);
@@ -532,6 +549,8 @@ public:
     juce::var modelingCommand(const juce::String& type,const juce::var& args) { return model.modelingCommand(type,args); }
     juce::var gearCommand(const juce::var& args) { return model.gearCommand(args); }
     juce::var gearPairCommand(const juce::var& args) { return model.gearPairCommand(args); }
+    juce::var referenceCommand(const juce::var& args) { return model.referenceCommand(args); }
+    juce::var transformCommand(const juce::var& args) { return model.transformCommand(args); }
     bool createCut(const juce::String& sketchId, const juce::String& targetFeatureId, double depth, bool throughAll, bool reverse, juce::String& id, juce::String& error) { return model.createCut(sketchId, targetFeatureId, depth, throughAll, reverse, id, error); }
     bool createFillet(const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& id, juce::String& error) { return model.createFillet(targetFeatureId, edgeIndices, radius, id, error); }
     bool updateFillet(const juce::String& id, const juce::String& targetFeatureId, const std::vector<int>& edgeIndices, double radius, juce::String& error) { return model.updateFillet(id, targetFeatureId, edgeIndices, radius, error); }

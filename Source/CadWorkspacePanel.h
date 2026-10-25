@@ -71,12 +71,13 @@ private:
     void saveWithCompletion(bool saveAs,djehuti::cad::saveprotection::Completion);
     bool automationInProgress = false;
     void postUiAction(std::function<void()> action) { if (automationInProgress) action(); else juce::MessageManager::callAsync(std::move(action)); }
-    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, gearPair, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
+    enum class Task { none, body, sketch, createSketch, sketchEdit, sketchEntity, newBox, newCylinder, extrude, revolve, lathe, cut, fillet, chamfer, hole, replication, modeling, gearPair, cursor, reference, referenceTransform, boolean, instance, joint, newInstance, newJoint, link, coupling, newCoupling, ik, subshape, interference };
     friend bool runWorkspaceNavigationCheck(juce::var&);
     friend class CadMainToolbarCheck;
     friend bool runSketchToolboxCheck(juce::var&);
     friend bool runSketchReferenceCheck(juce::var&);
     friend bool runPlacementWorkflowCheck(juce::var&);
+    friend bool runConstructionReferenceCheck(juce::var&);
     friend bool runAdvancedSketchCheck(juce::var&);
     friend bool runSketchUsabilityCheck(juce::var&);
     friend bool djehuti::cad::runCadLatheCheck(juce::var&);
@@ -155,6 +156,39 @@ private:
     void updateManipulator(bool force);
     bool applyManipulation(const Viewport3D::Manipulation& m);
     bool manipulable(const juce::String& id, juce::String& reason) const;
+    // Working cursor and construction references (CadWorkspaceConstruction.inc). The cursor is temporary workspace
+    // state; references are document data edited only through the document's reference and transform commands.
+    std::array<double, 3> cursorWorld { 0, 0, 0 };
+    bool cursorShown = true, cursorSnapping = true;
+    juce::String cursorNote = "origin";
+    juce::String editingReferenceId, constructionKey, snapCacheKey, manipulatorPivotRef;
+    std::map<juce::String, std::vector<djehuti::cad::CadSnapPoint>> snapCache;
+    juce::StringArray sourceChoiceIds, targetChoiceIds, referenceChoiceIds;   // option ids behind the most recently built dropdowns
+    bool isReference(const juce::String& id) const;
+    bool referenceVisible(const juce::String& id) const;
+    void updateConstructionDisplay(bool force);
+    const std::vector<djehuti::cad::CadSnapPoint>& snapPointsFor(const juce::String& bodyId);
+    bool cursorPointAt(juce::Point<float> viewPosition, std::array<double, 3>& world, juce::String& label);
+    void setCursor(const std::array<double, 3>& world, const juce::String& note);
+    void setCursorPlacing(bool on);
+    bool cursorToSelection(juce::String& note);
+    void placeCursorFromSketch(double u, double v, const juce::String& snapNote);
+    juce::var cursorState() const;
+    juce::var cursorCommand(const juce::var& args, juce::String& error);
+    bool bodyCentre(const juce::String& id, std::array<double, 3>& centre) const;
+    void addCursorFields();
+    void addReferenceFields();
+    void addReferenceTransformFields();
+    juce::var readReferenceForm(juce::String& error) const;
+    juce::var readReferenceTransform(juce::String& error) const;
+    void acceptReference();
+    void acceptReferenceTransform();
+    void closeConstructionTask();
+    void toggleReferenceVisible(const juce::String& id);
+    void showReferenceMenu(const juce::String& id);
+    void pickReferenceForTransform(const juce::String& id);
+    juce::StringArray referenceOptions(bool includeBlank, const juce::String& blank);
+    juce::StringArray targetOptions(const juce::String& blank);
 public:
     std::function<void()> onOpenComponentLibrary;   // set by the application: shows the Component Library
     void focusInsertedComponent(const juce::String& instanceId);

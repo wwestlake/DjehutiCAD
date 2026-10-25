@@ -42,6 +42,10 @@ coupling) through Create > Gear / Gear Pair, `cad_gear` and `cad_gear_pair`.
 manipulator (T), orbit about the point under the pointer, standard views, inserting and placing
 library components, and multi-part components such as a stator and rotor on a revolute axis.
 
+[Construction references](docs/CONSTRUCTION_REFERENCES.md) adds a movable working cursor (3D and sketch), persistent
+point/axis/coordinate-system/plane references that can follow bodies, occurrences and cylindrical faces, and
+reference-based move, rotate, align, mirror and scale with an explicit Create copy option (`cad_reference`, `cad_transform`).
+
 [Surface modeling](docs/SURFACE_MODELING.md) provides planar, extruded, revolved,
 swept and lofted surfaces, region trimming, eligible U/V boundary extension,
 shell sewing, separate solidification, and positive/negative/symmetric thickening.

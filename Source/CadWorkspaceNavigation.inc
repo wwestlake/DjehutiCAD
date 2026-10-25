@@ -109,6 +109,15 @@ void CadWorkspacePanel::updateManipulator(bool force)
             m.active=true;m.drawId=selectedId;m.label=(transformLocal?"Move / Rotate ":"Move / Rotate ")+featureName(selectedId);m.local=transformLocal;
             m.pivot={(float)((x0+x1)/2),(float)((y0+y1)/2),(float)((z0+z1)/2)};
             if(transformLocal)for(int i=0;i<3;++i){const auto a=gp_Dir(i==0?1:0,i==1?1:0,i==2?1:0).Transformed(rotation);m.axes[(size_t)i]={(float)a.X(),(float)a.Y(),(float)a.Z()};}
+            if(const auto* pivotRef=d.findConstruction(manipulatorPivotRef))   // pivot and (local) axes taken from a construction reference
+            {
+                const auto resolved=d.resolveConstruction(pivotRef->id);
+                if(resolved.ok)
+                {
+                    m.pivot={(float)resolved.world.x,(float)resolved.world.y,(float)resolved.world.z};m.label+=" (pivot: "+pivotRef->name+")";
+                    if(transformLocal){const auto t=resolved.world.toTrsf();for(int i=0;i<3;++i){const auto a=gp_Dir(i==0?1:0,i==1?1:0,i==2?1:0).Transformed(t);m.axes[(size_t)i]={(float)a.X(),(float)a.Y(),(float)a.Z()};}}
+                }
+            }
         }
     }
     else if(transformTool&&selectedId.isNotEmpty()&&reason.isNotEmpty())setMessage(reason,1);

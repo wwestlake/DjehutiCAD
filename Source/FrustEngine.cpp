@@ -415,6 +415,24 @@ extern "C" const char* djehuti_cad_loft(const char* argsJson)
     }
     setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
 }
+extern "C" const char* djehuti_cad_reference(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->referenceCommand(juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
+extern "C" const char* djehuti_cad_transform(const char* argsJson)
+{
+    if(auto service=activeCadService())
+    {
+        const auto reply=service->transformCommand(juce::JSON::parse(argsJson!=nullptr?argsJson:"{}"));
+        setCadError((bool)reply["ok"]?juce::String():reply["error"].toString());return returnCad(juce::JSON::toString(reply,false,17));
+    }
+    setCadError("No CAD document is attached.");return returnCad(R"({"ok":false,"code":"unavailable","error":"No CAD document is attached."})");
+}
 extern "C" const char* djehuti_cad_gear(const char* argsJson)
 {
     if(auto service=activeCadService())
@@ -587,6 +605,8 @@ void ensureHostSetup()
         frust_plugin_register_host_function("djehuti_cad_loft", reinterpret_cast<void*>(&djehuti_cad_loft));
         frust_plugin_register_host_function("djehuti_cad_mill", reinterpret_cast<void*>(&djehuti_cad_mill));
         frust_plugin_register_host_function("djehuti_cad_gear", reinterpret_cast<void*>(&djehuti_cad_gear));
+        frust_plugin_register_host_function("djehuti_cad_reference", reinterpret_cast<void*>(&djehuti_cad_reference));
+        frust_plugin_register_host_function("djehuti_cad_transform", reinterpret_cast<void*>(&djehuti_cad_transform));
         frust_plugin_register_host_function("djehuti_cad_gear_pair", reinterpret_cast<void*>(&djehuti_cad_gear_pair));
         frust_plugin_register_host_function("djehuti_cad_mirror", reinterpret_cast<void*>(&djehuti_cad_mirror));
         frust_plugin_register_host_function("djehuti_cad_linear_pattern", reinterpret_cast<void*>(&djehuti_cad_linear_pattern));
@@ -899,6 +919,8 @@ std::string cadPrelude()
            "extern fn djehuti_cad_loft(args_json: String) -> String;\n"
            "extern fn djehuti_cad_mill(args_json: String) -> String;\n"
            "extern fn djehuti_cad_gear(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_reference(args_json: String) -> String;\n"
+           "extern fn djehuti_cad_transform(args_json: String) -> String;\n"
            "extern fn djehuti_cad_gear_pair(args_json: String) -> String;\n"
            "extern fn djehuti_cad_mirror(args_json: String) -> String;\n"
            "extern fn djehuti_cad_linear_pattern(args_json: String) -> String;\n"
@@ -933,7 +955,7 @@ std::string cadPrelude()
 const std::vector<std::string>& cadHostFunctions()
 {
     static const std::vector<std::string> names {
-        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_surface", "djehuti_cad_surface_trim", "djehuti_cad_surface_extend", "djehuti_cad_surface_sew", "djehuti_cad_surface_solidify", "djehuti_cad_surface_thicken", "djehuti_cad_sweep", "djehuti_cad_loft", "djehuti_cad_mill", "djehuti_cad_mirror", "djehuti_cad_linear_pattern", "djehuti_cad_circular_pattern", "djehuti_cad_hole", "djehuti_cad_chamfer", "djehuti_cad_lathe", "djehuti_cad_revolve", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
+        "djehuti_cad_create_box", "djehuti_cad_create_cylinder", "djehuti_cad_create_sketch", "djehuti_cad_sketch_line", "djehuti_cad_sketch_rectangle", "djehuti_cad_sketch_circle", "djehuti_cad_sketch_dimension", "djehuti_cad_sketch_position", "djehuti_cad_sketch_constraint", "djehuti_cad_surface", "djehuti_cad_surface_trim", "djehuti_cad_surface_extend", "djehuti_cad_surface_sew", "djehuti_cad_surface_solidify", "djehuti_cad_surface_thicken", "djehuti_cad_sweep", "djehuti_cad_loft", "djehuti_cad_mill", "djehuti_cad_gear", "djehuti_cad_gear_pair", "djehuti_cad_reference", "djehuti_cad_transform", "djehuti_cad_mirror", "djehuti_cad_linear_pattern", "djehuti_cad_circular_pattern", "djehuti_cad_hole", "djehuti_cad_chamfer", "djehuti_cad_lathe", "djehuti_cad_revolve", "djehuti_cad_extrude", "djehuti_cad_cut", "djehuti_cad_set_dimensions",
         "djehuti_cad_set_placement", "djehuti_cad_boolean", "djehuti_cad_last_error", "djehuti_cad_create_instance", "djehuti_cad_create_joint",
         "djehuti_cad_set_joint_mapping", "djehuti_cad_motion_preview", "djehuti_cad_motion_status", "djehuti_cad_motion_lifecycle",
         "djehuti_cad_set_grounded", "djehuti_cad_set_instance_placement", "djehuti_cad_set_joint_role", "djehuti_cad_create_coupling", "djehuti_cad_ik", "djehuti_cad_list_faces", "djehuti_cad_create_face_sketch", "djehuti_cad_export", "djehuti_cad_workspace"

@@ -153,6 +153,11 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
                 return juce::JSON::toString(safeThis->viewsPanel->controlViewCamera((int)parsedArgs["view"], parsedArgs)).toStdString();
             return juce::JSON::toString(safeThis->cadWorkspace->automation(parsedArgs)).toStdString();
         }
+        if(name=="cad_reference"||name=="cad_transform")
+        {
+            auto result=name=="cad_reference"?safeThis->cadService->referenceCommand(parsedArgs):safeThis->cadService->transformCommand(parsedArgs);
+            return juce::JSON::toString(result,false,17).toStdString();
+        }
         if(name=="cad_gear"||name=="cad_gear_pair")
         {
             auto result=name=="cad_gear"?safeThis->cadService->gearCommand(parsedArgs):safeThis->cadService->gearPairCommand(parsedArgs);

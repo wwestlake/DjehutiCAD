@@ -108,6 +108,27 @@ public:
     juce::Point<float> manipulatorHandle(int axis, bool rotate, float fraction) const;   // screen point on an arrow or ring
     // Standard named views (front, back, left, right, top, bottom, isometric) about the current orbit target.
     bool setStandardView(const juce::String& name);
+    // Construction display: references and the working cursor are painted over the model in screen space, so they
+    // keep a constant size, are never hidden by solids and never take part in model bounds or body picking.
+    struct ConstructionDraw
+    {
+        juce::String id, kind, name;
+        std::array<float, 3> origin {};
+        std::array<std::array<float, 3>, 3> axes { { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } } };
+        bool selected = false, broken = false;
+    };
+    struct CursorDraw { bool visible = false; std::array<float, 3> position {}; };
+    void setConstructionDisplay(std::vector<ConstructionDraw> references, const CursorDraw& cursor);
+    std::function<void(const juce::String& id)> onConstructionPicked;
+    // Cursor placement: a click (not a drag) reports the pointer position and modifiers instead of selecting.
+    void setCursorPlacing(bool on);
+    bool isCursorPlacing() const { return cursorPlacing; }
+    std::function<void(juce::Point<float>, const juce::ModifierKeys&)> onCursorClick;
+    std::function<void(juce::Point<float>)> onCursorHover;
+    void setCursorPreview(bool active, const std::array<float, 3>& world, const juce::String& label);
+    bool worldToScreen(const std::array<float, 3>& p, juce::Point<float>& s) const { return toScreen(p, s); }
+    bool screenRay(juce::Point<float> p, std::array<float, 3>& origin, std::array<float, 3>& direction) const { return rayThrough(p, origin, direction); }
+    float worldPerPixel(const std::array<float, 3>& at) const;   // model length covered by one screen pixel at that point
 
 private:
     friend bool runViewportInteractionCheck(juce::String&);
@@ -144,6 +165,12 @@ private:
     juce::String dragTargetId;
     std::array<float, 3> dragPlanePoint {}, dragPlaneNormal {};
     std::vector<std::pair<juce::String,std::array<float,3>>> pickMarkers;
+    std::vector<ConstructionDraw> constructionDraw;
+    CursorDraw cursorDraw;
+    bool cursorPlacing = false, cursorPreviewOn = false;
+    std::array<float, 3> cursorPreviewPoint {};
+    juce::String cursorPreviewLabel;
+    void drawConstruction(juce::Graphics&);
     Manipulator manip;
     int manipAxis = -1, previewClearFrames = -1;
     bool manipRotate = false, orbitAnchored = false;

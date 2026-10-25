@@ -103,6 +103,13 @@ void SketchReferenceScene::rebuild(const CadDocument& document,const juce::Strin
     const auto trsfKey=[&](const gp_Trsf& t){juce::String k;for(int r=1;r<=3;++r)for(int c=1;c<=4;++c)k<<exactText(t.Value(r,c))<<",";return k;};
     const auto planeKey=exactText(plane.origin.X())+","+exactText(plane.origin.Y())+","+exactText(plane.origin.Z())+"|"+exactText(plane.u.X())+","+exactText(plane.u.Y())+","+exactText(plane.u.Z())+"|"+exactText(plane.v.X())+","+exactText(plane.v.Y())+","+exactText(plane.v.Z());
     addSketch(active,active,false);
+    // Visible construction references that lie on the sketch plane can be snapped to like any other vertex.
+    for(const auto& ref:document.constructionData())
+    {
+        if(!ref.visible)continue;const auto resolved=document.resolveConstruction(ref.id);if(!resolved.ok)continue;
+        const gp_Pnt point(resolved.world.x,resolved.world.y,resolved.world.z);
+        if(std::abs(gp_Vec(plane.origin,point).Dot(gp_Vec(plane.u.Crossed(plane.v))))<1e-4)addPoint(point,plane,ref.id,ref.id,"vertex",true);
+    }
     std::shared_ptr<const CadRenderSnapshot> meshes;   // fetched only when a solid must be prepared
     const auto solidKey=[&](const ReferenceInput& source,const CadFeature& feature){return source.id+"|"+juce::String::toHexString((juce::pointer_sized_int)feature.shape.TShape().get())+"|"+trsfKey(feature.shape.Location().Transformation())+"|"+trsfKey(source.transform)+"|"+planeKey;};
     for(const auto& source:sources)if(source.solid&&!source.visible)   // hidden now: keep prepared data for a quick re-show
