@@ -10,8 +10,31 @@ struct CadComponentBrowser::Category final : juce::TreeViewItem
     CadComponentBrowser& owner;juce::String label,path;
     Category(CadComponentBrowser& o,juce::String name,juce::String p):owner(o),label(std::move(name)),path(std::move(p)){}
     bool mightContainSubItems() override{return getNumSubItems()>0;}
-    void paintItem(juce::Graphics& g,int w,int h)override{if(isSelected()){g.setColour(juce::Colour(0xff314d61));g.fillAll();}g.setColour(juce::Colours::white);g.setFont(13.0f);g.drawText(label,4,0,w-6,h,juce::Justification::centredLeft,true);}
+    juce::String getUniqueName() const override{return path.isEmpty()&&label.startsWith("All")?"all":path;}
+    void paintItem(juce::Graphics& g,int w,int h)override{if(isSelected()){g.setColour(juce::Colour(0xff3f6f91));g.fillAll();g.setColour(juce::Colour(0xff8fc7ef));g.fillRect(0,0,3,h);}g.setColour(juce::Colours::white);g.setFont(13.0f);g.drawText(label,8,0,w-10,h,juce::Justification::centredLeft,true);}
+    // Bounded work only: the list is filtered and the preview is requested; nothing here may wait for geometry.
     void itemSelectionChanged(bool selected)override{if(selected){owner.categoryPath=path;owner.filter();}}
+};
+// Builds a component preview. It owns its own document and touches no GUI object, so it can run on the preview worker.
+static CadComponentBrowser::Preview buildPreview(const juce::var& record)
+{
+    CadComponentBrowser::Preview p;auto document=std::make_shared<CadDocument>();p.owner=document;juce::String error,instance;   // heap: a document is large and worker threads have small stacks
+    p.ready=document->insertComponent(record,{},instance,error);p.error=error;p.snapshot=document->snapshot();p.instance=document->documentInstance();p.label=record["geometry"]["label"].toString();return p;
+}
+static juce::String previewKey(const juce::var& record){return record["id"].toString()+"#"+record["revision"].toString();}
+struct CadComponentBrowser::PreviewJob final : juce::ThreadPoolJob
+{
+    PreviewJob(juce::Component::SafePointer<CadComponentBrowser> o,std::shared_ptr<std::atomic<std::uint64_t>> l,std::shared_ptr<ResultQueue> q,std::uint64_t g,juce::String k,juce::var r):juce::ThreadPoolJob("component preview"),owner(std::move(o)),latest(std::move(l)),queue(std::move(q)),generation(g),key(std::move(k)),record(std::move(r)){}
+    JobStatus runJob() override
+    {
+        // A later selection makes queued work worthless; skip it before the expensive part starts.
+        if(latest->load()!=generation||shouldExit())return jobHasFinished;
+        auto result=std::make_shared<Preview>(buildPreview(record));
+        {std::lock_guard<std::mutex> guard(queue->lock);queue->items.emplace_back(generation,key,result);}
+        juce::MessageManager::callAsync([owner=owner]{if(owner!=nullptr)owner->drainPreviewResults();});
+        return jobHasFinished;
+    }
+    juce::Component::SafePointer<CadComponentBrowser> owner;std::shared_ptr<std::atomic<std::uint64_t>> latest;std::shared_ptr<ResultQueue> queue;std::uint64_t generation;juce::String key;juce::var record;
 };
 CadComponentBrowser::CadComponentBrowser(std::shared_ptr<CadCommandService> c):service(std::move(c))
 {
@@ -25,9 +48,9 @@ CadComponentBrowser::CadComponentBrowser(std::shared_ptr<CadCommandService> c):s
     for(const auto* name:{"X","Y","Z","RX","RY","RZ"}){auto* label=placementNames.add(new juce::Label());label->setText(name,juce::dontSendNotification);addAndMakeVisible(label);auto* field=placement.add(new juce::TextEditor());field->setText("0");field->setTooltip(juce::String(name)+(juce::String(name).startsWith("R")?" degrees":" mm"));addAndMakeVisible(field);}
     importButton.onClick=[this]{importFile();};replaceButton.onClick=[this]{importFile(true);};reload.onClick=[this]{auto a=object();put(a,"action","reload");command(a);refresh();};publishButton.onClick=[this]{publish();};editButton.onClick=[this]{edit();};attachButton.onClick=[this]{attach();};insert.onClick=[this]{insertSelected();};replaceButton.setEnabled(false);
     workspaceMenu.sections=[] {return std::vector<WorkspaceMenu::Section>{{"Library",{{1,"Import workbook or portable library..."},{2,"Reload local library"},{3,"Save designed part..."}}}};};workspaceMenu.invoke=[this](int id){if(id==1)importFile();else if(id==2){auto a=object();put(a,"action","reload");command(a);refresh();}else publish();};
-    refresh();startTimerHz(15);
+    emptySnapshot=std::make_unique<CadDocument>()->snapshot();refresh();startTimerHz(15);
 }
-CadComponentBrowser::~CadComponentBrowser(){stopTimer();categories.setRootItem(nullptr);root.reset();list.setModel(nullptr);}
+CadComponentBrowser::~CadComponentBrowser(){stopTimer();latestGeneration->store(~std::uint64_t(0));previewPool.removeAllJobs(true,3000);categories.setRootItem(nullptr);root.reset();list.setModel(nullptr);}
 void CadComponentBrowser::paint(juce::Graphics& g){g.fillAll(juce::Colour(0xff131e27));}
 void CadComponentBrowser::resized()
 {
@@ -50,7 +73,17 @@ void CadComponentBrowser::refresh()
         auto* parent=root.get();juce::String path;for(const auto& name:juce::StringArray::fromTokens(r["category"].toString(),"/",{}))
         {if(name.isEmpty())continue;path+=(path.isEmpty()?"":"/")+name;Category* child=nullptr;for(int i=0;i<parent->getNumSubItems();++i){auto* candidate=static_cast<Category*>(parent->getSubItem(i));if(candidate->path==path){child=candidate;break;}}if(!child){child=new Category(*this,name,path);parent->addSubItem(child);}parent=child;}
     }
-    categories.setRootItemVisible(false);categories.setRootItem(root.get());root->setOpen(true);for(int i=0;i<root->getNumSubItems();++i)root->getSubItem(i)->setOpen(true);filter();
+    categories.setRootItemVisible(false);categories.setRootItem(root.get());root->setOpen(true);for(int i=0;i<root->getNumSubItems();++i)root->getSubItem(i)->setOpen(true);
+    previewCache.clear();previewOrder.clear();selectCategoryItem();filter();
+}
+// Keeps the tree's highlighted row equal to the displayed category (also after the tree is rebuilt). A category that no
+// longer exists falls back to "All components".
+void CadComponentBrowser::selectCategoryItem()
+{
+    Category* match=nullptr;std::function<void(Category&)> visit=[&](Category& item){if(match!=nullptr)return;if(&item!=root.get()&&item.path==categoryPath&&(!categoryPath.isEmpty()||item.label.startsWith("All")))match=&item;for(int i=0;i<item.getNumSubItems()&&match==nullptr;++i)visit(*static_cast<Category*>(item.getSubItem(i)));};
+    if(root!=nullptr)visit(*root);
+    if(match==nullptr){categoryPath.clear();if(root!=nullptr&&root->getNumSubItems()>0)match=static_cast<Category*>(root->getSubItem(0));}
+    if(match!=nullptr)match->setSelected(true,true,juce::dontSendNotification);
 }
 void CadComponentBrowser::filter()
 {
@@ -65,7 +98,7 @@ void CadComponentBrowser::filter()
         if(chemistry.getSelectedId()>1){bool found=false;for(const auto& p:*r["properties"].getArray())found|=p["label"].toString()=="Chemistry"&&p["value"].toString()==chemistry.getText();if(!found)continue;}
         shown.push_back(i);
     }
-    list.updateContent();if(shown.empty()){list.deselectAllRows();showRecord();}else {list.selectRow(0);showRecord();}status.setText(juce::String(shown.size())+" of "+juce::String(records.size())+" components",juce::dontSendNotification);
+    list.updateContent();if(shown.empty()){list.deselectAllRows();showRecord();}else {list.selectRow(0);showRecord();}if(pendingKey.isEmpty())status.setText(juce::String(shown.size())+" of "+juce::String(records.size())+" components",juce::dontSendNotification);
 }
 int CadComponentBrowser::getNumRows(){return (int)shown.size();}
 void CadComponentBrowser::paintListBoxItem(int row,juce::Graphics& g,int w,int h,bool selected)
@@ -76,9 +109,50 @@ void CadComponentBrowser::selectedRowsChanged(int){showRecord();}
 const juce::var* CadComponentBrowser::selected()const{const int row=list.getSelectedRow();return juce::isPositiveAndBelow(row,(int)shown.size())?records.begin()+shown[row]:nullptr;}
 void CadComponentBrowser::showRecord()
 {
-    const auto* record=selected();previewDocument=std::make_unique<CadDocument>();juce::String error,instance;
-    const bool ready=record&&previewDocument->insertComponent(*record,{},instance,error);insert.setEnabled(ready);editButton.setEnabled(record!=nullptr);attachButton.setEnabled(record!=nullptr);
-    details.setText(record?components::details(*record)+(ready?juce::String():"\nGeometry: "+error):juce::String("No matching components."),false);preview.setTitle(record?(*record)["geometry"]["label"].toString():"No component selected");preview.setSnapshot(previewDocument->snapshot());preview.requestFit(previewDocument->documentInstance());preview.prepareFrame(0,++frame);
+    const auto* record=selected();
+    insert.setEnabled(false);editButton.setEnabled(record!=nullptr);attachButton.setEnabled(record!=nullptr);
+    if(record==nullptr)
+    {
+        latestGeneration->store(++previewGeneration);pendingKey.clear();current=Preview();
+        details.setText("No matching components.",false);preview.setTitle("No component selected");preview.setSnapshot(emptySnapshot);return;
+    }
+    // Immediate and bounded: the description is shown now; the geometry preview is prepared on the worker thread.
+    const auto key=previewKey(*record);const auto name=(*record)["name"].toString();
+    if(const auto hit=previewCache.find(key);hit!=previewCache.end())
+    {
+        latestGeneration->store(++previewGeneration);pendingKey.clear();applyPreview(hit->second);return;
+    }
+    details.setText(components::details(*record)+"\nPreview: loading...",false);
+    if(key==pendingKey&&pendingKey.isNotEmpty())return;                       // already being prepared; its result will apply
+    latestGeneration->store(++previewGeneration);pendingKey=key;
+    preview.setTitle("Loading preview: "+name);preview.setSnapshot(emptySnapshot);status.setText("Loading "+name+"...",juce::dontSendNotification);
+    previewPool.addJob(new PreviewJob(juce::Component::SafePointer<CadComponentBrowser>(this),latestGeneration,results,previewGeneration,key,*record),true);
+}
+void CadComponentBrowser::previewReady(std::uint64_t generation,const juce::String& key,std::shared_ptr<Preview> result)
+{
+    previewCache[key]=*result;previewOrder.push_back(key);while(previewOrder.size()>32){previewCache.erase(previewOrder.front());previewOrder.pop_front();}
+    if(generation!=previewGeneration)return;                                    // a later selection is authoritative
+    pendingKey.clear();applyPreview(*result);
+}
+void CadComponentBrowser::applyPreview(const Preview& p)
+{
+    const auto* record=selected();if(record==nullptr)return;current=p;
+    insert.setEnabled(p.ready);details.setText(components::details(*record)+(p.ready?juce::String():"\nGeometry: "+p.error),false);
+    preview.setTitle((*record)["geometry"]["label"].toString());preview.setSnapshot(p.snapshot);preview.requestFit(p.instance);preview.prepareFrame(0,++frame);
+    status.setText(juce::String(shown.size())+" of "+juce::String(records.size())+" components",juce::dontSendNotification);
+}
+void CadComponentBrowser::drainPreviewResults()
+{
+    std::vector<std::tuple<std::uint64_t,juce::String,std::shared_ptr<Preview>>> ready;
+    {std::lock_guard<std::mutex> guard(results->lock);ready.swap(results->items);}
+    for(auto& item:ready)previewReady(std::get<0>(item),std::get<1>(item),std::get<2>(item));
+}
+// Used by the synchronous component check, which runs on the GUI thread and cannot wait for posted messages.
+bool CadComponentBrowser::waitForPreview(int timeoutMs)
+{
+    const auto end=juce::Time::getMillisecondCounter()+(juce::uint32)timeoutMs;
+    for(;;){drainPreviewResults();if(pendingKey.isEmpty()||juce::Time::getMillisecondCounter()>=end)break;juce::Thread::sleep(10);}
+    return pendingKey.isEmpty();
 }
 void CadComponentBrowser::insertSelected()
 {
@@ -114,13 +188,38 @@ void CadComponentBrowser::timerCallback(){if(isShowing())preview.prepareFrame(0,
 bool CadComponentBrowser::componentCheck(juce::var& report,const juce::File& folder)
 {
     juce::Array<juce::var> checks;bool passed=true;const auto check=[&](bool ok,const char* name){auto v=object();put(v,"check",name);put(v,"passed",ok);checks.add(v);passed&=ok;};
-    check(records.size()>=75,"Browser loads the researched component catalog");search.setText("BLF-1203W");filter();check(shown.size()==1&&selected()&&(*selected())["manufacturer"].toString()=="Bioenno Power","Search resolves a real manufacturer SKU");check(details.getText().contains("0.4 kg")&&details.getText().contains("Source:")&&!previewDocument->snapshot()->meshes.empty(),"Component details preserve specifications/sources and create preview geometry");
+    check(records.size()>=75,"Browser loads the researched component catalog");search.setText("BLF-1203W");filter();check(shown.size()==1&&selected()&&(*selected())["manufacturer"].toString()=="Bioenno Power","Search resolves a real manufacturer SKU");check(waitForPreview(120000)&&details.getText().contains("0.4 kg")&&details.getText().contains("Source:")&&current.snapshot!=nullptr&&!current.snapshot->meshes.empty(),"Component details preserve specifications/sources and the prepared preview contains geometry");
     insertSelected();placement[0]->setText("200");insertSelected();check(service->document().mechanicsData().instances.size()==2&&service->document().componentData()["definitions"].size()==1,"Browser inserts placed occurrences sharing one OCAF definition");check(service->document().mechanicsData().instances.back().placement.x==200,"Insertion numeric placement reaches the existing assembly model");
     search.clear();geometry.setSelectedId(3,juce::dontSendNotification);filter();check(shown.size()>=7&&!insert.isEnabled(),"Catalog-only records are browsable and cannot fabricate geometry");geometry.setSelectedId(1,juce::dontSendNotification);search.setText("BLF-1203W");filter();
     // TreeView normally lays out asynchronously. Flush its public root binding before the synchronous
     // component snapshot, so the diagnostic captures final category bounds rather than startup bounds.
     categories.setRootItem(nullptr);categories.setRootItem(root.get());check(root->getNumSubItems()==4&&categories.getNumRowsInTree()>=8,"Actual category hierarchy contains Structure, Motion and Electrical, with expandable children");
-    juce::FileOutputStream stream(folder.getChildFile("component-browser.png"));check(stream.openedOk()&&juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()),stream),"Component layout snapshot saved (excludes native OpenGL pixels)");report=object();put(report,"passed",passed);put(report,"checks",checks);put(report,"verification","JUCE controls/command wiring and component layout; not native Windows interaction");put(report,"folder",folder.getFullPathName());return passed;
+    // Navigation responsiveness: the selection callback must return at once, show the selection and a loading state, and a
+    // later selection must stay authoritative over slower earlier loads.
+    search.clear();manufacturer.setSelectedId(1,juce::dontSendNotification);origin.setSelectedId(1,juce::dontSendNotification);geometry.setSelectedId(1,juce::dontSendNotification);chemistry.setSelectedId(1,juce::dontSendNotification);
+    juce::Array<juce::var> timings;double worstCallback=0;bool highlightFollows=true;
+    const auto selectPath=[&](const juce::String& wanted)->Category*{Category* found=nullptr;for(int row=0;row<categories.getNumRowsInTree();++row)if(auto* item=static_cast<Category*>(categories.getItemOnRow(row)))if(item->path==wanted&&(!wanted.isEmpty()||item->label.startsWith("All"))){found=item;break;}return found;};
+    for(int row=0;row<categories.getNumRowsInTree();++row)if(auto* item=static_cast<Category*>(categories.getItemOnRow(row)))
+    {
+        const auto start=juce::Time::getMillisecondCounterHiRes();item->setSelected(true,true);const auto ms=juce::Time::getMillisecondCounterHiRes()-start;worstCallback=juce::jmax(worstCallback,ms);
+        highlightFollows&=item->isSelected()&&categoryPath==item->path;
+        auto v=object();put(v,"category",item->path);put(v,"shown",(int)shown.size());put(v,"callbackMs",ms);put(v,"loading",pendingKey.isNotEmpty());timings.add(v);
+    }
+    check(worstCallback<150.0,"Selecting any category returns within 150 ms (geometry is prepared in the background)");
+    check(highlightFollows,"The navigation tree highlights the category that was just selected");
+    waitForPreview(300000);
+    // Rapid switching: select the slowest-looking categories in a row, then a final one; only the final one may be shown.
+    juce::StringArray order{"Motion/Motors","Motion/Actuators","Electrical/Drivers","Motion/Wheels & Hubs","Motion/Gearmotors"};int exercised=0;
+    for(const auto& wanted:order)if(auto* item=selectPath(wanted)){item->setSelected(true,true);++exercised;}
+    if(exercised>1)
+    {
+        const auto lastPath=categoryPath;const auto* shownNow=selected();const auto expected=shownNow!=nullptr?(*shownNow)["name"].toString():juce::String();
+        waitForPreview(300000);
+        const auto* afterWait=selected();check(afterWait!=nullptr&&(*afterWait)["name"].toString()==expected&&categoryPath==lastPath&&details.getText().contains(expected)&&pendingKey.isEmpty(),"Rapid category switching ends on the last selected category with its own preview (stale results are dropped)");
+        auto* last=selectPath(lastPath);check(last!=nullptr&&last->isSelected(),"The highlight stays on the last selected category when background work completes");
+    }
+    
+    juce::FileOutputStream stream(folder.getChildFile("component-browser.png"));check(stream.openedOk()&&juce::PNGImageFormat().writeImageToStream(createComponentSnapshot(getLocalBounds()),stream),"Component layout snapshot saved (excludes native OpenGL pixels)");report=object();put(report,"passed",passed);put(report,"rapidSwitchesExercised",exercised);put(report,"checks",checks);put(report,"selectionTimings",timings);put(report,"verification","JUCE controls/command wiring and component layout; not native Windows interaction");put(report,"folder",folder.getFullPathName());return passed;
 }
 bool runCadComponentUiCheck(juce::var& report,const juce::File& folder,bool interactive)
 {

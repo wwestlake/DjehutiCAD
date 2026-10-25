@@ -1,3 +1,4 @@
+#include <mutex>
 #include "CadComponents.h"
 #include "EngineeringSpecification.h"
 #include "CadCraftStock.h"
@@ -200,6 +201,9 @@ TopoDS_Shape shape(const juce::var& record,juce::String& error)
     if(!validate(record,error))return {};
     const auto g=record["geometry"];const auto kind=g["kind"].toString();
     static auto& validShapeCache=*new std::map<juce::String,TopoDS_Shape>();
+    // The preview builder runs on a worker thread while the GUI thread may build shapes too; the cache is shared.
+    static auto& validShapeMutex=*new std::mutex();
+    const auto cached=[&](const juce::String& key,TopoDS_Shape& out){std::lock_guard<std::mutex> lock(validShapeMutex);const auto it=validShapeCache.find(key);if(it==validShapeCache.end())return false;out=it->second;return true;};
     try
     {
         TopoDS_Shape result;juce::String cacheKey;
@@ -219,19 +223,19 @@ TopoDS_Shape shape(const juce::var& record,juce::String& error)
             if(g["data"].toString().isNotEmpty())
             {
                 cacheKey="data:"+digest(g["data"].toString());
-                if(auto it=validShapeCache.find(cacheKey);it!=validShapeCache.end())return it->second;
+                {TopoDS_Shape hit;if(cached(cacheKey,hit))return hit;}
                 std::istringstream input(g["data"].toString().toStdString());BRep_Builder builder;BRepTools::Read(result,input,builder);
             }
             else if(g["drawingReconstruction"].toString().isNotEmpty())
             {
                 cacheKey="recon:"+g["drawingReconstruction"].toString();
-                if(auto it=validShapeCache.find(cacheKey);it!=validShapeCache.end())return it->second;
+                {TopoDS_Shape hit;if(cached(cacheKey,hit))return hit;}
                 result=buildDrawingReconstruction(g["drawingReconstruction"].toString());
             }
             else if(g["sourcePath"].toString().isNotEmpty())
             {
                 cacheKey="step:"+g["sourceSha256"].toString();
-                if(auto it=validShapeCache.find(cacheKey);it!=validShapeCache.end())return it->second;
+                {TopoDS_Shape hit;if(cached(cacheKey,hit))return hit;}
                 const auto asset=resolveAssetFile(record,g["sourcePath"].toString());
                 if(!asset.existsAsFile()){error="Missing associated manufacturer CAD source: "+g["sourcePath"].toString();return {};}
                 auto temp=clone(record);if(!attachModel(temp,asset,error))return {};
@@ -240,7 +244,7 @@ TopoDS_Shape shape(const juce::var& record,juce::String& error)
         }
         else {error="This catalog record lacks usable dimensions or an attached CAD model.";return {};}
         if(result.IsNull()||!TopExp_Explorer(result,TopAbs_SOLID).More()||!BRepCheck_Analyzer(result).IsValid()){error="Component representation must contain valid OCCT solid geometry.";return {};}
-        if(cacheKey.isNotEmpty())validShapeCache[cacheKey]=result;
+        if(cacheKey.isNotEmpty()){std::lock_guard<std::mutex> lock(validShapeMutex);validShapeCache[cacheKey]=result;}
         return result;
     }
     catch(const Standard_Failure& failure){error="Cannot build component geometry: "+juce::String(failure.GetMessageString());return {};}
