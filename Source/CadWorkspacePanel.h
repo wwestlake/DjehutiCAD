@@ -162,6 +162,9 @@ private:
     bool cursorShown = true, cursorSnapping = true;
     juce::String cursorNote = "origin";
     juce::String editingReferenceId, constructionKey, snapCacheKey, manipulatorPivotRef;
+    std::map<juce::String, double> formExact;           // exact stored value behind each numeric field's display text
+    std::map<juce::String, juce::String> formInitial;   // text each numeric field showed when its form was built: unchanged fields are never re-submitted
+    juce::var markerState() const;
     std::map<juce::String, std::vector<djehuti::cad::CadSnapPoint>> snapCache;
     juce::StringArray sourceChoiceIds, targetChoiceIds, referenceChoiceIds;   // option ids behind the most recently built dropdowns
     bool isReference(const juce::String& id) const;

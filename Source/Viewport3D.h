@@ -117,7 +117,7 @@ public:
         std::array<std::array<float, 3>, 3> axes { { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } } };
         bool selected = false, broken = false;
     };
-    struct CursorDraw { bool visible = false; std::array<float, 3> position {}; };
+    struct CursorDraw { bool visible = false, selected = false; std::array<float, 3> position {}; };
     void setConstructionDisplay(std::vector<ConstructionDraw> references, const CursorDraw& cursor);
     std::function<void(const juce::String& id)> onConstructionPicked;
     // Cursor placement: a click (not a drag) reports the pointer position and modifiers instead of selecting.
@@ -129,6 +129,11 @@ public:
     bool worldToScreen(const std::array<float, 3>& p, juce::Point<float>& s) const { return toScreen(p, s); }
     bool screenRay(juce::Point<float> p, std::array<float, 3>& origin, std::array<float, 3>& direction) const { return rayThrough(p, origin, direction); }
     float worldPerPixel(const std::array<float, 3>& at) const;   // model length covered by one screen pixel at that point
+    // The overlay (references, cursor, manipulator, previews) is painted by JUCE into a cached image that is reused until
+    // the component is invalidated. Anything that changes where a world point lands on screen must invalidate it, or the
+    // overlay stays at its old screen position while the scene moves underneath it. This counts those invalidations.
+    int overlayInvalidations() const { return overlayInvalidationCount; }
+    static constexpr const char* cursorMarkerId = "@cursor";   // id reported through onConstructionPicked for the working cursor
 
 private:
     friend bool runViewportInteractionCheck(juce::String&);
@@ -165,6 +170,8 @@ private:
     juce::String dragTargetId;
     std::array<float, 3> dragPlanePoint {}, dragPlaneNormal {};
     std::vector<std::pair<juce::String,std::array<float,3>>> pickMarkers;
+    int overlayInvalidationCount = 0;
+    void invalidateOverlay() { ++overlayInvalidationCount; repaint(); }
     std::vector<ConstructionDraw> constructionDraw;
     CursorDraw cursorDraw;
     bool cursorPlacing = false, cursorPreviewOn = false;

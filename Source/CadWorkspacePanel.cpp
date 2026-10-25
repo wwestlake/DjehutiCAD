@@ -28,6 +28,7 @@
 #include <TopExp.hxx>
 
 #include <deque>
+#include <charconv>
 #include <cstdlib>
 #include <BRepGProp.hxx>
 #include <GProp_GProps.hxx>
@@ -157,7 +158,8 @@ public:
     void setUnit(const juce::String& key, const juce::String& text) { for (auto& row : rows) if (row.key == key && row.unit) row.unit->setText(text, juce::dontSendNotification); }
     juce::Component* control(const juce::String& key) const { for (const auto& row : rows) if (row.key == key) return row.control.get(); return nullptr; }
     juce::String text(const juce::String& key) const { if (auto* e = dynamic_cast<juce::TextEditor*>(control(key))) return e->getText().trim(); return {}; }
-    double number(const juce::String& key) const { return text(key).getDoubleValue(); }
+    // strtod rounds correctly; JUCE's getDoubleValue drops digits beyond about 15 significant ones.
+    double number(const juce::String& key) const { const auto s = text(key).toStdString(); return s.empty() ? 0.0 : std::strtod(s.c_str(), nullptr); }
     bool numberValid(const juce::String& key) const
     {
         const auto value = text(key).toStdString(); char* end = nullptr;
@@ -232,7 +234,9 @@ public:
                 const auto text = value.toString().trim().toStdString(); char* end = nullptr;
                 const auto number = std::strtod(text.c_str(), &end);
                 if (text.empty() || end != text.c_str() + text.size() || !std::isfinite(number)) { error = "Expected a finite number for " + key; return false; }
-                e->setText(juce::String(number, key=="direction"?15:12), false);
+                // Shortest text that parses back to the same double: a typed value is never rounded for display.
+                char shortest[40]; const auto written = std::to_chars(shortest, shortest + sizeof shortest, number);
+                e->setText(written.ec == std::errc() ? juce::String(shortest, (size_t)(written.ptr - shortest)) : juce::String(number, 17), false);
                 if(key=="direction"&&!e->hasKeyboardFocus(true))e->setCaretPosition(0);
             }
             else { if (!value.isString()) { error = "Expected text for " + key; return false; } e->setText(value.toString(), false); }
@@ -1470,6 +1474,7 @@ void CadWorkspacePanel::syncLineProperties(bool polar)
 
 void CadWorkspacePanel::featureClicked(const juce::String& id)
 {
+    if(id==Viewport3D::cursorMarkerId){startTask(Task::cursor);updateConstructionDisplay(true);return;}   // the working cursor was picked in the view
     if(task==Task::referenceTransform&&form!=nullptr)
     {
         if(isReference(id)){pickReferenceForTransform(id);return;}
@@ -3205,6 +3210,8 @@ void CadWorkspacePanel::validateTask()
         const int assoc=form->choice("refAssoc"),kind=form->choice("refKind");   // 0 fixed, 1 follow, 2 cylinder axis, 3 face centre, 4 offset; 0 point, 1 axis, 2 cs, 3 plane
         const bool derived=assoc==2||assoc==3,follows=assoc!=0;
         form->setRowVisible("refSource",follows);form->setRowVisible("refFace",derived);form->setRowVisible("refUseFace",derived);
+        const char* assocNotes[]{"Fixed: keeps exactly these world coordinates.","Follows the chosen occurrence or body. Typed values are world coordinates; the reference stays associative and keeps its offset in the source's frame.","Axis of the chosen cylindrical face (midpoint along it). Position and direction come from the face and cannot be typed.","Centre of the chosen face (planar faces also give the orientation). Position comes from the face and cannot be typed.","Offset from another reference. Typed values are world coordinates; the reference stays associative."};
+        form->setCaption("refAssocNote",assocNotes[juce::jlimit(0,4,assoc)]);
         for(const auto* k:{"refOx","refOy","refOz"})form->setRowVisible(k,!derived);
         for(const auto* k:{"refDx","refDy","refDz"})form->setRowVisible(k,!derived&&(kind==1||kind==3));
         for(const auto* k:{"refRx","refRy","refRz"})form->setRowVisible(k,!derived&&kind==2);
@@ -4832,7 +4839,7 @@ juce::var CadWorkspacePanel::automationState()
     const auto& document = service->document();
     auto* state = new juce::DynamicObject();
     state->setProperty("symmetry",service->document().sketchSymmetryState(editingSketchId));
-    state->setProperty("cursor",cursorState());state->setProperty("manipulator",modelView.manipulatorState());state->setProperty("transformTool",transformTool);state->setProperty("modifyToolbar",modifyPalette->state());state->setProperty("snapToolbar",snapPalette->state());state->setProperty("snapping",snapPreferences->state());state->setProperty("references",referenceState());
+    state->setProperty("cursor",cursorState());state->setProperty("marker",markerState());state->setProperty("manipulator",modelView.manipulatorState());state->setProperty("transformTool",transformTool);state->setProperty("modifyToolbar",modifyPalette->state());state->setProperty("snapToolbar",snapPalette->state());state->setProperty("snapping",snapPreferences->state());state->setProperty("references",referenceState());
     state->setProperty("modelingPreview",modelingPreviewActive);
     state->setProperty("replicationPreview",replicationPreviewActive);
     state->setProperty("chamferPreview",chamferPreviewActive);

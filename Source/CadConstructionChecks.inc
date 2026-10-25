@@ -336,6 +336,145 @@ bool runConstructionReferenceCheck(juce::var& report)
         panel.cancelTask();
     }
 
+    // Marker stability: a marker is a world-space object. Camera changes must invalidate the overlay and keep it on the same
+    // world point; hovering, leaving the view and previews must never change committed coordinates.
+    {
+        panel.cancelTask(); panel.selectFeature({}); panel.setCursor({ 60, 0, 0 }, "test"); view.setStandardView("isometric"); view.fitAll(); panel.updateConstructionDisplay(true);
+        const std::array<float, 3> P { 60, 0, 0 };
+        const auto roundTrip = [&](const std::array<float, 3>& point)
+        {
+            juce::Point<float> s; if (!view.worldToScreen(point, s)) return 1.0e9f;
+            std::array<float, 3> o {}, d {}; view.screenRay(s, o, d);
+            const float t = (point[0] - o[0]) * d[0] + (point[1] - o[1]) * d[1] + (point[2] - o[2]) * d[2];
+            return std::hypot(o[0] + t * d[0] - point[0], o[1] + t * d[1] - point[1], o[2] + t * d[2] - point[2]);
+        };
+        const auto redNear = [&](const juce::Image& image, juce::Point<float> at)
+        {
+            for (int dy = -2; dy <= 2; ++dy) for (int dx = -2; dx <= 2; ++dx)
+            {
+                const int x = (int) std::lround(at.x) + dx, y = (int) std::lround(at.y) + dy; if (!image.isValid() || x < 0 || y < 0 || x >= image.getWidth() || y >= image.getHeight()) continue;
+                const auto c = image.getPixelAt(x, y); if (c.getAlpha() > 200 && c.getRed() > 220 && c.getGreen() < 110 && c.getBlue() < 110) return true;
+            }
+            return false;
+        };
+        const auto paintedAtWorldPosition = [&]()
+        {
+            juce::Point<float> s; if (!view.worldToScreen(P, s)) return false;
+            return redNear(view.createComponentSnapshot(view.getLocalBounds()), s);
+        };
+        check(roundTrip(P) < 0.05f && paintedAtWorldPosition(), "The cursor is painted exactly where its world position projects (start view)", juce::String(roundTrip(P)));
+        const auto wheel = [&](float amount) { juce::MouseWheelDetails w; w.deltaX = 0; w.deltaY = amount; w.isReversed = false; w.isSmooth = false; w.isInertial = false; view.mouseWheelMove(mouse({ 400, 300 }), w); };
+        const auto before = view.overlayInvalidations(); wheel(0.5f);
+        check(view.overlayInvalidations() > before, "Zooming invalidates the overlay (the cause of the drifting marker)");
+        check(paintedAtWorldPosition() && roundTrip(P) < 0.05f, "After zooming in the cursor is still painted on its world position");
+        wheel(-0.9f);
+        check(paintedAtWorldPosition(), "After zooming out the cursor is still painted on its world position");
+        const auto dragBy = [&](juce::Point<float> from, juce::Point<float> to, int mods)
+        {
+            const int left = juce::ModifierKeys::leftButtonModifier | mods;
+            view.mouseDown(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), from, juce::ModifierKeys(left), 1, 0, 0, 0, 0, &view, &view, juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, false));
+            for (int i = 1; i <= 5; ++i) { const auto p = from + (to - from) * (i / 5.0f); view.mouseDrag(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(left), 1, 0, 0, 0, 0, &view, &view, juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, false)); }
+            view.mouseUp(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), to, juce::ModifierKeys(), 1, 0, 0, 0, 0, &view, &view, juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, false));
+        };
+        const auto beforePan = view.overlayInvalidations(); dragBy({ 500, 400 }, { 560, 430 }, juce::ModifierKeys::shiftModifier);
+        check(view.overlayInvalidations() > beforePan && paintedAtWorldPosition() && roundTrip(P) < 0.05f, "After panning the cursor is still on its world position");
+        const auto beforeOrbit = view.overlayInvalidations(); dragBy({ 500, 400 }, { 440, 380 }, 0);
+        check(view.overlayInvalidations() > beforeOrbit && paintedAtWorldPosition() && roundTrip(P) < 0.05f, "After orbiting the cursor is still on its world position");
+        const auto beforeView = view.overlayInvalidations(); view.setStandardView("top");
+        check(view.overlayInvalidations() > beforeView && paintedAtWorldPosition(), "After a standard view change the cursor is still on its world position");
+        // The same for a persistent reference.
+        const auto refReply = service->referenceCommand(request("create", {}, R"({"kind":"point","name":"Stable","origin":[40,25,10]})"));
+        panel.refreshFromDocument(true); panel.updateConstructionDisplay(true);
+        const auto refWorld = world(*service, refReply["id"].toString()); const std::array<float, 3> R { (float) refWorld.world.x, (float) refWorld.world.y, (float) refWorld.world.z };
+        const auto amberNear = [&](const juce::Image& image, juce::Point<float> at)
+        { for (int dy = -6; dy <= 6; ++dy) for (int dx = -6; dx <= 6; ++dx) { const int x = (int) std::lround(at.x) + dx, y = (int) std::lround(at.y) + dy; if (x < 0 || y < 0 || x >= image.getWidth() || y >= image.getHeight()) continue; const auto c = image.getPixelAt(x, y); if (c.getRed() > 220 && c.getGreen() > 150 && c.getGreen() < 215 && c.getBlue() < 120) return true; } return false; };
+        for (int step = 0; step < 3; ++step)
+        {
+            if (step == 0) wheel(0.6f); else if (step == 1) dragBy({ 500, 400 }, { 540, 360 }, juce::ModifierKeys::shiftModifier); else dragBy({ 500, 400 }, { 470, 430 }, 0);
+            juce::Point<float> s; view.worldToScreen(R, s);
+            check(amberNear(view.createComponentSnapshot(view.getLocalBounds()), s) && roundTrip(R) < 0.05f, "A construction reference stays on its world position through zoom, pan and orbit (step " + juce::String(step + 1) + ")");
+        }
+
+        // Hover previews and leaving the view cannot change committed coordinates.
+        const auto committed = panel.cursorWorld; const auto refRevision = service->document().revision();
+        view.setCursorPlacing(true);
+        for (const auto& at : { juce::Point<float>(300, 300), { 520, 410 }, { 5, 5 }, { 700, 100 } }) view.mouseMove(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys(), 1, 0, 0, 0, 0, &view, &view, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, false));
+        view.mouseExit(mouse({ 0, 0 }));
+        check(panel.cursorWorld == committed && service->document().revision() == refRevision, "Hovering previews and leaving the view leave the committed cursor and document untouched");
+        view.setCursorPlacing(false);
+        check(paintedAtWorldPosition(), "After the pointer leaves the view the cursor is still on its world position (no jump)");
+
+        // Selecting the cursor in the view; exact numerical editing; unchanged fields stay exact.
+        juce::Point<float> cursorScreen; view.worldToScreen(P, cursorScreen); click(cursorScreen + juce::Point<float>(2, 1));
+        check(panel.task == CadWorkspacePanel::Task::cursor, "Clicking the cursor marker in the view selects it and opens its properties");
+        auto st = panel.automationState();
+        check(st["marker"]["type"].toString() == "cursor" && (bool) st["cursor"]["selected"] && st["marker"]["cursor"]["units"].toString() == "mm", "The UI state identifies the selected marker with its units");
+        {
+            const auto halo = view.createComponentSnapshot(view.getLocalBounds()); bool yellow = false;
+            for (const auto& d : { juce::Point<int>(17, 0), { -17, 0 }, { 0, 17 }, { 0, -17 } }) for (int k = -2; k <= 2 && !yellow; ++k)
+            { const int x = (int) cursorScreen.x + d.x + (d.x == 0 ? k : 0), y = (int) cursorScreen.y + d.y + (d.y == 0 ? k : 0); if (x >= 0 && y >= 0 && x < halo.getWidth() && y < halo.getHeight()) { const auto c = halo.getPixelAt(x, y); yellow = c.getRed() > 220 && c.getGreen() > 190 && c.getBlue() < 140; } }
+            check(yellow, "A selected cursor is drawn with a selection ring");
+        }
+        const auto setField = [&](CadWorkspacePanel& p, const char* field, const juce::var& value) { auto a = juce::var(new juce::DynamicObject()); a.getDynamicObject()->setProperty("action", "set"); a.getDynamicObject()->setProperty("field", field); a.getDynamicObject()->setProperty("value", value); return p.automation(a); };
+        panel.setCursor({ 0.1234567891234, 2.5, -3.75 }, "exact test");
+        setField(panel, "cursorZ", "5.5e1");
+        panel.automation(json(R"({"action":"click","button":"cursorSet"})"));
+        check(closeTo(panel.cursorWorld[2], 55.0, 0) && panel.cursorWorld[0] == 0.1234567891234 && panel.cursorWorld[1] == 2.5, "Applying one typed coordinate (scientific notation) leaves the others bit-for-bit unchanged", juce::String(panel.cursorWorld[0], 15));
+        setField(panel, "cursorX", "12.3456789012345"); panel.automation(json(R"({"action":"click","button":"cursorSet"})"));
+        check(panel.cursorWorld[0] == 12.3456789012345 && panel.cursorWorld[2] == 55.0, "A typed value is stored exactly as entered, with no display rounding", juce::String(panel.cursorWorld[0], 15));
+        check(!(bool) setField(panel, "cursorY", "not a number")["ok"], "Invalid text is rejected by the numeric field");
+        panel.automation(json(R"({"action":"click","button":"cursorReset"})"));
+        check(panel.cursorWorld[0] == 0 && panel.cursorWorld[1] == 0 && panel.cursorWorld[2] == 0, "Reset to origin works from the selected marker");
+        const auto agent = cursorOp(panel, R"({"operation":"select"})");
+        check((bool) agent["ok"] && agent["state"]["marker"]["type"].toString() == "cursor", "The agent API selects the cursor marker and reads it back");
+        panel.cancelTask();
+    }
+
+    // Reference marker properties: every kind, exact numerical editing, unchanged fields stay exact, association preserved.
+    {
+        const auto row = [&](const char* key) { return panel.form != nullptr && panel.form->rowVisible(key); };
+        const std::vector<std::pair<juce::String, juce::String>> kinds { { "point", R"({"kind":"point","name":"P","origin":[1.2345678901234,2,3]})" }, { "axis", R"({"kind":"axis","name":"A","origin":[1,2,3],"direction":[0,0,2]})" },
+                                                                         { "plane", R"({"kind":"plane","name":"Pl","origin":[1,2,3],"direction":[1,0,0]})" }, { "cs", R"({"kind":"cs","name":"C","origin":[1,2,3],"rotationDegrees":[10,20,30]})" } };
+        for (const auto& [kind, definition] : kinds)
+        {
+            const auto created = service->referenceCommand(request("create", {}, definition)); const auto id = created["id"].toString();
+            panel.selectFeature(id);
+            const bool direction = row("refDx"), rotation = row("refRx"), origin = row("refOx") && row("refOy") && row("refOz");
+            check(panel.task == CadWorkspacePanel::Task::reference && origin && direction == (kind == "axis" || kind == "plane") && rotation == (kind == "cs") && row("refName"),
+                  "The " + kind + " properties show its name, visibility and origin" + juce::String(kind == "point" ? " only" : kind == "cs" ? ", orientation" : ", direction"), id);
+            check(panel.automationState()["marker"]["type"].toString() == kind && panel.automationState()["marker"]["reference"]["world"]["origin"].size() == 3, "The UI state exposes the " + kind + " marker's world properties");
+        }
+        // Exactness: change only the name; then only Z.
+        juce::String exact; for (const auto& r : service->document().constructionData()) if (r.name == "P") exact = r.id;
+        const auto setField2 = [&](const char* field, const juce::var& value) { auto a = juce::var(new juce::DynamicObject()); a.getDynamicObject()->setProperty("action", "set"); a.getDynamicObject()->setProperty("field", field); a.getDynamicObject()->setProperty("value", value); return panel.automation(a); };
+        panel.selectFeature(exact);
+        setField2("refName", "Renamed point"); panel.automation(json(R"({"action":"click","button":"apply"})"));
+        check(service->document().findConstruction(exact)->name == "Renamed point" && service->document().findConstruction(exact)->frame.x == 1.2345678901234, "Editing only the name leaves the stored coordinates exactly as they were (no display rounding)", juce::String(service->document().findConstruction(exact)->frame.x, 15));
+        panel.selectFeature(exact); setField2("refOz", "7.125"); panel.automation(json(R"({"action":"click","button":"apply"})"));
+        check(service->document().findConstruction(exact)->frame.z == 7.125 && service->document().findConstruction(exact)->frame.x == 1.2345678901234, "Editing only Z changes Z exactly and leaves X exact");
+        service->undo(error); check(service->document().findConstruction(exact)->frame.z == 3.0, "Undo restores the previous coordinate");
+        service->redo(error);
+        // Zero direction is refused with a clear message and changes nothing.
+        juce::String axisId; for (const auto& r : service->document().constructionData()) if (r.name == "A") axisId = r.id;
+        panel.selectFeature(axisId); setField2("refDx", "0"); setField2("refDy", "0"); setField2("refDz", "0");
+        const auto revision = service->document().revision(); panel.automation(json(R"({"action":"click","button":"apply"})"));
+        check(service->document().revision() == revision, "A zero direction is refused and the document is unchanged");
+        // Associative follower: typed world values keep it associative.
+        const auto followerReply = service->referenceCommand(request("create", {}, "{\"kind\":\"point\",\"name\":\"Follower\",\"origin\":[5,5,5],\"association\":{\"type\":\"frame\",\"source\":\"" + partBox + "\"}}"));
+        const auto followerId = followerReply["id"].toString();
+        panel.selectFeature(followerId); setField2("refOx", "22.5"); panel.automation(json(R"({"action":"click","button":"apply"})"));
+        const auto* follower = service->document().findConstruction(followerId);
+        check(follower->association == "frame" && follower->source == partBox && closeTo(world(*service, followerId).world.x, 22.5, 1e-12), "Typing world coordinates on a follower keeps it associative and lands exactly on the typed value");
+        const auto beforeMove = world(*service, followerId).world.y;
+        service->transformCommand(json("{\"operation\":\"move\",\"target\":\"" + partBox + "\",\"displacement\":[0,4,0]}"));
+        check(closeTo(world(*service, followerId).world.y, beforeMove + 4, 1e-9), "...and it still follows its source afterwards");
+        panel.selectFeature(followerId);
+        check(panel.form->rowVisible("refAssocNote") && panel.form->rowVisible("refSource"), "The properties show the association information");
+        { CadCommandService back; const auto file = folder.getChildFile("markers.djo"); const bool ok = service->save(file, error) && back.load(file, error);
+          check(ok && back.document().findConstruction(exact)->frame.x == 1.2345678901234 && back.document().findConstruction(followerId)->association == "frame", "Exact coordinates and associations survive save and reopen", error); }
+        panel.cancelTask();
+    }
+
     // Agent, FRust and node access.
     {
         const auto catalogue = juce::JSON::toString(DjehutiAgentPanel::toolCatalogue());

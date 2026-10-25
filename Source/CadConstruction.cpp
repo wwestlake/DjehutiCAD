@@ -229,8 +229,10 @@ bool CadDocument::buildConstruction(const juce::var& def, const CadConstructionR
         for (const auto& prop : a.getDynamicObject()->getProperties()) if (!juce::StringArray { "type", "source", "face" }.contains(prop.name.toString())) { error = "Unknown association field: " + prop.name.toString(); return false; }
         type = a.getProperty("type", "fixed").toString();
         if (!construction::isAssociation(type)) { error = "Association type must be fixed, frame, cylinderAxis, faceCentre or reference."; return false; }
-        out.association = type; out.source = a["source"].toString(); out.face = a["face"].toString(); associationChanged = true;
+        out.association = type; out.source = a["source"].toString(); out.face = a["face"].toString();
         if (type == "fixed") { out.source.clear(); out.face.clear(); }
+        // Re-sending the same association is not a change: a stored exact frame is never rebuilt from display values.
+        associationChanged = existing == nullptr || existing->association != out.association || existing->source != out.source || existing->face != out.face;
     }
     if (type != "fixed" && out.source.isEmpty()) { error = "An associative reference needs a source id."; return false; }
 
@@ -253,7 +255,8 @@ bool CadDocument::buildConstruction(const juce::var& def, const CadConstructionR
         return CadFrame::fromTrsf(translation(gp_Vec(origin[0], origin[1], origin[2])));
     };
 
-    if (type == "fixed") { if (worldGiven || existing == nullptr || associationChanged) out.frame = worldFrame(); }
+    const bool kindChanged = existing != nullptr && existing->kind != out.kind;
+    if (type == "fixed") { if (worldGiven || existing == nullptr || associationChanged || kindChanged) out.frame = worldFrame(); }
     else if (type == "frame" || type == "reference")
     {
         gp_Trsf sourceFrame;

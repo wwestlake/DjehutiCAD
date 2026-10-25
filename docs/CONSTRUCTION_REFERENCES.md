@@ -103,6 +103,30 @@ in versioned JSON, .djc). Every create, edit, delete or visibility change is one
 undoable command. Documents without references are unchanged, and older readers
 ignore the extra field.
 
+## Marker selection, stability and exact entry
+
+**Selecting.** Click the working-cursor marker or a reference marker in the model view (or pick a reference in the
+tree). The marker gets a selection ring and its properties open in the task panel: the cursor shows X, Y, Z
+(millimetres, world) with Reset and Apply; a point shows its position; an axis position and direction; a plane
+position and normal; a coordinate system position and rotation; each with name, visibility and, for associated
+references, the association and source. A hover or placement preview is drawn as dashed corner brackets labelled
+"Preview (click to place)", never as a committed marker, and moving the pointer out of the view leaves committed
+markers untouched.
+
+**Root cause of the drift.** Markers are drawn in the viewport's screen-space overlay. The JUCE OpenGL-attached
+component caches that overlay and only redraws it on `repaint()`. A zoom, pan or orbit moved the 3D scene but did
+not invalidate the overlay, so the marker kept its old pixel position until some unrelated event (the pointer
+leaving the view) forced a repaint, at which point it "snapped back" to its true world position. The overlay is now
+invalidated whenever the camera changes or a new frame is published (`Viewport3D::invalidateOverlay`, counted by
+`overlayInvalidations()` for tests). Marker world positions were never wrong.
+
+**Exact values.** Typed values take precedence and are stored exactly: numeric fields accept digits, sign, decimal
+point and exponent, are parsed with correct rounding (`strtod`) and are never rounded for display storage. When a
+reference is edited, a field the user did not touch is not re-submitted, so exact stored values and an associated
+reference's offset are not rewritten from rounded display text. A zero direction vector is refused. Editing the world
+values of an associated reference keeps it associative and recomputes its offset; to detach it, change the behaviour
+to Fixed. All values are millimetres and degrees in the world frame.
+
 ## Transform with References
 
 **Modify > Transform with References...** (or `cad_transform`). Pick the part,

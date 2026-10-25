@@ -198,6 +198,7 @@ void Viewport3D::mouseUp(const juce::MouseEvent& e)
     if(onConstructionPicked&&!e.mods.isPopupMenu()&&!e.mods.isRightButtonDown()&&!e.mods.isShiftDown()&&e.position.roundToInt().getDistanceFrom(pressPosition)<=3)
     {
         juce::String hit;float best=10.0f;
+        if(cursorDraw.visible){juce::Point<float> s;if(toScreen(cursorDraw.position,s)&&s.getDistanceFrom(e.position)<14.0f){best=s.getDistanceFrom(e.position)-4.0f;hit=cursorMarkerId;}}
         for(const auto& r:constructionDraw)
         {
             const float unit=worldPerPixel(r.origin);std::vector<F3> spots{r.origin};
@@ -467,7 +468,7 @@ void Viewport3D::resetCamera() { setFlyMode(false);orbitPointPicking=false; yaw 
 void Viewport3D::fitAll() { userCameraChanged = false; if (hasSceneBounds) frameScene(); else fitPending = true; markDirty(); }
 void Viewport3D::requestFit(std::uint64_t documentInstance) { fitPending = true; fitDocument = documentInstance; userCameraChanged = false; tryPendingFit(); markDirty(); }
 // The user moved the camera: their view wins over any fit still waiting for geometry.
-void Viewport3D::cameraChanged() { userCameraChanged = true; fitPending = false; if (onFrameRequested) onFrameRequested(); }
+void Viewport3D::cameraChanged() { userCameraChanged = true; fitPending = false; invalidateOverlay(); if (onFrameRequested) onFrameRequested(); }
 void Viewport3D::markDirty() { renderDirty = true; if (onFrameRequested) onFrameRequested(); }
 // A pending fit uses the posed bounds of the drawn geometry, so it waits for the view size and for a runtime
 // pose computed from the same document state; an older pose would place instances where they are not drawn.
@@ -574,7 +575,7 @@ bool Viewport3D::prepareFrame(float sharedAngle, std::uint64_t serial)
     if (!renderDirty.exchange(false) && hasPublished && cameraState == lastCamera) return false;   // nothing changed: no frame, no render
     updateReferenceGuides();
     DjehutiFramePacket packet; std::memcpy(packet.model.v, m.v, sizeof(m.v)); std::memcpy(packet.view.v, v.v, sizeof(v.v)); std::memcpy(packet.projection.v, p.v, sizeof(p.v)); packet.serial = serial; packet.angle = sharedAngle;const auto clip=clippingPlanes();packet.nearPlane=clip[0];packet.farPlane=clip[1];packet.floorVisible=showFloor;
-    if (frames.publish(packet)) { lastCamera = cameraState; hasPublished = true; }
+    if (frames.publish(packet)) { lastCamera = cameraState; hasPublished = true; invalidateOverlay(); }   // the scene moved: the overlay must follow
     else renderDirty = true;   // every slot is still in flight: the render below retires fences, then retry next tick
     context.triggerRepaint();
     return true;
@@ -1136,11 +1137,13 @@ void Viewport3D::drawConstruction(juce::Graphics& g)
             if (all) { quad.closeSubPath(); g.setColour(base.withAlpha(0.12f)); g.fillPath(quad); g.setColour(base); g.strokePath(quad, juce::PathStrokeType(width)); }
             arrow(r.origin, along(2, 34), base, width);
         }
+        if (r.selected) { g.setColour(juce::Colour(0xffffe14d)); g.drawEllipse(juce::Rectangle<float>(26, 26).withCentre(o), 2.2f); }
         g.setColour(base); g.setFont(juce::Font(12.0f)); g.drawText(r.name + (r.broken ? " (broken)" : ""), (int) o.x + 9, (int) o.y - 20, 190, 14, juce::Justification::left, false);
     }
     juce::Point<float> c;
     if (cursorDraw.visible && toScreen(cursorDraw.position, c))
     {
+        if (cursorDraw.selected) { g.setColour(juce::Colour(0xffffe14d)); g.drawEllipse(juce::Rectangle<float>(34, 34).withCentre(c), 2.5f); }
         g.setColour(juce::Colour(0xffff3b3b)); g.drawEllipse(juce::Rectangle<float>(18, 18).withCentre(c), 2.0f);
         g.setColour(juce::Colours::white.withAlpha(0.9f)); g.drawEllipse(juce::Rectangle<float>(22, 22).withCentre(c), 1.0f);
         g.setColour(juce::Colour(0xffff3b3b));
@@ -1151,9 +1154,13 @@ void Viewport3D::drawConstruction(juce::Graphics& g)
     juce::Point<float> p;
     if (cursorPreviewOn && toScreen(cursorPreviewPoint, p))
     {
-        g.setColour(juce::Colour(0xffffe14d)); g.drawRect(juce::Rectangle<float>(12, 12).withCentre(p), 2.0f);
-        g.setColour(juce::Colour(0xe0151d24)); g.fillRoundedRectangle(p.x + 10, p.y - 24, 6.0f + 7.0f * (float) juce::jmin(34, cursorPreviewLabel.length()), 18, 4);
-        g.setColour(juce::Colour(0xffffe14d)); g.setFont(juce::Font(12.0f)); g.drawText(cursorPreviewLabel, (int) p.x + 13, (int) p.y - 24, 260, 18, juce::Justification::left, false);
+        // A preview is a dashed bracket that only follows the pointer: it is not the committed cursor (solid red ring).
+        const auto box = juce::Rectangle<float>(16, 16).withCentre(p); g.setColour(juce::Colour(0xffffe14d));
+        for (const auto& corner : { std::array<float, 4> { box.getX(), box.getY(), 1, 1 }, { box.getRight(), box.getY(), -1, 1 }, { box.getX(), box.getBottom(), 1, -1 }, { box.getRight(), box.getBottom(), -1, -1 } })
+        { g.drawLine(corner[0], corner[1], corner[0] + corner[2] * 6, corner[1], 1.6f); g.drawLine(corner[0], corner[1], corner[0], corner[1] + corner[3] * 6, 1.6f); }
+        const auto text = "Preview (click to place): " + cursorPreviewLabel;
+        g.setColour(juce::Colour(0xe0151d24)); g.fillRoundedRectangle(p.x + 12, p.y - 26, 8.0f + 6.6f * (float) juce::jmin(60, text.length()), 18, 4);
+        g.setColour(juce::Colour(0xffffe14d)); g.setFont(juce::Font(12.0f)); g.drawText(text, (int) p.x + 16, (int) p.y - 26, 460, 18, juce::Justification::left, false);
     }
 }
 

@@ -2,13 +2,19 @@
 // References live in the document and change only through CadCommandService::referenceCommand / transformCommand,
 // so they are transactional, undoable and saved. The cursor is temporary workspace state.
 
+namespace
+{
+// Engineering numeric input: digits, sign, decimal point and exponent (1e-3, 2.5E+2).
+constexpr const char* engineeringCharacters = "0123456789.-+eE";
+}
+
 bool CadWorkspacePanel::isReference(const juce::String& id) const { return id.isNotEmpty() && service->document().findConstruction(id) != nullptr; }
 bool CadWorkspacePanel::referenceVisible(const juce::String& id) const { const auto* r = service->document().findConstruction(id); return r != nullptr && r->visible; }
 
 void CadWorkspacePanel::updateConstructionDisplay(bool force)
 {
     const auto& d = service->document(); const auto pose = motionRuntime != nullptr ? motionRuntime->pose() : nullptr;
-    const auto key = juce::String(d.documentInstance()) + "|" + juce::String(d.revision()) + "|" + selectedId + "|" + juce::String(pose ? pose->serial : 0) + "|"
+    const auto key = juce::String(d.documentInstance()) + "|" + juce::String(d.revision()) + "|" + selectedId + "|" + juce::String(pose ? pose->serial : 0) + (task == Task::cursor ? "|K|" : "|-|")
                    + juce::String(cursorWorld[0], 9) + "," + juce::String(cursorWorld[1], 9) + "," + juce::String(cursorWorld[2], 9) + (cursorShown ? "|c" : "|-") + (editingSketchId.isNotEmpty() ? "s" : "m");
     if (!force && key == constructionKey) return;
     constructionKey = key;
@@ -24,7 +30,7 @@ void CadWorkspacePanel::updateConstructionDisplay(bool force)
         for (int i = 0; i < 3; ++i) { const auto a = gp_Dir(i == 0 ? 1 : 0, i == 1 ? 1 : 0, i == 2 ? 1 : 0).Transformed(t); draw.axes[(size_t) i] = { (float) a.X(), (float) a.Y(), (float) a.Z() }; }
         draws.push_back(std::move(draw));
     }
-    Viewport3D::CursorDraw cursor; cursor.visible = cursorShown; cursor.position = { (float) cursorWorld[0], (float) cursorWorld[1], (float) cursorWorld[2] };
+    Viewport3D::CursorDraw cursor; cursor.visible = cursorShown; cursor.selected = task == Task::cursor; cursor.position = { (float) cursorWorld[0], (float) cursorWorld[1], (float) cursorWorld[2] };
     modelView.setConstructionDisplay(std::move(draws), cursor);
     if (editingSketchId.isNotEmpty()) sketchCanvas->repaint();
 }
@@ -175,7 +181,18 @@ juce::var CadWorkspacePanel::cursorState() const
         }
     }
     o->setProperty("units", "mm");
+    o->setProperty("selected", task == Task::cursor);
     return o;
+}
+
+// The selected marker (the working cursor or a construction reference) with its editable properties; void otherwise.
+juce::var CadWorkspacePanel::markerState() const
+{
+    auto* o = new juce::DynamicObject();
+    if (task == Task::cursor) { o->setProperty("type", "cursor"); o->setProperty("id", "@cursor"); o->setProperty("temporary", true); o->setProperty("cursor", cursorState()); return o; }
+    if (task == Task::reference && editingReferenceId.isNotEmpty())
+        if (const auto* r = service->document().findConstruction(editingReferenceId)) { o->setProperty("type", r->kind); o->setProperty("id", r->id); o->setProperty("temporary", false); o->setProperty("reference", service->document().constructionToJson(*r)); return o; }
+    return juce::var();
 }
 
 juce::var CadWorkspacePanel::cursorCommand(const juce::var& args, juce::String& error)
@@ -198,6 +215,7 @@ juce::var CadWorkspacePanel::cursorCommand(const juce::var& args, juce::String& 
         else { number("x", w[0]); number("y", w[1]); number("z", w[2]); if (error.isNotEmpty()) return cursorState(); }
         setCursor(w, "typed coordinates");
     }
+    else if (op == "select") { startTask(Task::cursor); }
     else if (op == "toSelection") { juce::String note; if (!cursorToSelection(note)) error = note; }
     else if (op == "toReference")
     {
@@ -234,7 +252,7 @@ juce::var CadWorkspacePanel::cursorCommand(const juce::var& args, juce::String& 
         if (args.hasProperty("shown")) { if (!args["shown"].isBool()) error = "shown must be true or false."; else { cursorShown = args["shown"]; updateConstructionDisplay(true); } }
         if (args.hasProperty("snapping")) { if (!args["snapping"].isBool()) error = "snapping must be true or false."; else cursorSnapping = args["snapping"]; }
     }
-    else error = "operation must be get, set, reset, toSelection, toReference, snap, place or options.";
+    else error = "operation must be get, set, reset, select, toSelection, toReference, snap, place or options.";
     return cursorState();
 }
 
@@ -263,25 +281,32 @@ juce::StringArray CadWorkspacePanel::targetOptions(const juce::String& blank)
 void CadWorkspacePanel::addCursorFields()
 {
     form->addHeader("Position in the model (mm)");
-    form->addNote("cursorNote", "Temporary construction point (" + cursorNote + "). Moving it never changes geometry or earlier operations.", 3);
-    form->addNumber("cursorX", "X", cursorWorld[0], "mm", "World X of the working cursor.", 4);
-    form->addNumber("cursorY", "Y", cursorWorld[1], "mm", "World Y of the working cursor.", 4);
-    form->addNumber("cursorZ", "Z", cursorWorld[2], "mm", "World Z of the working cursor.", 4);
+    form->addNote("cursorNote", "Temporary construction point (" + cursorNote + "). Units are millimetres. Moving it never changes geometry or earlier operations.", 3);
+    // Fields show nine decimals (nanometres) and remember the text they showed: a field the user did not touch is
+    // never re-submitted, so applying one coordinate cannot round or alter the others.
+    const auto coordinate = [this](const char* key, const char* caption, double value, const char* unit, const char* tip)
+    { auto& e = form->addNumber(key, caption, value, unit, tip, 9); e.setInputRestrictions(32, engineeringCharacters); formInitial[key] = e.getText(); formExact[key] = value; };
+    coordinate("cursorX", "X", cursorWorld[0], "mm", "World X of the working cursor, in millimetres (the document's unit).");
+    coordinate("cursorY", "Y", cursorWorld[1], "mm", "World Y of the working cursor, in millimetres.");
+    coordinate("cursorZ", "Z", cursorWorld[2], "mm", "World Z of the working cursor, in millimetres.");
     form->addButton("cursorSet", "Set cursor to these coordinates", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
         if (safe == nullptr || safe->form == nullptr) return;
         for (const auto* k : { "cursorX", "cursorY", "cursorZ" }) if (!safe->form->numberValid(k)) { safe->showError("Cursor coordinates must be numbers."); return; }
-        safe->setCursor({ safe->form->number("cursorX"), safe->form->number("cursorY"), safe->form->number("cursorZ") }, "typed coordinates"); safe->setMessage("Cursor set.", 0); }); }, "Move the cursor to exactly these world coordinates.");
+        const auto value = [&](const char* key, double current) { const auto it = safe->formInitial.find(key); return it != safe->formInitial.end() && it->second == safe->form->text(key) ? current : safe->form->number(key); };
+        safe->setCursor({ value("cursorX", safe->cursorWorld[0]), value("cursorY", safe->cursorWorld[1]), value("cursorZ", safe->cursorWorld[2]) }, "typed coordinates"); safe->setMessage("Cursor set to the typed coordinates (mm).", 0); }); }, "Move the cursor to exactly these world coordinates. Typed values are used as entered.");
     if (editingSketchId.isNotEmpty())
     {
         const auto state = cursorState()["sketch"];
         form->addHeader("On the sketch plane (sketch coordinates)");
-        form->addNumber("cursorU", "U", (double) state["u"], "mm", "Cursor position along the sketch's U axis.", 4);
-        form->addNumber("cursorV", "V", (double) state["v"], "mm", "Cursor position along the sketch's V axis.", 4);
+        coordinate("cursorU", "U", (double) state["u"], "mm", "Cursor position along the sketch's U axis, in millimetres.");
+        coordinate("cursorV", "V", (double) state["v"], "mm", "Cursor position along the sketch's V axis, in millimetres.");
         form->addNote("cursorW", "Distance from the sketch plane: " + juce::String((double) state["w"], 4) + " mm", 1);
         form->addButton("cursorSetSketch", "Set on the sketch plane", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
             if (safe == nullptr || safe->form == nullptr) return;
             if (!safe->form->numberValid("cursorU") || !safe->form->numberValid("cursorV")) { safe->showError("U and V must be numbers."); return; }
-            safe->placeCursorFromSketch(safe->form->number("cursorU"), safe->form->number("cursorV"), {}); }); }, "Put the cursor on the sketch plane at these sketch coordinates.");
+            const auto current = safe->cursorState()["sketch"];
+            const auto value = [&](const char* key, double now) { const auto it = safe->formInitial.find(key); return it != safe->formInitial.end() && it->second == safe->form->text(key) ? now : safe->form->number(key); };
+            safe->placeCursorFromSketch(value("cursorU", (double) current["u"]), value("cursorV", (double) current["v"]), {}); }); }, "Put the cursor on the sketch plane at these sketch coordinates.");
     }
     form->addHeader("Placement");
     auto& shown = form->addToggle("cursorShown", "Show cursor", cursorShown, "Display the working cursor in the view.");
@@ -331,6 +356,7 @@ void CadWorkspacePanel::addReferenceFields()
     form->addToggle("refVisible", "Visible", existing != nullptr ? existing->visible : true, "Show the reference in the view. Hidden references still work in operations.");
     form->addChoice("refAssoc", "Behaviour", { "Fixed", "Follow a body or occurrence", "Axis of a cylindrical face", "Centre of a face", "Offset from another reference" }, juce::jmax(0, juce::StringArray { "fixed", "frame", "cylinderAxis", "faceCentre", "reference" }.indexOf(assoc)),
                     "Fixed references keep their coordinates. The others follow their source by stable id and report a broken association if it disappears.");
+    form->addNote("refAssocNote", {}, 3);
     juce::StringArray sources { "(choose)" }; sourceChoiceIds.clear(); sourceChoiceIds.add(juce::String()); int sourceIndex = 0;
     for (const auto& i : d.mechanicsData().instances) { sources.add("Occurrence: " + i.name); sourceChoiceIds.add(i.id); }
     for (const auto& f : d.features())
@@ -353,12 +379,14 @@ void CadWorkspacePanel::addReferenceFields()
         if (auto* box = dynamic_cast<juce::ComboBox*>(safe->form->control("refSource"))) { const int i = safe->sourceChoiceIds.indexOf(pick.drawId); if (i >= 0) box->setSelectedItemIndex(i, juce::sendNotificationSync); }
         if (auto* text = dynamic_cast<juce::TextEditor*>(safe->form->control("refFace"))) text->setText(token, true);
         safe->setMessage("Using face " + token + " of " + safe->featureName(pick.drawId) + ".", 0); }); }, "Fill Source and Face from the face selected in the model view.");
-    form->addHeader("Position (world, mm)");
-    form->addNumber("refOx", "X", origin[0], "mm", "World X of the reference origin.", 4); form->addNumber("refOy", "Y", origin[1], "mm", "World Y of the reference origin.", 4); form->addNumber("refOz", "Z", origin[2], "mm", "World Z of the reference origin.", 4);
+    const auto coordinate = [this](const char* key, const char* caption, double value, const char* unit, const char* tip)
+    { auto& e = form->addNumber(key, caption, value, unit, tip, 9); e.setInputRestrictions(32, engineeringCharacters); formInitial[key] = e.getText(); formExact[key] = value; };
+    form->addHeader("Position (world, millimetres)");
+    coordinate("refOx", "X", origin[0], "mm", "World X of the reference origin, in millimetres."); coordinate("refOy", "Y", origin[1], "mm", "World Y of the reference origin, in millimetres."); coordinate("refOz", "Z", origin[2], "mm", "World Z of the reference origin, in millimetres.");
     form->addHeader("Direction");
-    form->addNumber("refDx", "Direction X", direction[0], {}, "Axis direction / plane normal (normalised).", 6); form->addNumber("refDy", "Direction Y", direction[1], {}, "Axis direction / plane normal (normalised).", 6); form->addNumber("refDz", "Direction Z", direction[2], {}, "Axis direction / plane normal (normalised).", 6);
+    coordinate("refDx", "Direction X", direction[0], {}, "Axis direction / plane normal. Any non-zero vector; it is normalised."); coordinate("refDy", "Direction Y", direction[1], {}, "Axis direction / plane normal."); coordinate("refDz", "Direction Z", direction[2], {}, "Axis direction / plane normal.");
     form->addHeader("Orientation");
-    form->addNumber("refRx", "Rotate X", rotation[0], "deg", "Rotation about world X, applied first (extrinsic X, Y, Z).", 4); form->addNumber("refRy", "Rotate Y", rotation[1], "deg", "Rotation about world Y.", 4); form->addNumber("refRz", "Rotate Z", rotation[2], "deg", "Rotation about world Z, applied last.", 4);
+    coordinate("refRx", "Rotate X", rotation[0], "deg", "Rotation about world X, applied first (extrinsic X, Y, Z), in degrees."); coordinate("refRy", "Rotate Y", rotation[1], "deg", "Rotation about world Y, in degrees."); coordinate("refRz", "Rotate Z", rotation[2], "deg", "Rotation about world Z, applied last, in degrees.");
     form->addHeader("Actions");
     form->addButton("refCursorHere", "Cursor to this position", [this] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this)] {
         if (safe == nullptr || safe->form == nullptr) return;
@@ -392,12 +420,21 @@ juce::var CadWorkspacePanel::readReferenceForm(juce::String& error) const
     p->setProperty("association", assoc);
     if (type != "cylinderAxis" && type != "faceCentre")
     {
-        const auto numbers = [&](const char* a, const char* b, const char* c, juce::Array<juce::var>& out) { for (const auto* k : { a, b, c }) { if (!form->numberValid(k)) { error = "Position, direction and rotation must be numbers."; return false; } out.add(form->number(k)); } return true; };
+        const bool editing = editingReferenceId.isNotEmpty();
+        // When editing, a group whose fields still show what the form built is not re-submitted, so the stored exact
+        // values (and an associative reference's offset) are never rewritten from rounded display text.
+        const auto unchanged = [&](const char* a, const char* b, const char* c)
+        { if (!editing) return false; for (const auto* k : { a, b, c }) { const auto it = formInitial.find(k); if (it == formInitial.end() || it->second != form->text(k)) return false; } return true; };
+        const auto numbers = [&](const char* a, const char* b, const char* c, juce::Array<juce::var>& out) { for (const auto* k : { a, b, c }) { if (!form->numberValid(k)) { error = "Position, direction and rotation must be valid numbers (digits, sign, decimal point, exponent)."; return false; } const auto init = formInitial.find(k); const auto exact = formExact.find(k); out.add(editing && init != formInitial.end() && exact != formExact.end() && init->second == form->text(k) ? exact->second : form->number(k)); } return true; };
         juce::Array<juce::var> origin, direction, rotation;
-        if (!numbers("refOx", "refOy", "refOz", origin)) return def;
-        p->setProperty("origin", origin);
-        if (kind == "axis" || kind == "plane") { if (!numbers("refDx", "refDy", "refDz", direction)) return def; p->setProperty("direction", direction); }
-        if (kind == "cs") { if (!numbers("refRx", "refRy", "refRz", rotation)) return def; p->setProperty("rotationDegrees", rotation); }
+        if (!unchanged("refOx", "refOy", "refOz")) { if (!numbers("refOx", "refOy", "refOz", origin)) return def; p->setProperty("origin", origin); }
+        if ((kind == "axis" || kind == "plane") && !unchanged("refDx", "refDy", "refDz"))
+        {
+            if (!numbers("refDx", "refDy", "refDz", direction)) return def;
+            if (std::hypot((double) direction[0], (double) direction[1], (double) direction[2]) < 1.0e-12) { error = "The direction must not be the zero vector."; return def; }
+            p->setProperty("direction", direction);
+        }
+        if (kind == "cs" && !unchanged("refRx", "refRy", "refRz")) { if (!numbers("refRx", "refRy", "refRz", rotation)) return def; p->setProperty("rotationDegrees", rotation); }
     }
     return def;
 }
