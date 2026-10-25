@@ -158,6 +158,10 @@ std::string DjehutiCAD::runToolCommand(const juce::Component::SafePointer<Djehut
             auto result=name=="cad_reference"?safeThis->cadService->referenceCommand(parsedArgs):safeThis->cadService->transformCommand(parsedArgs);
             return juce::JSON::toString(result,false,17).toStdString();
         }
+        if(name=="cad_din")
+        {
+            return juce::JSON::toString(safeThis->cadService->dinCommand(parsedArgs),false,17).toStdString();
+        }
         if(name=="cad_gear"||name=="cad_gear_pair")
         {
             auto result=name=="cad_gear"?safeThis->cadService->gearCommand(parsedArgs):safeThis->cadService->gearPairCommand(parsedArgs);

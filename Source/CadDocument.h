@@ -79,7 +79,7 @@ bool validateReplication(const juce::String& type, const juce::var&, juce::Strin
 juce::StringArray replicationDependencies(const juce::var&);
 inline bool isSurfaceType(const juce::String& type) { return juce::StringArray{"surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken"}.contains(type); }
 // "gear": parametric gear solid (CadGear.h), stored and edited through the same modeling command boundary.
-inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"||type=="gear"||isSurfaceType(type); }
+inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"||type=="gear"||type=="din_rail"||type=="din_bottom"||type=="din_clip"||type=="din_screw"||isSurfaceType(type); }
 namespace gear { struct PairPlan; }
 juce::var surfaceDefaults(const juce::String&);
 bool validateSurface(const juce::String&,const juce::var&,juce::String&);
@@ -286,6 +286,8 @@ public:
     // compatible external spur pair; create and update are single undoable transactions.
     juce::var gearCommand(const juce::var& args);
     juce::var gearPairCommand(const juce::var& args);
+    // Parametric DIN-rail system (CadDinCommands.cpp): rail, module bottom, clip and friction screw features, and modules.
+    juce::var dinCommand(const juce::var& args);
     // Construction references (CadConstruction.cpp): document-owned points, axes, coordinate systems and planes, plus
     // reference-based move/rotate/align/mirror/scale. Each mutation is one undoable command.
     const std::vector<CadConstructionRef>& constructionData() const { return constructionRefs; }
@@ -548,6 +550,7 @@ public:
     juce::var replicationCommand(const juce::String& type, const juce::var& args) { return model.replicationCommand(type,args); }
     juce::var modelingCommand(const juce::String& type,const juce::var& args) { return model.modelingCommand(type,args); }
     juce::var gearCommand(const juce::var& args) { return model.gearCommand(args); }
+    juce::var dinCommand(const juce::var& args) { return model.dinCommand(args); }
     juce::var gearPairCommand(const juce::var& args) { return model.gearPairCommand(args); }
     juce::var referenceCommand(const juce::var& args) { return model.referenceCommand(args); }
     juce::var transformCommand(const juce::var& args) { return model.transformCommand(args); }

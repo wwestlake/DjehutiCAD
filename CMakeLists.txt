@@ -106,6 +106,9 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadSurfaceChecks.cpp
     Source/CadModeling.cpp
     Source/CadModelingChecks.cpp
+    Source/CadDinRail.h
+    Source/CadDinRail.cpp
+    Source/CadDinCommands.cpp
     Source/CadGear.h
     Source/CadGear.cpp
     Source/CadConstruction.h

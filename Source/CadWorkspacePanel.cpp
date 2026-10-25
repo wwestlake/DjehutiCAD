@@ -1,5 +1,6 @@
 // Advanced Sketch editing and focused validation.
 #include "CadSketchEditing.h"
+#include "CadDinRail.h"
 #include "CadMaterialsManager.h"
 #include "CadWorkspacePanel.h"
 #include "CadExportDialog.h"
@@ -900,7 +901,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         const bool sketching = editingSketchId.isNotEmpty();
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
-            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching}, E{78,"Insert Component...",!sketching}, E{79,"Construction Reference...",true}, E{80,"Working Cursor...",true}, E{81,"Place Cursor by Clicking",true} } },
+            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching}, E{83,"DIN Rail...",!sketching}, E{84,"DIN Module Bottom...",!sketching}, E{78,"Insert Component...",!sketching}, E{79,"Construction Reference...",true}, E{80,"Working Cursor...",true}, E{81,"Place Cursor by Clicking",true} } },
             { "Modify", { E{77,"Move / Rotate (T)",!sketching,transformTool}, E{82,"Transform with References...",!sketching}, E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
@@ -918,6 +919,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         else if (id == 26) executeUiCommand("interference");
         else if (id == 27) executeUiCommand("clearInterference");
         else if (id == 68 || id == 69) executeUiCommand(id == 68 ? "gear" : "gearPair");
+        else if (id == 83 || id == 84) executeUiCommand(id == 83 ? "din_rail" : "din_bottom");
         else if (id >= 70 && id <= 76) executeUiCommand(juce::StringArray{"viewFront","viewBack","viewLeft","viewRight","viewTop","viewBottom","viewIsometric"}[id-70]);
         else if (id == 77) executeUiCommand("transform");
         else if (id == 78) executeUiCommand("insertComponent");
@@ -1985,6 +1987,7 @@ juce::var CadWorkspacePanel::readModelingForm(juce::String& error) const
 void CadWorkspacePanel::addModelingFields()
 {
     if(modelingKind=="gear"){addGearFields();return;}
+    if(djehuti::cad::din::isDinType(modelingKind)){addDinFields();return;}
     const auto p=modelingSettings;const auto beginPick=[this](const juce::String& role,djehuti::cad::CadSelection::Mode mode)
     {juce::String ignored;const auto current=readModelingForm(ignored);if(current.isObject())modelingSettings=current;clearModelingView();modelingPick=role;if(selection!=nullptr)selection->setMode(mode);showModelingSources();setMessage(role=="path"?"Choose a path sketch in the tree, or click connected edges in a model view.":"Choose the "+role+" in the tree or model view.",0);};
     const auto slot=[&](const char* key,const char* label,const juce::String& id,const char* role)
@@ -2040,6 +2043,29 @@ juce::String CadWorkspacePanel::gearDerivedText(const juce::var& p) const
                      +"\nCircular pitch "+n(juce::MathConstants<double>::pi*s.module)+" mm | tooth "+n(s.toothThickness)+" | tip land "+n(s.tipLand)+" | root fillet "+n(s.rootFillet);
     if(!s.warnings.isEmpty())text<<"\n"<<s.warnings[0];
     return text;
+}
+
+// Parametric DIN-rail fields. The same feature definitions are edited by the cad_din tool; applying creates or updates them
+// through the shared modeling command (a new module bottom also creates its clip and friction screw).
+void CadWorkspacePanel::addDinFields()
+{
+    const auto p = modelingSettings;
+    const auto number = [&](const char* key, const char* caption, double value, const char* unit, const char* tip) { form->addNumber(juce::String("adv_") + key, caption, value, unit, tip, 3); };
+    if (modelingKind == "din_rail")
+    {
+        number("lengthMm", "Rail length", (double) p["lengthMm"], "mm", "Length of the TS35 x 7.5 rail, 10 to 6000 mm. The cross-section never changes with length.");
+        form->addNote("dinNote", "Rail axis on y = 0, flange plane z = 0. Width 35, height 7.5 and 1.0 mm sheet are documented; wall spacing and flange shape are provisional.", 3);
+        return;
+    }
+    number("lengthMm", "Length (along the rail)", (double) p["lengthMm"], "mm", "28 to 1000 mm.");
+    number("widthMm", "Width (across the rail)", (double) p["widthMm"], "mm", "60 to 1000 mm. The alignment edge is y = 0.");
+    number("thicknessMm", "Bottom thickness", (double) p["thicknessMm"], "mm", "3 to 30 mm.");
+    if (editingModelingId.isEmpty())
+    {
+        number("xMm", "Position along the rail", 0.0, "mm", "Where the module's alignment corner sits on the rail. The module is placed on the first rail in the document.");
+        number("screwAdvanceMm", "Friction screw advance", 0.0, "mm", "0 to 0.9 mm; about 0.7 mm touches the rail flange.");
+    }
+    form->addNote("dinNote", "The hook, spring clip, release lug and screw block keep fixed positions from the alignment corner, so they never change with these dimensions. Tabs are edited with the cad_din tool.", 3);
 }
 
 void CadWorkspacePanel::addGearFields()
@@ -3411,7 +3437,18 @@ void CadWorkspacePanel::acceptTask()
             return;
         case Task::modeling:
         {
-            const auto p=readModelingForm(e);if(e.isNotEmpty()){showError(e);return;}auto* a=new juce::DynamicObject();a->setProperty("action",editingModelingId.isEmpty()?"create":"update");a->setProperty("id",editingModelingId);a->setProperty("parameters",p);clearModelingView();const auto result=service->modelingCommand(modelingKind,a);
+            const auto p=readModelingForm(e);if(e.isNotEmpty()){showError(e);return;}
+            if(modelingKind=="din_bottom"&&editingModelingId.isEmpty())
+            {
+                auto module=juce::JSON::parse(juce::JSON::toString(p,false,17));module.getDynamicObject()->removeProperty("module");
+                module.getDynamicObject()->setProperty("xMm",form->numberValid("adv_xMm")?form->number("adv_xMm"):0.0);module.getDynamicObject()->setProperty("screwAdvanceMm",form->numberValid("adv_screwAdvanceMm")?form->number("adv_screwAdvanceMm"):0.0);
+                for(const auto& f:service->document().features())if(f.type=="din_rail"){module.getDynamicObject()->setProperty("rail",f.id);break;}
+                auto* request=new juce::DynamicObject();request->setProperty("action","module");request->setProperty("parameters",module);clearModelingView();
+                const auto result=service->dinCommand(request);
+                if(!(bool)result["ok"]){showModelingSources();showError(result["error"].toString());return;}
+                id=result["bottom"].toString();refreshFromDocument(true);selectFeature(id);setMessage("DIN module created: bottom, clip and friction screw.",0);return;
+            }
+            auto* a=new juce::DynamicObject();a->setProperty("action",editingModelingId.isEmpty()?"create":"update");a->setProperty("id",editingModelingId);a->setProperty("parameters",p);clearModelingView();const auto result=service->modelingCommand(modelingKind,a);
             if(!(bool)result["ok"]){showModelingSources();showError(result["error"].toString());return;}id=result["id"].toString();refreshFromDocument(true);selectFeature(id);setMessage("Modeling feature applied.",0);return;
         }
         case Task::reference: acceptReference(); return;
