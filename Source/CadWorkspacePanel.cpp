@@ -1,6 +1,7 @@
 // Advanced Sketch editing and focused validation.
 #include "CadSketchEditing.h"
 #include "CadDinRail.h"
+#include "CadTSlot.h"
 #include "CadMaterialsManager.h"
 #include "CadWorkspacePanel.h"
 #include "CadExportDialog.h"
@@ -901,7 +902,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         const bool sketching = editingSketchId.isNotEmpty();
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
-            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching}, E{83,"DIN Rail...",!sketching}, E{84,"DIN Module Bottom...",!sketching}, E{78,"Insert Component...",!sketching}, E{79,"Construction Reference...",true}, E{80,"Working Cursor...",true}, E{81,"Place Cursor by Clicking",true} } },
+            { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching}, E{83,"DIN Rail...",!sketching}, E{84,"DIN Module Bottom...",!sketching}, E{85,"T-Slot Rail...",!sketching}, E{78,"Insert Component...",!sketching}, E{79,"Construction Reference...",true}, E{80,"Working Cursor...",true}, E{81,"Place Cursor by Clicking",true} } },
             { "Modify", { E{77,"Move / Rotate (T)",!sketching,transformTool}, E{82,"Transform with References...",!sketching}, E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
@@ -920,6 +921,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         else if (id == 27) executeUiCommand("clearInterference");
         else if (id == 68 || id == 69) executeUiCommand(id == 68 ? "gear" : "gearPair");
         else if (id == 83 || id == 84) executeUiCommand(id == 83 ? "din_rail" : "din_bottom");
+        else if (id == 85) executeUiCommand("tslot_rail");
         else if (id >= 70 && id <= 76) executeUiCommand(juce::StringArray{"viewFront","viewBack","viewLeft","viewRight","viewTop","viewBottom","viewIsometric"}[id-70]);
         else if (id == 77) executeUiCommand("transform");
         else if (id == 78) executeUiCommand("insertComponent");
@@ -1961,6 +1963,12 @@ juce::var CadWorkspacePanel::readModelingForm(juce::String& error) const
         if(prop.value.isBool())p.getDynamicObject()->setProperty(key,form->toggle("adv_"+key));
         else if(prop.value.isDouble()||prop.value.isInt()){if(!form->numberValid("adv_"+key)){error=key+" must be finite and numeric.";return {};}p.getDynamicObject()->setProperty(key,form->number("adv_"+key));}
     }
+    if(modelingKind=="tslot_rail"&&form->control("advConstruction")!=nullptr)p.getDynamicObject()->setProperty("construction",form->choice("advConstruction")==1?"twoHalf":"onePiece");
+    if(modelingKind=="tslot_rail"&&form->control("advMaterial")!=nullptr)
+    {
+        const auto index=form->choice("advMaterial");const auto& list=service->document().materialsData().materials;
+        p.getDynamicObject()->setProperty("material",index>=1&&index<=(int)list.size()?list[(size_t)index-1].id:juce::String());
+    }
     const auto choice=[&](const char* field,const char* parameter,const juce::StringArray& values){if(form->control(field)!=nullptr)p.getDynamicObject()->setProperty(parameter,values[juce::jlimit(0,values.size()-1,form->choice(field))]);};
     choice("advOperation","operation",{"new","add","subtract"});choice("advOrientation","orientation",{"transport","frenet","fixed"});choice("advTransition","transition",{"round","right","transformed"});choice("advAlignment","alignment",{"auto","manual"});choice("advStrategy","strategy",{"pocket","slot","profileCut"});choice("advCompensation","compensation",{"on","inside","outside"});
     if((modelingKind=="sweep"||modelingKind=="surface")&&form->control("advOrientation")!=nullptr&&form->choice("advOrientation")==2)
@@ -1988,6 +1996,7 @@ void CadWorkspacePanel::addModelingFields()
 {
     if(modelingKind=="gear"){addGearFields();return;}
     if(djehuti::cad::din::isDinType(modelingKind)){addDinFields();return;}
+    if(djehuti::cad::tslot::isTSlotType(modelingKind)){addTSlotFields();return;}
     const auto p=modelingSettings;const auto beginPick=[this](const juce::String& role,djehuti::cad::CadSelection::Mode mode)
     {juce::String ignored;const auto current=readModelingForm(ignored);if(current.isObject())modelingSettings=current;clearModelingView();modelingPick=role;if(selection!=nullptr)selection->setMode(mode);showModelingSources();setMessage(role=="path"?"Choose a path sketch in the tree, or click connected edges in a model view.":"Choose the "+role+" in the tree or model view.",0);};
     const auto slot=[&](const char* key,const char* label,const juce::String& id,const char* role)
@@ -2066,6 +2075,41 @@ void CadWorkspacePanel::addDinFields()
         number("screwAdvanceMm", "Friction screw advance", 0.0, "mm", "0 to 0.9 mm; about 0.7 mm touches the rail flange.");
     }
     form->addNote("dinNote", "The hook, spring clip, release lug and screw block keep fixed positions from the alignment corner, so they never change with these dimensions. Tabs are edited with the cad_din tool.", 3);
+}
+
+// Parametric T-slot rail fields: the same feature definition the cad_tslot tool edits.
+void CadWorkspacePanel::addTSlotFields()
+{
+    const auto p = modelingSettings;
+    const auto number = [&](const char* key, const char* caption, double value, const char* unit, const char* tip, int decimals) { form->addNumber(juce::String("adv_") + key, caption, value, unit, tip, decimals); };
+    number("widthMm", "Rail width", (double) p["widthMm"], "mm", "Overall cross-section width (along Y), 10 to 200 mm.", 2);
+    number("heightMm", "Rail height", (double) p["heightMm"], "mm", "Overall cross-section height (along Z), 10 to 200 mm.", 2);
+    number("lengthMm", "Rail length", (double) p["lengthMm"], "mm", "Rail length along X, 10 to 3000 mm.", 2);
+    number("slotsTop", "Top slots", (double) p["slotsTop"], "", "T-slots on the top (+Z) face, 0 to 8 depending on the width.", 0);
+    number("slotsBottom", "Bottom slots", (double) p["slotsBottom"], "", "T-slots on the bottom (-Z) face.", 0);
+    number("slotsLeft", "Left slots", (double) p["slotsLeft"], "", "T-slots on the left (-Y) face, depending on the height.", 0);
+    number("slotsRight", "Right slots", (double) p["slotsRight"], "", "T-slots on the right (+Y) face.", 0);
+    number("slotOpeningMm", "Slot opening", (double) p["slotOpeningMm"], "mm", "Width of the slot mouth.", 2);
+    number("slotLipMm", "Slot lip thickness", (double) p["slotLipMm"], "mm", "Thickness of the lips that retain the T-nut.", 2);
+    number("slotHeadWidthMm", "Slot head width", (double) p["slotHeadWidthMm"], "mm", "Width of the cavity behind the lips.", 2);
+    number("slotHeadStraightMm", "Slot head straight depth", (double) p["slotHeadStraightMm"], "mm", "Depth of the cavity's straight walls before the 45 degree walls begin.", 2);
+    number("slotDepthMm", "Slot depth", (double) p["slotDepthMm"], "mm", "Depth from the face to the slot floor.", 2);
+    form->addChoice("advConstruction", "Construction", { "One piece", "Two halves (printed flat)" }, p["construction"].toString() == "twoHalf" ? 1 : 0, "Two halves splits the rail on its mid plane for flat printing; it needs slots on the top and bottom faces only.");
+    number("printableLengthMm", "Printable section length", (double) p["printableLengthMm"], "mm", "Longest printed piece (two-halves construction).", 2);
+    number("overlapMm", "Joint overlap", (double) p["overlapMm"], "mm", "How far the joints of the two halves are staggered.", 2);
+    number("snapPinSpacingMm", "Snap pin spacing", (double) p["snapPinSpacingMm"], "mm", "Distance between snap arms along an overlap.", 2);
+    number("snapArmLengthMm", "Snap arm length", (double) p["snapArmLengthMm"], "mm", "Length of each flexing arm; longer arms flex with less strain.", 2);
+    number("snapArmWidthMm", "Snap arm width", (double) p["snapArmWidthMm"], "mm", "Thickness of the arm in its bending direction.", 2);
+    number("snapSlitMm", "Snap slit width", (double) p["snapSlitMm"], "mm", "Gap each side of the arm.", 2);
+    number("snapHookHeightMm", "Snap hook height", (double) p["snapHookHeightMm"], "mm", "Height of the hook (neck plus barb).", 2);
+    number("snapLipMm", "Snap lip", (double) p["snapLipMm"], "mm", "How far the barb sticks out; sets the arm deflection.", 2);
+    number("snapHookLengthMm", "Snap hook length", (double) p["snapHookLengthMm"], "mm", "Hook length along the rail.", 2);
+    number("assemblyClearanceMm", "Assembly clearance", (double) p["assemblyClearanceMm"], "mm", "Fit allowance between hooks and sockets.", 2);
+    number("snapEndMarginMm", "Snap end margin", (double) p["snapEndMarginMm"], "mm", "Least distance from a snap arm to a piece end.", 2);
+    juce::StringArray names { "(no material)" }; int selected = 0, index = 1;
+    for (const auto& m : service->document().materialsData().materials) { names.add(m.name); if (m.id == p["material"].toString()) selected = index; ++index; }
+    form->addChoice("advMaterial", "Material", names, selected, "Document material assigned to the rail. Create or import materials first (Materials manager).");
+    form->addNote("tslotNote", "Original profile design, not a manufacturer's. Every cavity keeps at least 1.6 mm of material; the form refuses counts or sizes that do not fit. Strength is not validated.", 3);
 }
 
 void CadWorkspacePanel::addGearFields()
@@ -3438,6 +3482,13 @@ void CadWorkspacePanel::acceptTask()
         case Task::modeling:
         {
             const auto p=readModelingForm(e);if(e.isNotEmpty()){showError(e);return;}
+            if(modelingKind=="tslot_rail")
+            {
+                auto* request=new juce::DynamicObject();request->setProperty("action",editingModelingId.isEmpty()?"create":"update");request->setProperty("id",editingModelingId);request->setProperty("part","rail");request->setProperty("parameters",p);clearModelingView();
+                const auto result=service->tslotCommand(request);
+                if(!(bool)result["ok"]){showModelingSources();showError(result["error"].toString());return;}
+                id=result["id"].toString();refreshFromDocument(true);selectFeature(id);setMessage("T-slot rail applied.",0);return;
+            }
             if(modelingKind=="din_bottom"&&editingModelingId.isEmpty())
             {
                 auto module=juce::JSON::parse(juce::JSON::toString(p,false,17));module.getDynamicObject()->removeProperty("module");

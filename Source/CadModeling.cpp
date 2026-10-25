@@ -1,6 +1,7 @@
 #include "CadDocument.h"
 #include "CadGear.h"
 #include "CadDinRail.h"
+#include "CadTSlot.h"
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepOffsetAPI_MakeOffset.hxx>
@@ -121,6 +122,7 @@ juce::var modelingDefaults(const juce::String& type)
     if(isSurfaceType(type))return surfaceDefaults(type);
     if(gear::isGearType(type))return gear::defaults();
     if(din::isDinType(type))return din::defaults(type);
+    if(tslot::isTSlotType(type))return tslot::defaults(type);
     auto p=object();auto* o=p.getDynamicObject();o->setProperty("target","");
     if(type=="sweep")
     {o->setProperty("operation","new");o->setProperty("profile","");o->setProperty("path",pathDefault());o->setProperty("orientation","transport");o->setProperty("binormal",juce::Array<juce::var>{0,0,1});o->setProperty("alignProfile",true);o->setProperty("rollDegrees",0.0);o->setProperty("twistDegrees",0.0);o->setProperty("transition","round");}
@@ -153,6 +155,7 @@ bool validateModeling(const juce::String& type,const juce::var& p,juce::String& 
     if(isSurfaceType(type))return validateSurface(type,p,error);
     if(gear::isGearType(type))return gear::validate(p,error);
     if(din::isDinType(type))return din::validate(type,p,error);
+    if(tslot::isTSlotType(type))return tslot::validate(type,p,error);
     const auto fail=[&](const juce::String& e){error=e;return false;};if(!isModelingType(type)||!p.isObject())return fail("Invalid modeling definition.");
     const auto defaults=modelingDefaults(type);for(const auto& v:p.getDynamicObject()->getProperties())if(!defaults.hasProperty(v.name))return fail("Unknown parameter: "+v.name.toString());
     if(!p["target"].isString())return fail("Target must be a stable body ID.");
@@ -234,6 +237,7 @@ TopoDS_Wire CadDocument::modelingPath(const juce::var& p,const CadSketchFrame* o
 TopoDS_Shape CadDocument::evaluateModeling(const CadFeature& feature,CadFaceOrigins& origins,juce::String& error,juce::StringArray& active,bool surfaceOutput)
 {
     if(isSurfaceType(feature.type))return evaluateSurface(feature,origins,error,active);
+    if(tslot::isTSlotType(feature.type)){tslot::FaceNames names;auto shape=tslot::build(feature.type,feature.modeling,feature.id,names,error);if(shape.IsNull())return {};origins=names;return shape;}
     if(din::isDinType(feature.type)){din::FaceNames names;auto shape=din::build(feature.type,feature.modeling,feature.id,names,error);if(shape.IsNull())return {};origins=names;return shape;}
     if(gear::isGearType(feature.type)){gear::FaceNames names;auto shape=gear::build(feature.modeling,feature.id,names,error);if(shape.IsNull())return {};origins=names;return shape;}
     const auto p=feature.modeling;if(!validateModeling(feature.type,p,error))return {};TopoDS_Shape tool;CadFaceOrigins toolNames;

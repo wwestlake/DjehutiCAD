@@ -302,6 +302,7 @@ private:
     std::uint64_t gearPairRevision=0;
     void addGearFields();
     void addDinFields();
+    void addTSlotFields();
     juce::String gearDerivedText(const juce::var& parameters) const;
     void addGearPairFields();
     juce::var readGearPairForm(juce::String& error) const;

@@ -14,6 +14,7 @@ finished until its command is reachable by an agent and has a card here.
 | [construction-references.md](construction-references.md) | Persistent points, axes, coordinate systems and planes |
 | [reference-transforms.md](reference-transforms.md) | Move, rotate, align, mirror and scale using references |
 | [din-rail-system.md](din-rail-system.md) | Parametric DIN rail, module bottoms, clip and friction screw |
+| [tslot-rail.md](tslot-rail.md) | Parametric T-slot rail with per-face slot counts |
 
 Card format: purpose, when to use, commands and parameters, coordinate and unit
 conventions, a worked example, and failure modes with their messages.

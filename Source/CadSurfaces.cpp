@@ -107,6 +107,7 @@ void track(Operation& operation,const TopoDS_Shape& source,const CadFaceOrigins&
 
 juce::String modelingLabel(const juce::String& type)
 {
+    if(type=="tslot_rail")return "T-slot rail";if(type=="tslot_half")return "T-slot rail half";
     if(type=="din_rail")return "DIN rail";if(type=="din_bottom")return "DIN module bottom";if(type=="din_clip")return "DIN clip";if(type=="din_screw")return "DIN friction screw";
     if(type=="gear")return "Gear";    if(type=="sweep")return "Sweep";if(type=="loft")return "Loft";if(type=="mill")return "Virtual Router / Mill";
     if(type=="surface")return "Surface";if(type=="surface_trim")return "Trim Surface";if(type=="surface_extend")return "Extend Surface";
