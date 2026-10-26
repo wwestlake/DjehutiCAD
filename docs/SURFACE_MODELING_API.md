@@ -61,9 +61,12 @@ boundary; trimmed or nonrectangular source faces are unsupported.
 
 Success returns `ok:true`, `id`, `type`, complete `parameters`, and `topology`.
 Topology contains `faces`, `shells`, `solids`, `area_mm2`, `volume_mm3`, `closed`,
-`unmatchedEdges`, `nonmanifoldEdges`, and `freeBoundaries` with world-space endpoints
-and lengths in mm. Sewing does not imply solidification. An open sewn shell is
-a successful result with unmatched boundaries, rather than a failed solid.
+`connectedRegions`, `shellState` (`not_shell`, `open`, `closed`, `invalid`),
+`solidConvertible`, `unmatchedEdges`, `openBoundaryLength_mm`,
+`nonmanifoldEdges`, and `freeBoundaries` with world-space endpoints and lengths in
+mm. Sewing does not imply solidification. An open sewn shell is a successful
+result with unmatched boundaries. `surface_solidify` accepts one closed shell
+feature and returns a genuine solid; existing solids and loose faces are rejected.
 Trim returns a generated `regionReference:{face,u,v}` anchor in its parameters;
 this follows the source face through placement/geometry changes. Changing the
 seed, source or selected face regenerates the anchor. Preserve it when replaying

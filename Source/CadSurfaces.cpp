@@ -171,7 +171,7 @@ juce::String modelingLabel(const juce::String& type)
     if(type=="din_rail")return "DIN rail";if(type=="din_bottom")return "DIN module bottom";if(type=="din_clip")return "DIN clip";if(type=="din_screw")return "DIN friction screw";
     if(type=="gear")return "Gear";    if(type=="sweep")return "Sweep";if(type=="loft")return "Loft";if(type=="mill")return "Virtual Router / Mill";
     if(type=="surface")return "Surface";if(type=="surface_trim")return "Trim Surface";if(type=="surface_extend")return "Extend Surface";if(type=="surface_split")return "Split Surface";if(type=="surface_split_region")return "Split Region";
-    if(type=="surface_sew")return "Sew Surfaces";if(type=="surface_solidify")return "Solidify Shell";return "Thicken Surface";
+    if(type=="surface_sew")return "Sew Surfaces";if(type=="surface_solidify")return "Create Solid from Shell";return "Thicken Surface";
 }
 
 juce::var surfaceDefaults(const juce::String& type)
@@ -252,21 +252,36 @@ bool validateSurface(const juce::String& type,const juce::var& p,juce::String& e
 juce::var surfaceTopology(const TopoDS_Shape& s)
 {
     auto result=obj();auto* o=result.getDynamicObject();
+    TopTools_IndexedMapOfShape allFaces;
+    TopExp::MapShapes(s,TopAbs_FACE,allFaces);
     for(const auto kind:{TopAbs_FACE,TopAbs_SHELL,TopAbs_SOLID})
     {TopTools_IndexedMapOfShape map;TopExp::MapShapes(s,kind,map);o->setProperty(kind==TopAbs_FACE?"faces":kind==TopAbs_SHELL?"shells":"solids",map.Extent());}
     TopTools_IndexedDataMapOfShapeListOfShape edges;TopExp::MapShapesAndAncestors(s,TopAbs_EDGE,TopAbs_FACE,edges);int multiple=0;juce::Array<juce::var> free;
+    std::vector<int> parent((size_t)allFaces.Extent()+1);for(int i=1;i<=allFaces.Extent();++i)parent[(size_t)i]=i;
+    const auto root=[&](int value){while(parent[(size_t)value]!=value){parent[(size_t)value]=parent[(size_t)parent[(size_t)value]];value=parent[(size_t)value];}return value;};
+    double openLength=0;
     for(int i=1;i<=edges.Extent();++i)
     {
         const auto edge=TopoDS::Edge(edges.FindKey(i));if(BRep_Tool::Degenerated(edge))continue;
         const auto& faces=edges.FindFromIndex(i);int uses=faces.Extent();if(uses==1&&BRep_Tool::IsClosed(edge,TopoDS::Face(faces.First())))uses=2;
+        int first=0;for(TopTools_ListIteratorOfListOfShape face(faces);face.More();face.Next())
+        {const int index=allFaces.FindIndex(face.Value());if(index<1)continue;if(first==0)first=index;else parent[(size_t)root(index)]=root(first);}
         if(uses>2)++multiple;
         if(uses==1)
         {
             auto item=obj();GProp_GProps length;BRepGProp::LinearProperties(edge,length);item.getDynamicObject()->setProperty("length_mm",length.Mass());
+            openLength+=length.Mass();
             TopoDS_Vertex a,b;TopExp::Vertices(edge,a,b);if(!a.IsNull())item.getDynamicObject()->setProperty("start",xyz(BRep_Tool::Pnt(a)));if(!b.IsNull())item.getDynamicObject()->setProperty("end",xyz(BRep_Tool::Pnt(b)));free.add(item);
         }
     }
-    o->setProperty("area_mm2",area(s));o->setProperty("volume_mm3",(int)result["solids"]>0?volume(s):0.0);o->setProperty("unmatchedEdges",free.size());o->setProperty("freeBoundaries",free);o->setProperty("nonmanifoldEdges",multiple);o->setProperty("closed",free.isEmpty()&&multiple==0);return result;
+    int regions=0;for(int i=1;i<=allFaces.Extent();++i)if(root(i)==i)++regions;
+    const bool closed=regions==1&&free.isEmpty()&&multiple==0;
+    const bool convertible=(int)result["shells"]==1&&(int)result["solids"]==0&&closed&&BRepCheck_Analyzer(s,true).IsValid();
+    o->setProperty("area_mm2",area(s));o->setProperty("volume_mm3",(int)result["solids"]>0?volume(s):0.0);
+    o->setProperty("unmatchedEdges",free.size());o->setProperty("freeBoundaries",free);o->setProperty("openBoundaryLength_mm",openLength);
+    o->setProperty("nonmanifoldEdges",multiple);o->setProperty("connectedRegions",regions);o->setProperty("closed",closed);
+    o->setProperty("solidConvertible",convertible);
+    o->setProperty("shellState",(int)result["shells"]==0?"not_shell":regions!=1||multiple>0?"invalid":closed?"closed":"open");return result;
 }
 
 bool CadDocument::modelingProfile(const juce::String& id,TopoDS_Wire& wire,CadSketchFrame& frame,juce::String& error,juce::StringArray& active)
@@ -382,8 +397,12 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
             inputs.push_back(source);inputNames.insert(inputNames.end(),names.begin(),names.end());sew.Add(source);
         }
         sew.Perform();result=sew.SewedShape();
-        if(result.IsNull()||sew.NbMultipleEdges()>0||sew.NbDeletedFaces()>0){error="Sewing failed: nonmanifold edges or faces smaller than the tolerance. Reduce tolerance or repair inputs.";return {};}
-        if(result.ShapeType()!=TopAbs_SHELL&&result.ShapeType()!=TopAbs_FACE){error="The surfaces do not sew into one connected shell at this tolerance. Check the unmatched boundaries/gaps.";return {};}
+        if(result.IsNull()){error="OCCT could not sew the selected surfaces. Check their boundaries and tolerance.";return {};}
+        if(sew.NbMultipleEdges()>0){error=juce::String(sew.NbMultipleEdges())+" nonmanifold edge(s) join more than two faces. Remove overlapping faces or revise the inputs.";return {};}
+        if(sew.NbDeletedFaces()>0){error=juce::String(sew.NbDeletedFaces())+" face(s) collapsed at the sewing tolerance. Reduce the tolerance or repair small faces.";return {};}
+        const auto topology=surfaceTopology(result);
+        if(result.ShapeType()!=TopAbs_SHELL||(int)topology["connectedRegions"]!=1)
+        {error="Sewing produced "+topology["connectedRegions"].toString()+" separate region(s), not one shell. Join matching boundaries or select connected faces.";return {};}
         for(const auto& source:inputs)for(const auto kind:{TopAbs_FACE,TopAbs_EDGE})for(TopExp_Explorer e(source,kind);e.More();e.Next())
         {const auto mapped=sew.IsModifiedSubShape(e.Current())?sew.ModifiedSubShape(e.Current()):e.Current();history.modified.push_back({e.Current(),mapped});}
         for(const auto& n:inputNames){const auto image=sew.IsModifiedSubShape(n.first)?sew.ModifiedSubShape(n.first):n.first;for(TopExp_Explorer e(result,TopAbs_FACE);e.More();e.Next())if(e.Current().IsSame(image))origins.push_back({e.Current(),n.second});}
@@ -504,9 +523,11 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
         }
         if(type=="surface_solidify")
         {
+            if(source.ShapeType()!=TopAbs_SHELL){error="Create Solid from Shell requires one shell feature, not a face, compound or existing solid.";return {};}
             const auto topology=surfaceTopology(source);
             if((int)topology["unmatchedEdges"]>0){error="Solidify requires closure: "+topology["unmatchedEdges"].toString()+" unmatched boundary edges remain. Sew/repair the gaps first.";return {};}
             if((int)topology["nonmanifoldEdges"]>0){error="Solidify rejects nonmanifold boundaries.";return {};}
+            if((int)topology["connectedRegions"]!=1||!(bool)topology["solidConvertible"]){error="The shell is disconnected or geometrically invalid and cannot form one solid.";return {};}
             TopTools_IndexedMapOfShape shells;TopExp::MapShapes(source,TopAbs_SHELL,shells);if(shells.Extent()!=1){error="Solidify requires one closed connected shell.";return {};}
             BRepBuilderAPI_MakeSolid make(TopoDS::Shell(shells(1)));if(!make.IsDone()){error="OCCT could not construct a solid from this shell.";return {};}
             auto solid=make.Solid();if(!BRepLib::OrientClosedSolid(solid)){error="The shell is not closed and consistently orientable.";return {};}result=solid;origins=names;history.generated.push_back({source,solid});

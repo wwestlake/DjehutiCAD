@@ -915,8 +915,8 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         return std::vector<S> {
             { "Edit", { E{1,"Undo"}, E{2,"Redo"}, E{36,"Materials and Sheet Stock...",!sketching} } },
             { "Create", { E{3,"Sketch...",!sketching}, E{4,"Box...",!sketching}, E{5,"Cylinder...",!sketching}, E{68,"Gear...",!sketching}, E{69,"Gear Pair...",!sketching}, E{83,"DIN Rail...",!sketching}, E{84,"DIN Module Bottom...",!sketching}, E{85,"T-Slot Rail...",!sketching}, E{78,"Insert Component...",!sketching}, E{79,"Construction Reference...",true}, E{80,"Working Cursor...",true}, E{81,"Place Cursor by Clicking",true} } },
-            { "Modify", { E{77,"Move / Rotate (T)",!sketching,transformTool}, E{82,"Transform with References...",!sketching}, E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Solidify Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
-            { "Surfaces", { E{86,"Planar Surface...",!sketching},E{87,"Extruded Surface...",!sketching},E{88,"Revolved Surface...",!sketching},E{89,"Ruled Surface...",!sketching},E{90,"Trim Surface...",!sketching},E{91,"Extend Surface...",!sketching},E{92,"Split Surface...",!sketching} } },
+            { "Modify", { E{77,"Move / Rotate (T)",!sketching,transformTool}, E{82,"Transform with References...",!sketching}, E{6,"Extrude...",!sketching}, E{37,"Revolve...",!sketching}, E{38,"Virtual Lathe...",!sketching}, E{7,"Cut sketch...",!sketching}, E{34,"Fillet...",!sketching}, E{39,"Chamfer...",!sketching}, E{40,"Drill Press / Hole...",!sketching}, E{41,"Mirror...",!sketching}, E{42,"Linear Pattern...",!sketching}, E{43,"Circular Pattern...",!sketching}, E{44,"Sweep...",!sketching}, E{45,"Loft...",!sketching}, E{46,"Virtual Router / Mill...",!sketching}, E{47,"Create Surface...",!sketching}, E{48,"Trim Surface...",!sketching}, E{49,"Extend Surface...",!sketching}, E{50,"Sew Surfaces...",!sketching}, E{51,"Create Solid from Shell...",!sketching}, E{52,"Thicken Surface...",!sketching}, E{8,"Subtract...",!sketching}, E{9,"Union...",!sketching}, E{10,"Intersect...",!sketching} } },
+            { "Surfaces", { E{86,"Planar Surface...",!sketching},E{87,"Extruded Surface...",!sketching},E{88,"Revolved Surface...",!sketching},E{89,"Ruled Surface...",!sketching},E{90,"Trim Surface...",!sketching},E{91,"Extend Surface...",!sketching},E{92,"Split Surface...",!sketching},E{93,"Sew Surfaces...",!sketching},E{94,"Create Solid from Shell...",!sketching} } },
             { "Sketch", { E{11,"Select",sketching}, E{12,"Line",sketching}, E{13,"Rectangle",sketching}, E{14,"Circle",sketching}, E{35,"Curve",sketching}, E{15,"Constrain...",sketching}, E{16,"Fit sketch",sketching}, E{17,"Finish sketch",sketching}, E{53,"Delete selected entities",sketching&&sketchEntityId.isNotEmpty()} } },
             { "Assembly", { E{18,"Instance...",!sketching}, E{19,"Joint...",!sketching}, E{20,"Coupling...",!sketching}, E{21,"Motion link..."}, E{22,"Inverse kinematics...",!sketching}, E{26,"Check interference",!sketching}, E{27,"Clear interference",interferenceActive} } },
             { "View", { E{23,"Fit all"}, E{24,"Reset camera"}, E{25,"3D Views"}, E{63,"Focus Selected (Shift+F)",!sketching}, E{64,"Fly Mode (Ctrl+Shift+F)",!sketching,modelView.isFlyMode()}, E{65,"Set Orbit Point...",!sketching}, E{70,"Front view",!sketching}, E{71,"Back view",!sketching}, E{72,"Left view",!sketching}, E{73,"Right view",!sketching}, E{74,"Top view",!sketching}, E{75,"Bottom view",!sketching}, E{76,"Isometric view",!sketching}, E{66,"Show All Sketches"}, E{67,"Hide All Sketches"}, E{61,"Selection toolbox",true,sketching?selectionPalette->isVisible():modelSelectionPalette->isVisible()}, E{62,"Dock Selection toolbox",true,sketching?selectionPalette->isDocked():modelSelectionPalette->isDocked()}, E{54,"Sketch toolbox",true,sketchPalette->wanted()}, E{55,"Dock sketch toolbox",sketching,sketchPalette->isDocked()}, E{56,"Modify toolbar",true,modifyPalette->visiblePreference()}, E{57,"Dock Modify toolbar",!sketching,modifyPalette->isDocked()}, E{58,"Snap toolbar",true,snapPalette->visiblePreference()}, E{59,"Dock Snap toolbar",true,snapPalette->isDocked()}, E{60,"Reference geometry...",sketching}, E{30,"Floor grid",true,modelView.guideEnabled("floor")}, E{31,"World planes",true,modelView.guideEnabled("world")}, E{32,"Selected local planes",true,modelView.guideEnabled("local")}, E{33,"Joint frames and limits",true,modelView.guideEnabled("joints")} } }
@@ -928,7 +928,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
         if (id >= 1 && id <= names.size()) executeUiCommand(names[id-1]);
         else if(id>=56&&id<=60)executeUiCommand(juce::StringArray{"modifyToolbar","dockModifyToolbar","snapToolbar","dockSnapToolbar","references"}[id-56]);
         else if(id>=86&&id<=89)executeUiCommand(juce::StringArray{"surfacePlanar","surfaceExtrude","surfaceRevolve","surfaceRuled"}[id-86]);
-        else if(id>=90&&id<=92)executeUiCommand(juce::StringArray{"surface_trim","surface_extend","surface_split"}[id-90]);
+        else if(id>=90&&id<=94)executeUiCommand(juce::StringArray{"surface_trim","surface_extend","surface_split","surface_sew","surface_solidify"}[id-90]);
         else if(id>=63&&id<=67)executeUiCommand(juce::StringArray{"focusSelected","flyMode","orbitPoint","showAllSketches","hideAllSketches"}[id-63]);
         else if(id==61||id==62)executeUiCommand(id==61?"selectionToolbox":"dockSelectionToolbox");
         else if(id>=53&&id<=55)executeUiCommand(juce::StringArray{"deleteSketchEntities","sketchToolbox","dockSketchToolbox"}[id-53]);
@@ -1033,7 +1033,7 @@ CadWorkspacePanel::CadWorkspacePanel(std::shared_ptr<djehuti::cad::CadCommandSer
     modifyPalette=std::make_unique<Toolbar>("Modify toolbar",std::vector<Toolbar::Tool>{
         {"transform","Move / Rotate the selected body or component (T): drag arrows or rings"},{"extrude","Extrude a sketch profile into a solid"},{"revolve","Revolve a sketch around an axis"},{"lathe","Virtual Lathe: edit a turned profile"},{"cut","Cut a sketch profile from a body"},{"fillet","Fillet selected edges with a radius"},{"chamfer","Chamfer selected edges"},{"hole","Drill Press / Hole: place a hole on a planar face"},
         {"mirror","Mirror a body across a plane"},{"linearPattern","Repeat a body along a line"},{"circularPattern","Repeat a body around an axis"},{"sweep","Sweep a profile along a path"},{"loft","Loft between sketch profiles"},{"mill","Virtual Router / Mill: cut along a toolpath"},
-        {"surfacePlanar","Planar Surface: fill a closed sketch or wire"},{"surfaceExtrude","Extruded Surface: extrude curves without caps"},{"surfaceRevolve","Revolved Surface: rotate curves about an axis"},{"surfaceRuled","Ruled Surface: connect two compatible curves"},{"surface_trim","Trim a surface with cutting geometry"},{"surface_extend","Extend surface boundaries"},{"surface_split","Split a surface into independently selectable regions"},{"surface_sew","Sew adjoining surface boundaries"},{"surface_solidify","Solidify a closed surface shell"},{"surface_thicken","Thicken a surface into a solid"},
+        {"surfacePlanar","Planar Surface: fill a closed sketch or wire"},{"surfaceExtrude","Extruded Surface: extrude curves without caps"},{"surfaceRevolve","Revolved Surface: rotate curves about an axis"},{"surfaceRuled","Ruled Surface: connect two compatible curves"},{"surface_trim","Trim a surface with cutting geometry"},{"surface_extend","Extend surface boundaries"},{"surface_split","Split a surface into independently selectable regions"},{"surface_sew","Sew adjoining surface boundaries into an editable shell"},{"surface_solidify","Create a solid body from one closed shell"},{"surface_thicken","Thicken a surface into a solid"},
         {"subtract","Subtract one body from another"},{"union","Join bodies with Boolean union"},{"intersect","Keep the common volume of bodies"}},true,juce::Point<int>{12,12});
     snapPalette=std::make_unique<Toolbar>("Snap toolbar",std::vector<Toolbar::Tool>{{"grid","Grid"},{"vertex","Vertex"},{"edge","Nearest edge"},{"midpoint","Midpoint"},{"center","Circle / arc centre"},{"intersection","Intersection"},{"face","Planar face point (Drill Press)"},{"off","Temporarily disable snapping"},{"references","Reference geometry visibility..."}},false,juce::Point<int>{76,100});
     {juce::String error;snapPalette->configure(juce::JSON::parse(R"({"docked":true,"edge":"right"})"),error);}
@@ -1335,7 +1335,7 @@ void CadWorkspacePanel::refreshTree()
     auto openness=tree.getOpennessState(false);entityTreeItems.clear();tree.setRootItem(nullptr);
     rootItem=std::make_unique<GroupItem>("root");
     auto* origin=new GroupItem("Origin  |  XY / XZ / YZ planes");
-    auto* bodies=new GroupItem("Bodies");auto* surfaces=new GroupItem("Surfaces");auto* sketches=new GroupItem("Sketches");auto* features=new GroupItem("Features");auto* assembly=new GroupItem("Assembly");auto* constructionGroup=new GroupItem("Construction references");
+    auto* bodies=new GroupItem("Bodies");auto* surfaces=new GroupItem("Surfaces");auto* shells=new GroupItem("Shells");auto* sketches=new GroupItem("Sketches");auto* features=new GroupItem("Features");auto* assembly=new GroupItem("Assembly");auto* constructionGroup=new GroupItem("Construction references");
     const auto& model=service->document().mechanicsData();
     for(const auto& instance:model.instances)assembly->addSubItem(new FeatureItem(*this,instance.id,instance.name,instance.grounded?"grounded":"instance"));
     for(const auto& joint:model.joints)assembly->addSubItem(new FeatureItem(*this,joint.id,joint.name,joint.type+(model.mappingForJoint(joint.id)!=nullptr?" *":"")));
@@ -1356,11 +1356,12 @@ void CadWorkspacePanel::refreshTree()
             }
             item->setOpen(f.id==editingSketchId);
         }
+        else if(djehuti::cad::isSurfaceType(f.type)&&!f.shape.IsNull()&&f.shape.ShapeType()==TopAbs_SHELL)shells->addSubItem(item);
         else if(djehuti::cad::isSurfaceType(f.type)&&!TopExp_Explorer(f.shape,TopAbs_SOLID).More())surfaces->addSubItem(item);
         else features->addSubItem(item);
     }
     rootItem->addSubItem(origin);
-    for(auto* group:{bodies,surfaces,sketches,features,assembly,constructionGroup}){rootItem->addSubItem(group);group->setOpen(true);}
+    for(auto* group:{bodies,surfaces,shells,sketches,features,assembly,constructionGroup}){rootItem->addSubItem(group);group->setOpen(true);}
     tree.setRootItem(rootItem.get());rootItem->setOpen(true);
     if(openness)tree.restoreOpennessState(*openness,false);
     syncTreeSelection();
@@ -2433,7 +2434,13 @@ void CadWorkspacePanel::pickModeling(const djehuti::cad::CadPick& pick)
 void CadWorkspacePanel::previewModeling()
 {
     if((modelingKind=="surface"&&phaseOneSurface(modelingSettings))||juce::StringArray{"surface_trim","surface_extend","surface_split"}.contains(modelingKind)){surfacePreviewWanted=true;surfacePreviewDue=0;}
-    juce::String error;const auto p=readModelingForm(error);if(error.isNotEmpty()){showError(error);return;}auto* args=new juce::DynamicObject();args->setProperty("action","preview");args->setProperty("id",editingModelingId);args->setProperty("parameters",p);juce::var details;const auto view=service->document().modelingPreview(modelingKind,args,details,error);if(view==nullptr){showError(error);return;}modelView.setSnapshot(view);modelingPreviewActive=true;wakeFrames();setMessage(djehuti::cad::isSurfaceType(modelingKind)?"Preview: "+details["topology"]["faces"].toString()+" faces, "+details["topology"]["unmatchedEdges"].toString()+" unmatched boundaries. Apply commits; Cancel restores the model.":"Preview. Apply commits; changing inputs or Cancel restores the model.",0);
+    juce::String error;const auto p=readModelingForm(error);if(error.isNotEmpty()){showError(error);return;}auto* args=new juce::DynamicObject();args->setProperty("action","preview");args->setProperty("id",editingModelingId);args->setProperty("parameters",p);juce::var details;const auto view=service->document().modelingPreview(modelingKind,args,details,error);if(view==nullptr){showError(error);return;}modelView.setSnapshot(view);modelingPreviewActive=true;wakeFrames();
+    const auto topology=details["topology"];
+    const auto message=modelingKind=="surface_sew"?"Preview: "+topology["shellState"].toString()+" shell, "+topology["faces"].toString()+" faces, "+topology["unmatchedEdges"].toString()+" open edges ("+juce::String((double)topology["openBoundaryLength_mm"],3)+" mm). Apply commits; Cancel restores the model."
+        :modelingKind=="surface_solidify"?"Preview: solid volume "+juce::String((double)topology["volume_mm3"],3)+" mm^3. Apply commits; Cancel restores the model."
+        :djehuti::cad::isSurfaceType(modelingKind)?"Preview: "+topology["faces"].toString()+" faces, "+topology["unmatchedEdges"].toString()+" unmatched boundaries. Apply commits; Cancel restores the model."
+        :juce::String("Preview. Apply commits; changing inputs or Cancel restores the model.");
+    setMessage(message,0);
 }
 
 void CadWorkspacePanel::clearReplicationView()
@@ -2771,8 +2778,9 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             break;
         case Task::body:
         {
-            title = f->name; instruction = "Edit the selected body, then press Apply."; cancel = "Revert";
-            form->addHeader("Body");
+            const bool shell=!f->shape.IsNull()&&f->shape.ShapeType()==TopAbs_SHELL;
+            title = f->name; instruction = shell?"Inspect this shell or edit its source surfaces.":"Edit the selected body, then press Apply."; cancel = "Revert";
+            form->addHeader(shell?"Shell":"Body");
             form->addText("name", "Name", f->name, "Friendly feature name shown in the model tree.");
             if (f->type == "box")
             {
@@ -2812,7 +2820,17 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             else if(djehuti::cad::isModelingType(f->type))
             {
                 form->addHeader(f->type=="surface"&&phaseOneSurface(f->modeling)?juce::StringArray{"Planar Surface","Extruded Surface","Revolved Surface","Ruled Surface"}[juce::StringArray{"planar","extrude","revolve","ruled"}.indexOf(f->modeling["method"].toString())]:djehuti::cad::modelingLabel(f->type));
-                if(djehuti::cad::isSurfaceType(f->type)){const auto topology=djehuti::cad::surfaceTopology(f->shape);form->addNote({},topology["faces"].toString()+" faces | "+topology["unmatchedEdges"].toString()+" unmatched boundaries | "+(bool(topology["closed"])?"Closed":"Open"),2);}
+                if(djehuti::cad::isSurfaceType(f->type))
+                {
+                    const auto topology=djehuti::cad::surfaceTopology(f->shape);
+                    form->addNote({},topology["faces"].toString()+" faces | "+topology["connectedRegions"].toString()+" region(s) | "+topology["unmatchedEdges"].toString()+" open edges | "+(bool(topology["closed"])?"Closed":"Open"),2);
+                    if(shell)
+                    {
+                        form->addNote("shellDiagnostics","Open boundary length: "+juce::String((double)topology["openBoundaryLength_mm"],3)+" mm | Nonmanifold edges: "+topology["nonmanifoldEdges"].toString()+" | "+((bool)topology["solidConvertible"]?"Ready to create a solid":"Not ready for solid conversion"),(bool)topology["solidConvertible"]?2:4);
+                        if((bool)topology["solidConvertible"])
+                            form->addButton("shellSolidify","Create Solid from Shell...",[this]{postUiAction([safe=juce::Component::SafePointer<CadWorkspacePanel>(this)]{if(safe!=nullptr)safe->startTask(Task::modeling,"surface_solidify");});},"Preview and create a genuine solid that remains dependent on this shell.");
+                    }
+                }
                 if(f->type=="gear")
                 {
                     form->addNote("gearDerived",gearDerivedText(f->modeling),3);

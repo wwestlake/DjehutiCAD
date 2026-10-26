@@ -1,9 +1,10 @@
 # Surface modeling
 
 The **Surfaces** menu provides **Planar Surface**, **Extruded Surface**,
-**Revolved Surface**, **Ruled Surface**, **Trim Surface**, **Extend Surface** and
-**Split Surface**. Matching buttons sit together in the modeling Modify toolbar.
-The Modify menu retains Create Surface and the existing later surface operations.
+**Revolved Surface**, **Ruled Surface**, **Trim Surface**, **Extend Surface**,
+**Split Surface**, **Sew Surfaces** and **Create Solid from Shell**. Matching
+buttons sit together in the modeling Modify toolbar. The Modify menu retains
+Create Surface and the other surface operations.
 These are editable OCAF features.
 Select their source geometry in the tree or model views, enter dimensions, and
 use Preview before Apply. Preview is isolated from the live document and Undo
@@ -98,19 +99,28 @@ After an initial preview, parameter changes refresh the draft. Their source
 references, definitions and resulting surfaces participate in Undo/Redo and
 native/JSON save and reload.
 
-## Sew and Solidify
+## Sewing shells and creating solids
 
 **Sew Surfaces:** select adjacent surfaces/shells in the tree, or named individual
 faces in a model view. Remove unwanted references in the source list. Set an
 explicit engineering tolerance between 0.0000001 and 0.1 mm. The output must be
-one connected shell; incompatible disconnected inputs and collapsed/nonmanifold
-geometry fail. Preview reports unmatched boundaries. The API also reports their
-endpoints and lengths so remaining openings or gaps can be located.
+one connected shell; disconnected inputs, faces collapsed by the tolerance, and
+nonmanifold joins fail with specific diagnostics. Preview reports whether the
+shell is open or closed and its unmatched boundary count and length. The API also
+reports each open edge's endpoints and length so remaining gaps can be located.
 
-Sew preserves valid open shells. Even a closed result remains a shell.
-**Solidify Shell** is a separate feature: it requires one closed, consistently
-orientable shell, checks its topology and creates a positive-volume solid.
-Unmatched boundaries and nonmanifold or invalid shells produce explanations.
+Sew creates a persistent parametric shell in the **Shells** model-tree group.
+Select it to inspect face count, connected regions, open boundary length and
+solid-conversion readiness. Shells can be shown, hidden, edited and selected like
+other document features. Sew preserves valid open shells. Even a closed result
+remains a shell.
+
+**Create Solid from Shell** is a separate command in the Surfaces menu and modeling
+toolbar; a ready shell also offers it in its properties. It requires one closed,
+connected, consistently orientable shell and produces a genuine positive-volume
+OCCT solid. Open, nonmanifold, disconnected or invalid shells fail without a
+document change. Both operations retain source references and participate in
+Undo/Redo and native/JSON persistence.
 
 ## Thicken Surface
 
