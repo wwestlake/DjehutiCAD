@@ -2,6 +2,7 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepFill.hxx>
@@ -171,7 +172,7 @@ juce::String modelingLabel(const juce::String& type)
     if(type=="din_rail")return "DIN rail";if(type=="din_bottom")return "DIN module bottom";if(type=="din_clip")return "DIN clip";if(type=="din_screw")return "DIN friction screw";
     if(type=="gear")return "Gear";    if(type=="sweep")return "Sweep";if(type=="loft")return "Loft";if(type=="mill")return "Virtual Router / Mill";
     if(type=="surface")return "Surface";if(type=="surface_trim")return "Trim Surface";if(type=="surface_extend")return "Extend Surface";if(type=="surface_split")return "Split Surface";if(type=="surface_split_region")return "Split Region";
-    if(type=="surface_sew")return "Sew Surfaces";if(type=="surface_solidify")return "Create Solid from Shell";return "Thicken Surface";
+    if(type=="surface_sew")return "Sew Surfaces";if(type=="surface_solidify")return "Create Solid from Shell";if(type=="surface_offset")return "Offset Surface";if(type=="surface_hollow")return "Hollow Solid";return "Thicken Surface";
 }
 
 juce::var surfaceDefaults(const juce::String& type)
@@ -187,13 +188,15 @@ juce::var surfaceDefaults(const juce::String& type)
     }
     if(type=="surface_sew") { o->setProperty("sources",juce::Array<juce::var>());o->setProperty("tolerance",1e-5);return p; }
     o->setProperty("target","");
-    if(type!="surface_solidify")o->setProperty("face","");
+    if(type!="surface_solidify"&&type!="surface_hollow")o->setProperty("face","");
     if(type=="surface_trim")
     {auto tool=obj();tool.getDynamicObject()->setProperty("sketch","");o->setProperty("tool",tool);o->setProperty("regionReference",obj());o->setProperty("seed",juce::Array<juce::var>{0,0,0});o->setProperty("keep",true);}
     if(type=="surface_extend") {o->setProperty("distance",5.0);o->setProperty("sides",juce::Array<juce::var>{true,true,true,true});o->setProperty("boundary","");o->setProperty("toward",obj());}
     if(type=="surface_split") {o->setProperty("tool",obj());}
     if(type=="surface_split_region") {o->setProperty("parent","");o->setProperty("regionReference",obj());}
     if(type=="surface_thicken") {o->setProperty("thickness",2.0);o->setProperty("direction","positive");}
+    if(type=="surface_offset")o->setProperty("distance",2.0);
+    if(type=="surface_hollow"){o->setProperty("thickness",2.0);o->setProperty("removeFaces",juce::Array<juce::var>());}
     return p;
 }
 
@@ -226,7 +229,7 @@ bool validateSurface(const juce::String& type,const juce::var& p,juce::String& e
         }
         return (number(p["tolerance"])&&(double)p["tolerance"]>=1e-7&&(double)p["tolerance"]<=0.1)||fail("Sew tolerance must be between 0.0000001 and 0.1 mm.");
     }
-    if(!p["target"].isString()||p["target"].toString().isEmpty())return fail("Choose a source surface or shell.");
+    if(!p["target"].isString()||p["target"].toString().isEmpty())return fail(type=="surface_hollow"?"Choose a source solid.":"Choose a source surface or shell.");
     if(p.hasProperty("face")&&!p["face"].isString())return fail("Face must be a persistent face token, or empty for the whole source.");
     if(type=="surface_trim"||type=="surface_split")
     {
@@ -246,6 +249,13 @@ bool validateSurface(const juce::String& type,const juce::var& p,juce::String& e
     if(type=="surface_split_region")
     {if(!p["parent"].isString()||p["parent"].toString().isEmpty())return fail("Split region needs its parent operation.");if(!validRegionReference(p["regionReference"],error,true))return false;}
     if(type=="surface_thicken"&&(!number(p["thickness"])||(double)p["thickness"]<1e-6||(double)p["thickness"]>1e5||!juce::StringArray{"positive","negative","symmetric"}.contains(p["direction"].toString())))return fail("Thickness must be positive (0.000001ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ100000 mm); direction is positive, negative or symmetric.");
+    if(type=="surface_offset"&&(!number(p["distance"])||std::abs((double)p["distance"])<1e-6||std::abs((double)p["distance"])>1e5))return fail("Offset distance must be finite and between -100000 and 100000 mm, excluding zero.");
+    if(type=="surface_hollow")
+    {
+        if(!number(p["thickness"])||(double)p["thickness"]<1e-6||(double)p["thickness"]>1e5)return fail("Hollow wall thickness must be between 0.000001 and 100000 mm.");
+        if(!p["removeFaces"].isArray())return fail("Removed faces must be an array of persistent face tokens.");
+        juce::StringArray seen;for(const auto& v:*p["removeFaces"].getArray())if(!v.isString()||v.toString().isEmpty()||seen.contains(v.toString()))return fail("Removed faces must have distinct nonempty persistent tokens.");else seen.add(v.toString());
+    }
     return true;
 }
 
@@ -275,13 +285,14 @@ juce::var surfaceTopology(const TopoDS_Shape& s)
         }
     }
     int regions=0;for(int i=1;i<=allFaces.Extent();++i)if(root(i)==i)++regions;
-    const bool closed=regions==1&&free.isEmpty()&&multiple==0;
+    // An enclosed cavity has two disconnected boundary shells but still forms one closed solid.
+    const bool closed=(regions==1||(int)result["solids"]==1)&&free.isEmpty()&&multiple==0;
     const bool convertible=(int)result["shells"]==1&&(int)result["solids"]==0&&closed&&BRepCheck_Analyzer(s,true).IsValid();
     o->setProperty("area_mm2",area(s));o->setProperty("volume_mm3",(int)result["solids"]>0?volume(s):0.0);
     o->setProperty("unmatchedEdges",free.size());o->setProperty("freeBoundaries",free);o->setProperty("openBoundaryLength_mm",openLength);
     o->setProperty("nonmanifoldEdges",multiple);o->setProperty("connectedRegions",regions);o->setProperty("closed",closed);
     o->setProperty("solidConvertible",convertible);
-    o->setProperty("shellState",(int)result["shells"]==0?"not_shell":regions!=1||multiple>0?"invalid":closed?"closed":"open");return result;
+    o->setProperty("shellState",(int)result["solids"]>0||(int)result["shells"]==0?"not_shell":regions!=1||multiple>0?"invalid":closed?"closed":"open");return result;
 }
 
 bool CadDocument::modelingProfile(const juce::String& id,TopoDS_Wire& wire,CadSketchFrame& frame,juce::String& error,juce::StringArray& active)
@@ -428,7 +439,7 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
     else
     {
         TopoDS_Shape source;CadFaceOrigins names;if(!surfaceInput(p["target"].toString(),p["face"].toString(),source,names,error,active))return {};
-        if(TopExp_Explorer(source,TopAbs_SOLID).More()){error="Select an open surface/shell or a named face; whole solids are not surface inputs.";return {};}
+        if(type!="surface_hollow"&&TopExp_Explorer(source,TopAbs_SOLID).More()){error="Select an open surface/shell or a named face; whole solids are not surface inputs.";return {};}
         if(type=="surface_trim"||type=="surface_split")
         {
             TopoDS_Shape tool;CadFaceOrigins toolNames;if(!surfaceCutTool(p["tool"],tool,toolNames,error,active))return {};
@@ -548,9 +559,61 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
             result=thick.Shape();track(thick,source,names,result,feature.id,origins,history);
             if(result.ShapeType()==TopAbs_SOLID){auto solid=TopoDS::Solid(result);if(!BRepLib::OrientClosedSolid(solid)){error="Thickening could not produce an orientable closed solid.";return {};}result=solid;}
         }
+        if(type=="surface_offset")
+        {
+            if(source.ShapeType()!=TopAbs_FACE)
+            {
+                TopTools_IndexedMapOfShape faces;TopExp::MapShapes(source,TopAbs_FACE,faces);
+                if(faces.Extent()!=1){error="Offset Surface requires one face. Pick a persistent face from a multi-face shell.";return {};}
+                source=faces(1);std::erase_if(names,[&](const auto& n){return !n.first.IsSame(source);});
+            }
+            BRepOffsetAPI_MakeOffsetShape offset;offset.PerformBySimple(source,(double)p["distance"]);
+            if(!offset.IsDone()||offset.Shape().IsNull()){error="Surface offset failed. Reduce the distance or choose a face with compatible curvature and topology.";return {};}
+            result=offset.Shape();track(offset,source,names,result,feature.id,origins,history);
+            if(TopExp_Explorer(result,TopAbs_SOLID).More()){error="Offset Surface must remain a surface, not a solid.";return {};}
+        }
+        if(type=="surface_hollow")
+        {
+            const auto sourceTopology=surfaceTopology(source);
+            if(source.ShapeType()!=TopAbs_SOLID||!BRepCheck_Analyzer(source,true).IsValid()||(int)sourceTopology["unmatchedEdges"]!=0||(int)sourceTopology["nonmanifoldEdges"]!=0)
+            {error="Hollow requires one valid closed solid body.";return {};}
+            TopTools_ListOfShape removed;TopTools_IndexedMapOfShape chosen;
+            for(const auto& token:*p["removeFaces"].getArray())
+            {
+                TopoDS_Shape match;int count=0;
+                for(const auto& named:names)if(named.second.contains(token.toString())){if(!match.IsNull()&&match.IsSame(named.first))continue;match=named.first;++count;}
+                if(count!=1||chosen.Contains(match)){error="A removed face is missing, split or duplicated after regeneration: "+token.toString();return {};}
+                chosen.Add(match);removed.Append(match);
+            }
+            if(removed.IsEmpty())
+            {
+                // With no closing faces OCCT returns only the inward offset body;
+                // subtract it from the original to retain both cavity walls.
+                BRepOffsetAPI_MakeOffsetShape inner;inner.PerformByJoin(source,-(double)p["thickness"],1e-6);
+                if(!inner.IsDone()||inner.Shape().IsNull()||!validShape(inner.Shape(),true,error))
+                {if(error.isEmpty())error="The inward cavity offset collapsed or self-intersected. Reduce wall thickness.";return {};}
+                BRepAlgoAPI_Cut cut(source,inner.Shape());cut.SetNonDestructive(true);cut.Build();
+                if(!cut.IsDone()||cut.HasErrors()||cut.Shape().IsNull()){error="OCCT could not subtract the enclosed cavity from the solid.";return {};}
+                result=cut.Shape();track(cut,source,names,result,feature.id,origins,history);
+            }
+            else
+            {
+                BRepOffsetAPI_MakeThickSolid hollow;hollow.MakeThickSolidByJoin(source,removed,-(double)p["thickness"],1e-6);
+                if(!hollow.IsDone()||hollow.Shape().IsNull()){error="Hollow failed: wall thickness may collapse the interior or intersect small features. Reduce thickness or change removed faces.";return {};}
+                result=hollow.Shape();track(hollow,source,names,result,feature.id,origins,history);
+            }
+            if(volume(result)>=volume(source)-1e-8){error="Hollow removed no interior material. Reduce thickness or revise openings.";return {};}
+        }
     }
     if(type=="surface"&&(bool)p["flipNormals"]&&!result.IsNull())result.Reverse();
-    if(!validShape(result,type=="surface_solidify"||type=="surface_thicken",error))return {};
+    const bool solidResult=type=="surface_solidify"||type=="surface_thicken"||type=="surface_hollow";
+    if(!validShape(result,solidResult,error))return {};
+    if(solidResult)
+    {
+        const auto topology=surfaceTopology(result);
+        if((int)topology["solids"]!=1||(int)topology["unmatchedEdges"]!=0||(int)topology["nonmanifoldEdges"]!=0)
+        {error="The operation did not produce one closed manifold solid. Reduce thickness or repair the source topology.";return {};}
+    }
     // TNaming builders replace an attribute's evolution list. Aggregate this feature's
     // copy, offset and operation steps before handing them to the existing writer.
     for(const auto& step:operationHistory)if(step.featureId==feature.id)

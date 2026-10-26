@@ -15,6 +15,8 @@ from `cad_list_faces`. Source IDs remain stable through parameter editing.
 | `cad_surface_sew` / `surface_sew` | `sources`: 2–128 feature IDs or `{feature,face}` references; `tolerance`: 1e-7–0.1 mm (default 1e-5). |
 | `cad_surface_solidify` / `surface_solidify` | `target`: one closed-shell feature ID. |
 | `cad_surface_thicken` / `surface_thicken` | `target`, optional `face`, positive `thickness`, `direction`: positive/negative/symmetric. |
+| `cad_surface_offset` / `surface_offset` | `target`, optional persistent `face`, signed nonzero `distance` in mm. One face; output remains a surface. |
+| `cad_surface_hollow` / `surface_hollow` | `target` solid ID, positive `thickness` in mm, optional `removeFaces:[persistent face tokens]` (empty for a sealed cavity). |
 
 Phase-1 sources are `{sketch:"id",entities:["entity-id",...]?,reverse?:boolean}`
 or `{feature:"id",edges:["persistent-token",...],reverse?:boolean}`. Omit entities
@@ -89,7 +91,8 @@ The corresponding FRust hosts are `djehuti_cad_surface`,
 `djehuti_cad_surface_trim`, `djehuti_cad_surface_extend`,
 `djehuti_cad_surface_split`,
 `djehuti_cad_surface_sew`, `djehuti_cad_surface_solidify`, and
-`djehuti_cad_surface_thicken`. Each accepts an argument JSON `String` and returns
+`djehuti_cad_surface_thicken`, `djehuti_cad_surface_offset`, and
+`djehuti_cad_surface_hollow`. Each accepts an argument JSON `String` and returns
 a structured result JSON `String`. The CAD node palette provides one node per
 command with `args json` input and `result` output. Hosts, nodes, GUI and LLM tools
 all call `CadCommandService::modelingCommand`; there is no separate geometry path.

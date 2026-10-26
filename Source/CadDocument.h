@@ -77,7 +77,7 @@ inline bool isReplicationType(const juce::String& type) { return type=="mirror"|
 juce::var replicationDefaults(const juce::String& type);
 bool validateReplication(const juce::String& type, const juce::var&, juce::String& error);
 juce::StringArray replicationDependencies(const juce::var&);
-inline bool isSurfaceType(const juce::String& type) { return juce::StringArray{"surface","surface_trim","surface_extend","surface_split","surface_split_region","surface_sew","surface_solidify","surface_thicken"}.contains(type); }
+inline bool isSurfaceType(const juce::String& type) { return juce::StringArray{"surface","surface_trim","surface_extend","surface_split","surface_split_region","surface_sew","surface_solidify","surface_thicken","surface_offset","surface_hollow"}.contains(type); }
 // "gear": parametric gear solid (CadGear.h), stored and edited through the same modeling command boundary.
 inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"||type=="gear"||type=="din_rail"||type=="din_bottom"||type=="din_clip"||type=="din_screw"||type=="tslot_rail"||type=="tslot_half"||isSurfaceType(type); }
 namespace gear { struct PairPlan; }

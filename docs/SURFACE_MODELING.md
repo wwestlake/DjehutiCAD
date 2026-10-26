@@ -137,6 +137,23 @@ parameters trigger normal downstream rebuilds. Native `.djo` and engineering
 in the established `modeling` object. Stable face names are used for references;
 topology changes that split or remove a selected face require reselection.
 
+## Offset Surface and Hollow Solid
+
+**Offset Surface** selects a single face (or a face feature), then applies a
+signed distance along its oriented normal. Positive and negative offsets remain
+surfaces and can be edited or used by later tools. Select a named face when the
+source is a multi-face shell. An excessive offset, collapsed face or
+self-intersection fails without changing the document.
+
+**Hollow Solid** selects one closed solid and a positive wall thickness. It
+offsets inward to preserve the outer shape. The optional **Faces to remove**
+picker toggles openings by persistent face reference; leave it empty for a
+sealed internal cavity. Preview reports the remaining solid volume. Edit the
+thickness and openings from the feature properties. Collapsed cavities and
+faces that disappear after upstream edits require a smaller thickness or face
+reselection. Both tools share the same Preview, Apply, Cancel, Undo/Redo and
+native/JSON persistence workflow as Thicken.
+
 See [Surface API](SURFACE_MODELING_API.md) for structured commands, FRust hosts
 and compiled CAD nodes. Debug and Release validation are reported separately in
 the order completion report.
