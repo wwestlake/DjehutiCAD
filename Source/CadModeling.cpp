@@ -139,6 +139,13 @@ juce::StringArray modelingDependencies(const juce::var& p)
     if(p.hasProperty("method"))
     {
         const auto method=p["method"].toString();
+        if(juce::StringArray{"planar","extrude","revolve","ruled"}.contains(method))
+        {
+            const bool explicitSource=p["source"].isObject()&&p["source"].getDynamicObject()->getProperties().size()>0;
+            if(!explicitSource&&p["profile"].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["profile"].toString());
+            for(const auto* name:{"source","secondSource"})if(juce::String(name)=="source"||method=="ruled")for(const auto* key:{"sketch","feature"})if(p[name][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p[name][key].toString());
+            if(method=="revolve"&&p["axis"]["type"].toString()=="sketchLine"&&p["axis"]["sketch"].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["axis"]["sketch"].toString());return ids;
+        }
         if(method=="loft"){if(const auto* values=p["sections"].getArray())for(const auto& v:*values)ids.addIfNotAlreadyThere(v.toString());}
         else {if(p["profile"].toString().isNotEmpty())ids.add(p["profile"].toString());if(method=="sweep")for(const auto* key:{"sketch","feature"})if(p["path"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["path"][key].toString());}
         return ids;
@@ -384,7 +391,7 @@ juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var&
         for(const auto& dependency:modelingDependencies(p))if(dependency==id||find(dependency)==nullptr)return fail("invalid_reference","Missing or self-referencing source: "+dependency);
         auto created=id;const auto ok=mutate([&](juce::String&)
         {
-            if(action=="create"){CadFeature value;value.id=newId(type.toRawUTF8(),nextNumber++);value.type=type;value.name=modelingLabel(type)+" "+juce::String(nextNumber-1);items.push_back(value);created=value.id;}
+            if(action=="create"){CadFeature value;value.id=newId(type.toRawUTF8(),nextNumber++);value.type=type;value.name=(type=="surface"&&juce::StringArray{"planar","extrude","revolve","ruled"}.contains(p["method"].toString())?juce::StringArray{"Planar Surface","Extruded Surface","Revolved Surface","Ruled Surface"}[juce::StringArray{"planar","extrude","revolve","ruled"}.indexOf(p["method"].toString())]:modelingLabel(type))+" "+juce::String(nextNumber-1);items.push_back(value);created=value.id;}
             for(auto& value:items)if(value.id==created){value.modeling=p;value.firstOperand=isSurfaceType(type)?(modelingDependencies(p).isEmpty()?juce::String():modelingDependencies(p)[0]):type=="loft"?p["sections"][0].toString():type=="sweep"?p["profile"].toString():p["target"].toString();value.targetFeatureId=p["target"].toString();}
             for(auto& value:items)
             {

@@ -1,7 +1,9 @@
 # Surface modeling
 
-The Modify menu provides Create Surface, Trim Surface, Extend Surface, Sew
-Surfaces, Solidify Shell and Thicken Surface. These are editable OCAF features.
+The **Surfaces** menu provides **Planar Surface**, **Extruded Surface**,
+**Revolved Surface** and **Ruled Surface**. Matching buttons sit together in the
+modeling Modify toolbar. The Modify menu retains Create Surface and the existing
+later surface operations. These are editable OCAF features.
 Select their source geometry in the tree or model views, enter dimensions, and
 use Preview before Apply. Preview is isolated from the live document and Undo
 history. Select a result and choose **Edit sources and parameters** to reopen it.
@@ -9,13 +11,43 @@ Delete is undoable; referenced sources cannot be deleted before their dependents
 
 ## Create Surface
 
-Choose a method:
+Choose a creation command, select its source, enter parameters, then Preview and
+Apply. Creation commands always create a new object. To modify an existing
+surface, select it in the **Surfaces** tree group and choose **Edit sources and
+parameters**. Apply updates that object's definition and keeps its identifier.
 
-- **Planar boundary:** one closed, planar, non-self-intersecting sketch contour.
-- **Extruded surface:** one connected open or closed sketch profile, a signed
-  distance in mm, and a world direction vector. The vector is normalized.
-- **Revolved surface:** one connected open or closed profile, a coplanar sketch
-  U/V, world or custom axis, and a partial or full revolution angle.
+For the four creation commands, choose a whole sketch, toggle individual curves
+under an expanded sketch in the tree, or select connected model edges in Edge
+mode. **Replace source** clears the current selection. Construction curves are
+excluded from profiles; a straight construction line can still define an axis.
+Each source must be one connected, unbranched wire (up to 256 segments).
+
+The four Phase-1 tools are:
+
+- **Planar Surface:** one closed, planar, non-self-intersecting boundary. Sketch
+  rectangles, circles and arbitrary closed contours or model-edge wires work.
+- **Extruded Surface:** one connected open or closed curve, signed distance in mm,
+  and a normalized world direction vector. **Use source sketch normal** sets a
+  transverse direction for the sketch plane. Ends remain uncapped.
+- **Revolved Surface:** one connected open or closed curve, sketch U/V, world,
+  custom or selected straight sketch-line axis, and an angle greater than zero
+  and at most 360 degrees. For sketch sources the axis must lie in their plane.
+  Use the Axis line slot and select an individual line under its sketch.
+- **Ruled Surface:** two open curves or two closed wires with matching segment
+  counts. Pick the first and second source slots in order. Reverse either source
+  to adjust endpoint correspondence. Incompatible, degenerate or intersecting
+  results return an error and leave the committed document intact.
+
+Preview starts an isolated viewport draft. Subsequent numeric edits regenerate
+the draft after a short pause. Clear preview returns to source picking; Cancel
+discards the draft. Apply commits through the same command used by the API.
+Independent surfaces display from both sides and support normal viewport/tree
+selection and Hide/Show controls. Source and axis edits trigger dependency
+rebuilds. OCAF Undo/Redo and native `.djo` / engineering JSON `.djc` persistence
+retain definitions, source references and object identities.
+
+The generic Create Surface form also retains these existing methods:
+
 - **Swept surface:** the existing Sweep path, frame, roll, corner and alignment
   controls, with an open or closed profile and without solid caps. Controlled
   nonzero twist requires a straight path in Transport mode.

@@ -46,13 +46,17 @@ library components, and multi-part components such as a stator and rotor on a re
 point/axis/coordinate-system/plane references that can follow bodies, occurrences and cylindrical faces, and
 reference-based move, rotate, align, mirror and scale with an explicit Create copy option (`cad_reference`, `cad_transform`).
 
-[Surface modeling](docs/SURFACE_MODELING.md) provides planar, extruded, revolved,
-swept and lofted surfaces, region trimming, eligible U/V boundary extension,
+[Surface modeling](docs/SURFACE_MODELING.md) provides direct Planar, Extruded,
+Revolved and Ruled Surface workspace commands with selected curve/wire sources,
+live drafts and normal property editing. It also retains swept and lofted
+surfaces, region trimming, eligible U/V boundary extension,
 shell sewing, separate solidification, and positive/negative/symmetric thickening.
 These share GUI previews, APIs, FRust hosts, CAD nodes and
 [version 14 interchange](docs/SURFACE_MODELING_API.md).
 The [Order 5 completion report](docs/PROFESSIONAL_MODELING_ORDER5.md) records
 verified behavior, test counts and geometric limits.
+The [surface creation Phase 1 report](docs/SURFACE_CREATION_PHASE1.md) covers
+the four direct creation tools and their current verification limits.
 
 The 3D viewport uses a procedural XY floor, adaptive model clipping and
 selection framing. See [viewport controls](docs/WORKSPACE_TOOLS_AND_GUIDES.md)

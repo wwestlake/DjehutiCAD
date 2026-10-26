@@ -2,6 +2,8 @@
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepFill.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
@@ -36,6 +38,27 @@ bool vector3(const juce::var& v,bool direction=false)
     double sum=0;for(const auto& x:*v.getArray()){if(!number(x))return false;sum+=(double)x*(double)x;}
     return std::isfinite(sum)&&(!direction||sum>1e-18);
 }
+// Phase-1 creation references use the existing path/wire schema. Empty source preserves legacy profile IDs.
+juce::var creationSource(const juce::var& p,bool second=false)
+{
+    const auto source=p[second?"secondSource":"source"];
+    if(source.isObject()&&source.getDynamicObject()->getProperties().size()>0)return clone(source);
+    auto ref=obj();if(!second){ref.getDynamicObject()->setProperty("sketch",p["profile"]);if(p["profileEntities"].isArray()&&p["profileEntities"].size()>0)ref.getDynamicObject()->setProperty("entities",p["profileEntities"]);}return ref;
+}
+bool validCreationSource(const juce::var& ref,juce::String& error)
+{
+    const auto fail=[&](const juce::String& text){error=text;return false;};
+    if(!ref.isObject())return fail("Choose a sketch or a connected edge/wire source.");
+    for(const auto& item:ref.getDynamicObject()->getProperties())if(!juce::StringArray{"sketch","entities","feature","edges","reverse"}.contains(item.name.toString()))return fail("Unknown surface source parameter: "+item.name.toString());
+    const bool sketch=ref["sketch"].isString()&&ref["sketch"].toString().isNotEmpty(),feature=ref["feature"].isString()&&ref["feature"].toString().isNotEmpty();
+    if(sketch==feature)return fail("A surface source must identify either one sketch or one feature's edges.");
+    if((sketch&&ref.hasProperty("edges"))||(feature&&ref.hasProperty("entities")))return fail("Sketch sources use entity IDs; model sources use persistent edge references.");
+    if(ref.hasProperty("reverse")&&!ref["reverse"].isBool())return fail("Source reversal must be boolean.");
+    const auto key=sketch?"entities":"edges";if((feature||ref.hasProperty(key))&&!ref[key].isArray())return fail("Source entities/edges must be an array of stable identifiers.");
+    if(feature&&ref[key].size()==0)return fail("Select the connected edges defining the surface boundary or curve.");
+    juce::StringArray seen;if(const auto* values=ref[key].getArray())for(const auto& value:*values){if(!value.isString()||value.toString().isEmpty()||seen.contains(value.toString()))return fail("Source identifiers must be nonempty, unique strings (use persistent edge references).");seen.add(value.toString());}
+    return true;
+}
 double area(const TopoDS_Shape& s) { GProp_GProps p;BRepGProp::SurfaceProperties(s,p);return p.Mass(); }
 double volume(const TopoDS_Shape& s) { GProp_GProps p;BRepGProp::VolumeProperties(s,p);return p.Mass(); }
 juce::var xyz(const gp_Pnt& p) { return juce::Array<juce::var>{p.X(),p.Y(),p.Z()}; }
@@ -47,7 +70,7 @@ bool validShape(const TopoDS_Shape& s,bool solid,juce::String& error)
 {
     if(s.IsNull()||!TopExp_Explorer(s,TopAbs_FACE).More()||!BRepCheck_Analyzer(s,true).IsValid()||area(s)<1e-10)
     {error="The operation produced invalid, empty or degenerate surface topology.";return false;}
-    if(selfIntersection(s)){error="The result self-intersects. Reduce extension/thickness or revise the source geometry.";return false;}
+    if(selfIntersection(s)){error="The result self-intersects. Revise the source curves, axis or surface parameters.";return false;}
     if(solid&&(!TopExp_Explorer(s,TopAbs_SOLID).More()||!std::isfinite(volume(s))||volume(s)<=1e-10))
     {error="A valid, consistently oriented, positive-volume solid could not be constructed.";return false;}
     return true;
@@ -119,7 +142,7 @@ juce::var surfaceDefaults(const juce::String& type)
     auto p=obj();auto* o=p.getDynamicObject();
     if(type=="surface")
     {
-        o->setProperty("flipNormals",false);o->setProperty("method","planar");o->setProperty("profile","");o->setProperty("distance",10.0);o->setProperty("direction",juce::Array<juce::var>{0,0,1});
+        o->setProperty("source",obj());o->setProperty("secondSource",obj());o->setProperty("profileEntities",juce::Array<juce::var>());o->setProperty("flipNormals",false);o->setProperty("method","planar");o->setProperty("profile","");o->setProperty("distance",10.0);o->setProperty("direction",juce::Array<juce::var>{0,0,1});
         const auto revolve=revolveParametersToJson(CadRevolveParameters());for(const auto& v:revolve.getDynamicObject()->getProperties())o->setProperty(v.name,v.value);
         for(const auto* method:{"sweep","loft"}){const auto defaults=modelingDefaults(method);for(const auto& v:defaults.getDynamicObject()->getProperties())
             if(v.name.toString()!="target"&&v.name.toString()!="operation")o->setProperty(v.name,clone(v.value));}
@@ -143,9 +166,12 @@ bool validateSurface(const juce::String& type,const juce::var& p,juce::String& e
     if(type=="surface")
     {
         if(!p["flipNormals"].isBool())return fail("Flip normals must be boolean.");
-        const auto method=p["method"].toString();if(!juce::StringArray{"planar","extrude","revolve","sweep","loft"}.contains(method))return fail("Surface method must be planar, extrude, revolve, sweep or loft.");
+        const auto method=p["method"].toString();if(!juce::StringArray{"planar","extrude","revolve","ruled","sweep","loft"}.contains(method))return fail("Surface method must be planar, extrude, revolve, ruled, sweep or loft.");
         if(method=="sweep"||method=="loft")return validateModeling(method,pipeParameters(p,method),error);
-        if(!p["profile"].isString()||p["profile"].toString().isEmpty())return fail("Select a source profile sketch.");
+        for(const auto* key:{"source","secondSource"})if(p.hasProperty(key)&&!p[key].isObject())return fail("Surface source references must be objects.");
+        if(p.hasProperty("profileEntities")){if(!p["profileEntities"].isArray())return fail("Profile entities must be an array of stable identifiers.");for(const auto& id:*p["profileEntities"].getArray())if(!id.isString()||id.toString().isEmpty())return fail("Profile entity identifiers must be nonempty strings.");}
+        if(!validCreationSource(creationSource(p),error))return false;
+        if(method=="ruled"&&!validCreationSource(creationSource(p,true),error))return false;
         if(method=="extrude"&&(!number(p["distance"])||std::abs((double)p["distance"])<1e-6||std::abs((double)p["distance"])>1e6||!vector3(p["direction"],true)))return fail("Extrusion needs a nonzero direction and signed distance between 0.000001 and 1000000 mm.");
         if(method=="revolve") {auto r=obj();for(const auto* key:{"axis","angleDegrees","reverse"})r.getDynamicObject()->setProperty(key,p[key]);CadRevolveParameters parameters;if(!readRevolveParameters(r,parameters,error))return false;}
         return true;
@@ -237,26 +263,64 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
         const auto method=p["method"].toString();
         if(method=="sweep"||method=="loft")
         {auto reused=feature;reused.type=method;reused.modeling=pipeParameters(p,method);result=evaluateModeling(reused,origins,error,active,true);}
-        else if(method=="planar")
-        {TopoDS_Face face;CadSketchFrame frame;if(!modelingSection(p["profile"].toString(),face,frame,error,active))return {};result=face;history.generated.push_back({find(p["profile"].toString())->shape,face});}
         else
         {
-            TopoDS_Wire profile;CadSketchFrame frame;if(!modelingProfile(p["profile"].toString(),profile,frame,error,active))return {};
-            if(method=="extrude")
+            const auto source=creationSource(p);
+            const auto wireFrom=[&](juce::var ref)->TopoDS_Wire
+            {
+                if(const auto* sketch=findSketch(ref["sketch"].toString()))
+                {
+                    juce::Array<juce::var> selected;juce::StringArray found;
+                    for(const auto& entity:sketch->entities)
+                    {
+                        bool chosen=ref["entities"].size()==0;if(const auto* ids=ref["entities"].getArray())for(const auto& id:*ids)if(id.toString()==entity.id)chosen=true;
+                        if(!chosen)continue;if(entity.construction){if(ref["entities"].size()>0){error="Construction entities cannot form a surface profile. Use them as a rotation axis instead.";return {};}continue;}
+                        selected.add(entity.id);found.add(entity.id);
+                    }
+                    if(selected.isEmpty()){error="Select non-construction sketch curves for the surface.";return {};}
+                    if(ref["entities"].size()>0&&found.size()!=ref["entities"].size()){error="A selected sketch curve is missing. Reselect the surface source.";return {};}
+                    ref.getDynamicObject()->setProperty("entities",selected);
+                }
+                return modelingPath(ref,nullptr,error,active);
+            };
+            const auto profile=wireFrom(source);if(profile.IsNull())return {};
+            if(method=="planar")
+            {
+                if(!wireClosed(profile)){error="Planar Surface needs one closed boundary. Join the endpoints or select a closed wire.";return {};}
+                BRepBuilderAPI_MakeFace face(profile,true);if(!face.IsDone()){error="The selected boundary is not a valid planar closed wire.";return {};}
+                result=face.Face();history.generated.push_back({profile,result});
+            }
+            else if(method=="extrude")
             {
                 gp_Vec v((double)p["direction"][0],(double)p["direction"][1],(double)p["direction"][2]);v.Normalize();v*=double(p["distance"]);
-                BRepPrimAPI_MakePrism prism(profile,v,true);result=prism.Shape();track(prism,profile,{},result,feature.id,origins,history);
+                BRepPrimAPI_MakePrism prism(profile,v,true);if(!prism.IsDone()){error="Surface extrusion failed. Choose a direction transverse to the profile.";return {};}
+                result=prism.Shape();track(prism,profile,{},result,feature.id,origins,history);
+            }
+            else if(method=="ruled")
+            {
+                const auto second=wireFrom(creationSource(p,true));if(second.IsNull())return {};
+                int firstCount=0,secondCount=0;for(BRepTools_WireExplorer e(profile);e.More();e.Next())++firstCount;for(BRepTools_WireExplorer e(second);e.More();e.Next())++secondCount;
+                if(wireClosed(profile)!=wireClosed(second)){error="Ruled Surface requires two open curves or two closed wires; open and closed inputs are incompatible.";return {};}
+                if(firstCount!=secondCount){error="Ruled Surface requires matching segment counts. Select compatible curves or split their chains at corresponding vertices.";return {};}
+                result=BRepFill::Shell(profile,second);if(result.IsNull()){error="Ruled Surface failed. Check curve compatibility and direction.";return {};}
+                history.generated.push_back({profile,result});history.generated.push_back({second,result});
             }
             else
             {
                 CadRevolveParameters r;auto parameters=obj();for(const auto* key:{"axis","angleDegrees","reverse"})parameters.getDynamicObject()->setProperty(key,p[key]);if(!readRevolveParameters(parameters,r,error))return {};
-                gp_Pnt origin;gp_Dir axis;
-                if(r.axisType=="sketchU"||r.axisType=="sketchV"){origin=frame.origin;axis=r.axisType=="sketchU"?frame.u:frame.v;}
+                gp_Pnt origin;gp_Dir axis;const auto sketchId=source["sketch"].toString();
+                if(r.axisType=="sketchLine"&&r.axisSketch.isNotEmpty())
+                {const auto* sketch=findSketch(r.axisSketch);CadSketchFrame frame;if(!sketch||!resolveSketchFrame(*sketch,frame,error,active)){if(error.isEmpty())error="The rotation-axis sketch is missing.";return {};}sketchFrames[r.axisSketch]=frame;}
+                if(const auto* sketch=findSketch(sketchId))
+                {CadSketchFrame frame;if(!resolveSketchFrame(*sketch,frame,error,active))return {};sketchFrames[sketchId]=frame;if(!revolveAxis(sketchId,r,origin,axis,error))return {};}
+                else if(r.axisType=="sketchLine")
+                {if(!revolveAxis(r.axisSketch,r,origin,axis,error))return {};}
                 else if(r.axisType=="custom"){origin=gp_Pnt(r.origin[0],r.origin[1],r.origin[2]);axis=gp_Dir(r.direction[0],r.direction[1],r.direction[2]);}
+                else if(r.axisType=="sketchU"||r.axisType=="sketchV"){error="Sketch U/V axes require a sketch source. Choose a world axis, custom axis or sketch line for a model wire.";return {};}
                 else axis=r.axisType=="worldX"?gp::DX():r.axisType=="worldY"?gp::DY():gp::DZ();
-                if(std::abs(axis.Dot(frame.normal))>1e-9||std::abs(gp_Vec(frame.origin,origin).Dot(gp_Vec(frame.normal)))>1e-7){error="The surface revolution axis must lie in the profile plane.";return {};}
                 BRepPrimAPI_MakeRevol revolve(profile,gp_Ax1(origin,r.reverse?axis.Reversed():axis),r.angleDegrees*juce::MathConstants<double>::pi/180,true);if(!revolve.IsDone()){error="Surface revolution failed. Check the axis and profile crossing.";return {};}result=revolve.Shape();track(revolve,profile,{},result,feature.id,origins,history);
             }
+            if(!result.IsNull()&&TopExp_Explorer(result,TopAbs_SOLID).More()){error="Surface creation must produce faces or shells, never a capped solid.";return {};}
         }
     }
     else if(type=="surface_sew")

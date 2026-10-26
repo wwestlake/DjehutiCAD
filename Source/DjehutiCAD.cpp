@@ -785,7 +785,7 @@ juce::var DjehutiCAD::runWorkspaceCheck()
     const auto revision=cadService->document().revision(); setSize(1280,800);
     const juce::Component::SafePointer<DjehutiCAD> safe(this);
     const auto command=[&](const char* json) { return juce::JSON::parse(juce::String(runWorkspaceCommand(safe,json))); };
-    record(cadWorkspace->workspaceMenu.sections().size()==6,"CAD owns six local command menus");
+    record(cadWorkspace->workspaceMenu.sections().size()==7,"CAD owns seven local command menus including Surfaces");
     record(frustPanel->workspaceMenu.sections().size()==1 && nodePanel->workspaceMenu.sections().size()==2,"FRust and nodes own their command menus");
     record(cadWorkspace->executeUiCommand("boxSelect") && cadWorkspace->uiToolActive("boxSelect"),"Toolbox selects persistent box tool");
     record(cadWorkspace->executeUiCommand("circleSelect") && cadWorkspace->uiToolActive("circleSelect"),"Toolbox selects persistent circle tool");

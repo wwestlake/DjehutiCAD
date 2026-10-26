@@ -286,6 +286,9 @@ private:
     std::uint64_t modelingRevision=0;
     void addModelingFields();
     void addSurfaceFields();
+    void startSurfaceCreation(const juce::String& method);
+    bool pickSurfaceCurve(const djehuti::cad::CadPick&,const juce::String& entity={});
+    bool surfacePreviewWanted=false;double surfacePreviewDue=0;
     void readSurfaceForm(juce::var&,juce::String&) const;
     bool pickSurface(const djehuti::cad::CadPick&);
     juce::var readModelingForm(juce::String& error) const;
