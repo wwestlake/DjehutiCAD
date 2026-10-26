@@ -137,4 +137,87 @@ bool runCadSurfaceCheck(juce::var& report)
     gui("surface_trim",trim,base,boundary);gui("surface_extend",extension,extensionBase,{});gui("surface_sew",assembly,sa,sb);gui("surface_solidify",closure,closedShell,{});gui("surface_thicken",thickness,sheet,{});
     auto* out=new juce::DynamicObject();out->setProperty("ok",failed==0);out->setProperty("passed",checks.size()-failed);out->setProperty("failed",failed);out->setProperty("checks",checks);report=out;return failed==0;
 }
+
+bool runCadSurfacePhase2Check(juce::var& report)
+{
+    juce::Array<juce::var> checks;int failures=0;juce::String error;
+    const auto json=[](const char* text){return juce::JSON::parse(text);};
+    const auto check=[&](bool pass,const juce::String& name,const juce::String& detail={})
+    {auto* row=new juce::DynamicObject();row->setProperty("ok",pass);row->setProperty("name",name);if(!pass){row->setProperty("detail",detail);++failures;}checks.add(row);};
+    const auto closeEnough=[](double a,double b){return std::isfinite(a)&&std::abs(a-b)<1e-4;};
+    const auto request=[&](const char* action,const juce::String& id,const juce::var& parameters)
+    {auto value=json("{}");value.getDynamicObject()->setProperty("action",action);if(id.isNotEmpty())value.getDynamicObject()->setProperty("id",id);if(parameters.isObject())value.getDynamicObject()->setProperty("parameters",parameters);return value;};
+    auto service=std::make_shared<CadCommandService>();juce::String sketch,rectangle,cutter,circle;
+    check(service->createSketch("XY",0,sketch,error)&&service->addSketchRectangle(sketch,0,0,10,10,rectangle,error),"Create surface source sketch",error);
+    auto surface=json(R"({"method":"planar"})");surface.getDynamicObject()->setProperty("profile",sketch);
+    auto r=service->modelingCommand("surface",request("create",{},surface));const auto base=r["id"].toString();check((bool)r["ok"],"Create planar source surface",r["error"].toString());
+    check(service->createSketch("XY",0,cutter,error)&&service->addSketchCircle(cutter,5,5,2,circle,error),"Create cutting curve",error);
+    auto tool=json(R"({"target":"","tool":{"sketch":"","entities":[]},"seed":[5,5,0]})");tool.getDynamicObject()->setProperty("target",base);tool["tool"].getDynamicObject()->setProperty("sketch",cutter);tool["tool"]["entities"].getArray()->add(circle);
+    r=service->modelingCommand("surface_trim",request("create",{},tool));const auto trimmed=r["id"].toString();
+    const auto metric=[&](const juce::String& id){const auto* feature=service->document().find(id);return feature==nullptr?-1.0:(double)surfaceTopology(feature->shape)["area_mm2"];};
+    check((bool)r["ok"]&&closeEnough(metric(trimmed),4*juce::MathConstants<double>::pi),"Trim accepts selected sketch entity and retains picked region",r["error"].toString());
+    r=service->modelingCommand("surface_trim",request("update",trimmed,json(R"({"keep":false})")));
+    check((bool)r["ok"]&&closeEnough(metric(trimmed),100-4*juce::MathConstants<double>::pi),"Trim editable keep/remove region",r["error"].toString());
+    check(service->undo(error)&&closeEnough(metric(trimmed),4*juce::MathConstants<double>::pi)&&service->redo(error),"Trim edit supports Undo/Redo",error);
+    auto split=json(R"({"target":"","tool":{"sketch":"","entities":[]}})");split.getDynamicObject()->setProperty("target",base);split["tool"].getDynamicObject()->setProperty("sketch",cutter);split["tool"]["entities"].getArray()->add(circle);
+    const auto revision=service->document().revision();r=service->modelingCommand("surface_split",request("preview",{},split));
+    check((bool)r["ok"]&&(bool)r["preview"]&&service->document().revision()==revision,"Split preview is isolated",r["error"].toString());
+    r=service->modelingCommand("surface_split",request("create",{},split));const auto splitId=r["id"].toString();const auto regions=r["regions"];
+    check((bool)r["ok"]&&regions.isArray()&&regions.size()==2&&service->document().find(splitId)!=nullptr&&!(service->document().find(splitId)->visible),"Split creates hidden operation and two selectable regions",r["error"].toString());
+    if(regions.size()==2)check(closeEnough(metric(regions[0].toString())+metric(regions[1].toString()),100),"Split regions cover original area exactly");
+    const auto ids=juce::JSON::toString(regions,true);
+    check(service->setSketchEntityDimension(cutter,circle,2.5,error)&&regions.size()==2&&closeEnough(metric(regions[0].toString())+metric(regions[1].toString()),100),"Trim and Split regenerate after cutter edit",error);
+    check(service->undo(error)&&service->redo(error)&&service->document().find(splitId)!=nullptr,"Cutter edit supports Undo/Redo",error);
+    r=service->modelingCommand("surface_split",request("update",splitId,split));
+    check((bool)r["ok"]&&juce::JSON::toString(r["regions"],true)==ids,"Split edit preserves region identifiers",r["error"].toString());
+    frust_engine::setCadCommandService(service);
+    const auto literal=juce::JSON::toString(juce::var(juce::JSON::toString(request("get",splitId,{}),true)),true).toStdString();
+    frust_engine::RunOptions options;options.prelude=frust_engine::cadPrelude();
+    const auto host=frust_engine::runScript("pub fn run() -> String = { djehuti_cad_surface_split("+literal+") }",options);
+    check(host.ok&&(bool)juce::JSON::parse(host.output)["ok"],"Split executes through FRust host",juce::String(host.report()));
+    const auto graph=std::string(R"({"functionName":"inspect","params":[{"name":"args","type":"String"}],"output":"r","nodes":[{"id":"r","type":"cad_surface_split","inputs":[{"param":"args"}]}]})");
+    const auto compiled=node_compiler::CompileGraphToSource(graph);
+    const auto node=compiled.ok?frust_engine::runScript(compiled.source+"\npub fn run() -> String = { inspect("+literal+") }"):frust_engine::Result();
+    check(compiled.ok&&node.ok&&(bool)juce::JSON::parse(node.output)["ok"],"Split executes through compiled CAD node",juce::String(node.report()));
+    frust_engine::setCadCommandService({});
+    const auto distant=json(R"({"tool":{"sketch":""}})");juce::String distantSketch,circle2;service->createSketch("XY",0,distantSketch,error);service->addSketchCircle(distantSketch,30,30,1,circle2,error);distant["tool"].getDynamicObject()->setProperty("sketch",distantSketch);
+    const auto safeRevision=service->document().revision();r=service->modelingCommand("surface_split",request("update",splitId,distant));
+    check(!(bool)r["ok"]&&service->document().revision()==safeRevision,"Nonintersecting split fails atomically",r["error"].toString());
+    for(const auto* ext:{"djo","djc"})
+    {const auto file=juce::File::getCurrentWorkingDirectory().getChildFile(juce::String("build/surface-phase2-")+ext+"."+ext);CadCommandService back;const bool pass=service->save(file,error)&&back.load(file,error)&&back.document().find(splitId)!=nullptr&&regions.size()==2&&back.document().find(regions[0].toString())!=nullptr&&back.document().find(regions[1].toString())!=nullptr;check(pass,juce::String("Split native/JSON persistence ")+ext,error);}
+    auto edgeRequest=json(R"({"action":"edges","target":""})");edgeRequest.getDynamicObject()->setProperty("target",base);const auto edges=service->chamferCommand(edgeRequest);juce::String boundary;
+    if(const auto* listed=edges["edges"].getArray())for(const auto& edge:*listed)if(closeEnough((double)edge["start"][0],10)&&closeEnough((double)edge["end"][0],10)){boundary=edge["reference"].toString();break;}
+    check(boundary.isNotEmpty(),"Resolve persistent source boundary edge");
+    auto extension=json(R"({"target":"","boundary":"","distance":2})");extension.getDynamicObject()->setProperty("target",base);extension.getDynamicObject()->setProperty("boundary",boundary);
+    r=service->modelingCommand("surface_extend",request("create",{},extension));const auto extended=r["id"].toString();check((bool)r["ok"]&&closeEnough(metric(extended),120),"Extend selected planar boundary by distance",r["error"].toString());
+    juce::String guide,guideLine;service->createSketch("XY",0,guide,error);service->addSketchLine(guide,14,0,14,10,guideLine,error);
+    auto toward=json(R"({"toward":{"sketch":"","entities":[]}})");toward["toward"].getDynamicObject()->setProperty("sketch",guide);toward["toward"]["entities"].getArray()->add(guideLine);
+    r=service->modelingCommand("surface_extend",request("update",extended,toward));check((bool)r["ok"]&&closeEnough(metric(extended),140),"Extend to selected target sketch curve",r["error"].toString());
+    check(service->undo(error)&&closeEnough(metric(extended),120)&&service->redo(error)&&closeEnough(metric(extended),140),"Extend edit supports Undo/Redo",error);
+    for(const auto* ext:{"djo","djc"})
+    {const auto file=juce::File::getCurrentWorkingDirectory().getChildFile(juce::String("build/surface-phase2-all.")+ext);CadCommandService back;const bool pass=service->save(file,error)&&back.load(file,error)&&back.document().find(trimmed)!=nullptr&&back.document().find(splitId)!=nullptr&&back.document().find(extended)!=nullptr&&closeEnough((double)surfaceTopology(back.document().find(extended)->shape)["area_mm2"],140);check(pass,juce::String("Trim/Split/Extend definition and geometry reload ")+ext,error);}
+    check(service->remove(regions[0].toString(),error)&&service->remove(regions[1].toString(),error)&&service->document().find(splitId)!=nullptr&&!service->document().find(splitId)->visible&&service->undo(error)&&service->undo(error)&&service->document().find(regions[0].toString())!=nullptr,"Deleting Split regions leaves their parent hidden and is Undoable",error);
+    check(service->modelingCommand("surface_split",request("delete",splitId,{}))["ok"]&&service->document().find(splitId)==nullptr&&regions.size()==2&&service->document().find(regions[0].toString())==nullptr&&service->undo(error),"Delete Split and its regions in one Undoable transaction",error);
+    auto gui=std::make_shared<CadCommandService>();juce::String guiSketch,guiGroup,guiCut,guiCircle;
+    gui->createSketch("XY",0,guiSketch,error);gui->addSketchRectangle(guiSketch,0,0,10,10,guiGroup,error);
+    auto source=json(R"({"method":"planar"})");source.getDynamicObject()->setProperty("profile",guiSketch);const auto guiBase=gui->modelingCommand("surface",request("create",{},source))["id"].toString();
+    gui->createSketch("XY",0,guiCut,error);gui->addSketchCircle(guiCut,5,5,2,guiCircle,error);
+    auto panel=std::make_unique<CadWorkspacePanel>(gui);panel->setSize(1400,900);
+    bool toolbarSplit=false;const auto toolbarState=panel->automation(json("{}"));
+    if(const auto* controls=toolbarState["state"]["modifyToolbar"]["controls"].getArray())for(const auto& control:*controls)if(control["command"].toString()=="surface_split")toolbarSplit=true;
+    check(toolbarSplit,"Split command appears in modeling toolbar");
+    auto choose=json(R"({"action":"select"})");choose.getDynamicObject()->setProperty("id",guiBase);panel->automation(choose);
+    panel->automation(json(R"({"action":"command","command":"surface_split"})"));
+    panel->automation(json(R"({"action":"click","button":"surfTool"})"));choose.getDynamicObject()->setProperty("id",guiCut);panel->automation(choose);
+    const auto guiRevision=gui->document().revision();auto state=panel->automation(json(R"({"action":"click","button":"modelingPreview"})"));
+    check((bool)state["ok"]&&(bool)state["state"]["modelingPreview"]&&gui->document().revision()==guiRevision,"Split GUI selection callback and Preview",juce::JSON::toString(state,false));
+    state=panel->automation(json(R"({"action":"click","button":"apply"})"));
+    bool guiSplit=false;juce::String guiParent,guiRegion;for(const auto& feature:gui->document().features()){if(feature.type=="surface_split"){guiSplit=true;guiParent=feature.id;}if(feature.type=="surface_split_region"&&guiRegion.isEmpty())guiRegion=feature.id;}
+    check((bool)state["ok"]&&guiSplit,"Split GUI Apply commits shared command",juce::JSON::toString(state,false));
+    if(guiRegion.isNotEmpty())
+    {choose.getDynamicObject()->setProperty("id",guiRegion);panel->automation(choose);state=panel->automation(json(R"({"action":"click","button":"modelingEdit"})"));
+     check((bool)state["ok"]&&state["state"]["task"].toString().containsIgnoreCase("Split"),"Region property editor opens parent Split operation",juce::JSON::toString(state,false));
+     panel->automation(json(R"({"action":"click","button":"cancel"})"));}
+    auto* result=new juce::DynamicObject();result->setProperty("ok",failures==0);result->setProperty("passed",checks.size()-failures);result->setProperty("failed",failures);result->setProperty("checks",checks);report=result;return failures==0;
+}
 }

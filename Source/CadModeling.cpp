@@ -36,6 +36,7 @@
 #include <atomic>
 #include <Standard_Failure.hxx>
 #include <cmath>
+#include <limits>
 
 namespace djehuti::cad
 {
@@ -150,9 +151,10 @@ juce::StringArray modelingDependencies(const juce::var& p)
         else {if(p["profile"].toString().isNotEmpty())ids.add(p["profile"].toString());if(method=="sweep")for(const auto* key:{"sketch","feature"})if(p["path"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["path"][key].toString());}
         return ids;
     }
-    for(const auto* key:{"profile","region","target"})if(p[key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p[key].toString());
+    for(const auto* key:{"profile","region","target","parent"})if(p[key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p[key].toString());
     for(const auto* key:{"sections","sources"})if(const auto* values=p[key].getArray())for(const auto& v:*values)ids.addIfNotAlreadyThere(v.isObject()?v["feature"].toString():v.toString());
     for(const auto* key:{"sketch","feature"})if(p["tool"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["tool"][key].toString());
+    for(const auto* key:{"sketch","feature"})if(p["toward"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["toward"][key].toString());
     for(const auto* key:{"sketch","feature"})if(p["path"][key].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["path"][key].toString());
     if(p["reference"]["feature"].toString().isNotEmpty())ids.addIfNotAlreadyThere(p["reference"]["feature"].toString());return ids;
 }
@@ -361,7 +363,9 @@ juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var&
     if(action=="references"){auto a=copyJson(args);a.getDynamicObject()->setProperty("action","edges");return chamferCommand(a);}
     if(action=="preview"){juce::var details;if(modelingPreview(type,args,details,error)==nullptr)return fail("modeling_failed",error);return details;}
     if(!juce::StringArray{"create","get","update","delete"}.contains(action))return fail("invalid_arguments","Action must be create/get/update/delete/preview/references.");const auto* f=find(id);
-    if(action!="create"&&(f==nullptr||f->type!=type))return fail("not_found","Unknown "+type+" feature: "+id);
+    if(type=="surface_split_region"&&action=="create")return fail("invalid_arguments","Split regions are created by their parent Split Surface operation.");
+    if(action!="create"&&(f==nullptr||(f->type!=type&&!(type=="surface_split"&&f->type=="surface_split_region"))))return fail("not_found","Unknown "+type+" feature: "+id);
+    if(action=="update"&&f->type=="surface_split_region")return fail("invalid_arguments","Edit the parent Split Surface operation; individual regions keep their identities and visibility.");
     if(action=="delete"){if(!remove(id,error))return fail("dependency_error",error);out->setProperty("ok",true);out->setProperty("id",id);out->setProperty("deleted",true);return reply;}
     if(action=="create"||action=="update")
     {
@@ -372,6 +376,8 @@ juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var&
             for(const auto& v:*path["edges"].getArray()){if(v.isString()){tokens.add(v);continue;}if(!numeric(v)||(double)v!=std::floor((double)v)||(double)v<0||(double)v>=list["edges"].size())return fail("invalid_reference","Path edge index is out of range.");tokens.add(list["edges"][(int)v]["reference"]);}path.getDynamicObject()->setProperty("edges",tokens);
         }
         if(!validateModeling(type,p,error))return fail("invalid_arguments",error);
+        juce::Array<juce::var> splitAnchors;
+        if(type=="surface_split"&&!splitRegionAnchors(p,splitAnchors,error))return fail("modeling_failed",error);
         if(type=="surface_trim"&&(action=="create"||p["regionReference"]["face"].toString().isEmpty()||p["target"]!=f->modeling["target"]||p["face"]!=f->modeling["face"]||juce::JSON::toString(p["seed"],true)!=juce::JSON::toString(f->modeling["seed"],true)))
         {
             try
@@ -389,19 +395,56 @@ juce::var CadDocument::modelingCommand(const juce::String& type,const juce::var&
             catch(const Standard_Failure& failure){return fail("invalid_reference",juce::String("Cannot locate the trim region: ")+failure.GetMessageString());}
         }
         for(const auto& dependency:modelingDependencies(p))if(dependency==id||find(dependency)==nullptr)return fail("invalid_reference","Missing or self-referencing source: "+dependency);
-        auto created=id;const auto ok=mutate([&](juce::String&)
+        auto created=id;juce::StringArray regions;const auto ok=mutate([&](juce::String& mutationError)
         {
             if(action=="create"){CadFeature value;value.id=newId(type.toRawUTF8(),nextNumber++);value.type=type;value.name=(type=="surface"&&juce::StringArray{"planar","extrude","revolve","ruled"}.contains(p["method"].toString())?juce::StringArray{"Planar Surface","Extruded Surface","Revolved Surface","Ruled Surface"}[juce::StringArray{"planar","extrude","revolve","ruled"}.indexOf(p["method"].toString())]:modelingLabel(type))+" "+juce::String(nextNumber-1);items.push_back(value);created=value.id;}
+            if(type=="surface_split")
+            {
+                juce::StringArray available;
+                if(action=="update")for(const auto& child:items)if(child.type=="surface_split_region"&&child.modeling["parent"].toString()==created)available.add(child.id);
+                for(const auto& anchor:splitAnchors)
+                {
+                    int matched=-1;double nearest=std::numeric_limits<double>::infinity();
+                    for(int i=0;i<available.size();++i)if(const auto* old=find(available[i]))
+                    {
+                        const auto previous=old->modeling["regionReference"];
+                        if(previous["face"].toString()!=anchor["face"].toString())continue;
+                        const auto du=(double)previous["u"]-(double)anchor["u"],dv=(double)previous["v"]-(double)anchor["v"];
+                        if(du*du+dv*dv<nearest){nearest=du*du+dv*dv;matched=i;}
+                    }
+                    juce::String regionId;
+                    if(matched>=0){regionId=available[matched];available.remove(matched);}
+                    else
+                    {CadFeature region;region.id=newId("surface_split_region",nextNumber++);region.type="surface_split_region";region.name="Split Region "+juce::String(regions.size()+1);region.modeling=surfaceDefaults(region.type);regionId=region.id;items.push_back(region);}
+                    for(auto& region:items)if(region.id==regionId)
+                    {auto* definition=region.modeling.getDynamicObject();definition->setProperty("parent",created);definition->setProperty("target",p["target"]);definition->setProperty("face",p["face"]);definition->setProperty("regionReference",copyJson(anchor));region.firstOperand=created;region.targetFeatureId=p["target"].toString();}
+                    regions.add(regionId);
+                }
+                for(const auto& removed:available)
+                {
+                    for(const auto& sketch:sketches)if(sketch.supportFeature==removed){mutationError="A split region supports a sketch; preserve that region or delete the sketch first.";return false;}
+                    for(const auto& instance:mechanics.instances)if(instance.featureId==removed){mutationError="A split region is used by an assembly instance; preserve it or delete the instance first.";return false;}
+                    for(const auto& feature:items)if(!available.contains(feature.id)&&feature.id!=created&&(feature.firstOperand==removed||feature.secondOperand==removed||feature.targetFeatureId==removed||replicationDependencies(feature.replication).contains(removed)||modelingDependencies(feature.modeling).contains(removed)))
+                    {mutationError="A split region is used by another modeling feature; preserve the region or remove its dependent feature first.";return false;}
+                }
+                if(!available.isEmpty())
+                {items.erase(std::remove_if(items.begin(),items.end(),[&](const CadFeature& child){return available.contains(child.id);}),items.end());
+                 auto& assigned=materials.assignments;assigned.erase(std::remove_if(assigned.begin(),assigned.end(),[&](const CadMaterialAssignment& value){return available.contains(value.featureId);}),assigned.end());}
+            }
             for(auto& value:items)if(value.id==created){value.modeling=p;value.firstOperand=isSurfaceType(type)?(modelingDependencies(p).isEmpty()?juce::String():modelingDependencies(p)[0]):type=="loft"?p["sections"][0].toString():type=="sweep"?p["profile"].toString():p["target"].toString();value.targetFeatureId=p["target"].toString();}
             for(auto& value:items)
             {
                 const bool target=value.id==p["target"].toString();
                 if((target&&(isSurfaceType(type)||type=="mill"||p["operation"].toString()!="new"))||(!target&&modelingDependencies(p).contains(value.id)&&value.id!=p["reference"]["feature"].toString()))value.visible=false;
             }
+            if(type=="surface_split")for(auto& value:items)if(value.id==created)value.visible=false;
             return true;
         },error);
         if(!ok)return fail("modeling_failed",error.isEmpty()?"OCCT could not construct this feature. Check source geometry and parameters.":error);id=created;f=find(id);
     }
-    out->setProperty("ok",true);out->setProperty("id",id);out->setProperty("type",type);out->setProperty("parameters",copyJson(f->modeling));if(isSurfaceType(type))out->setProperty("topology",surfaceTopology(f->shape));return reply;
+    out->setProperty("ok",true);out->setProperty("id",id);out->setProperty("type",f->type);out->setProperty("parameters",copyJson(f->modeling));if(isSurfaceType(type))out->setProperty("topology",surfaceTopology(f->shape));
+    if(type=="surface_split"&&f->type=="surface_split")
+    {juce::Array<juce::var> all;for(const auto& child:items)if(child.type=="surface_split_region"&&child.modeling["parent"].toString()==id)all.add(child.id);out->setProperty("regions",all);}
+    return reply;
 }
 }

@@ -77,7 +77,7 @@ inline bool isReplicationType(const juce::String& type) { return type=="mirror"|
 juce::var replicationDefaults(const juce::String& type);
 bool validateReplication(const juce::String& type, const juce::var&, juce::String& error);
 juce::StringArray replicationDependencies(const juce::var&);
-inline bool isSurfaceType(const juce::String& type) { return juce::StringArray{"surface","surface_trim","surface_extend","surface_sew","surface_solidify","surface_thicken"}.contains(type); }
+inline bool isSurfaceType(const juce::String& type) { return juce::StringArray{"surface","surface_trim","surface_extend","surface_split","surface_split_region","surface_sew","surface_solidify","surface_thicken"}.contains(type); }
 // "gear": parametric gear solid (CadGear.h), stored and edited through the same modeling command boundary.
 inline bool isModelingType(const juce::String& type) { return type=="sweep"||type=="loft"||type=="mill"||type=="gear"||type=="din_rail"||type=="din_bottom"||type=="din_clip"||type=="din_screw"||type=="tslot_rail"||type=="tslot_half"||isSurfaceType(type); }
 namespace gear { struct PairPlan; }
@@ -453,6 +453,8 @@ private:
     bool modelingSection(const juce::String&,TopoDS_Face&,CadSketchFrame&,juce::String&,juce::StringArray& active);
     TopoDS_Shape evaluateModeling(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active,bool surfaceOutput=false);
     TopoDS_Shape evaluateSurface(const CadFeature&,CadFaceOrigins&,juce::String&,juce::StringArray& active);
+    bool surfaceCutTool(const juce::var& reference,TopoDS_Shape& shape,CadFaceOrigins& names,juce::String& error,juce::StringArray& active);
+    bool splitRegionAnchors(const juce::var& parameters,juce::Array<juce::var>& anchors,juce::String& error) const;
     bool modelingProfile(const juce::String&,TopoDS_Wire&,CadSketchFrame&,juce::String&,juce::StringArray&);
     juce::var gearPairRequest(const CadFeature& a, const CadFeature& b) const;
     bool constructionSource(const juce::String& id, gp_Trsf& frame, gp_Trsf& shapeTransform, const CadFeature*& feature, juce::String& why) const;

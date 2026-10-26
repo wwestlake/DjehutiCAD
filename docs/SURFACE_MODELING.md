@@ -1,9 +1,10 @@
 # Surface modeling
 
 The **Surfaces** menu provides **Planar Surface**, **Extruded Surface**,
-**Revolved Surface** and **Ruled Surface**. Matching buttons sit together in the
-modeling Modify toolbar. The Modify menu retains Create Surface and the existing
-later surface operations. These are editable OCAF features.
+**Revolved Surface**, **Ruled Surface**, **Trim Surface**, **Extend Surface** and
+**Split Surface**. Matching buttons sit together in the modeling Modify toolbar.
+The Modify menu retains Create Surface and the existing later surface operations.
+These are editable OCAF features.
 Select their source geometry in the tree or model views, enter dimensions, and
 use Preview before Apply. Preview is isolated from the live document and Undo
 history. Select a result and choose **Edit sources and parameters** to reopen it.
@@ -61,10 +62,10 @@ ends or creates a solid. Surfaces display from both sides. **Flip surface normal
 reverses the orientation supplied by the profile traversal and OCCT builder;
 positive/negative thickness directions follow this orientation.
 
-## Trim and Extend
+## Trim, Extend and Split
 
-**Trim Surface:** select a surface/shell or a named face, then a boundary sketch
-or intersecting feature. Boundary curves must lie on the surface; intersecting
+**Trim Surface:** select a surface/shell or a named face, then a boundary sketch,
+individual sketch curves, persistent model edges, or intersecting feature/face. Boundary curves must lie on the surface; intersecting
 geometry must divide it. Click **Pick trim region**, click inside the region in
 a model view, or enter an exact world-space region point. **Keep selected region**
 retains it; clearing that option removes it. Preview shows the chosen result.
@@ -76,11 +77,26 @@ enter the new complete world coordinates when changing selection after movement.
 Boundary points, tools that do not divide the surface, and invalid results give
 controlled errors. Curves are not silently projected onto a different surface.
 
-**Extend Surface:** select one face and a distance, then the U-minimum,
-U-maximum, V-minimum and/or V-maximum boundaries. This uses natural continuation
+**Extend Surface:** select one face and its boundary edge, then enter an extension
+distance or select a parallel sketch curve/model edge beyond the boundary as a
+target. The earlier U-minimum, U-maximum, V-minimum and V-maximum switches remain
+available when no edge is picked. This uses natural continuation
 of analytic geometry and C1 continuation of eligible bounded surfaces. Only
 rectangular U/V faces are eligible. Arbitrary trimmed contours, holes, unsupported
 surface bases and extensions past closed/periodic limits are rejected.
+
+**Split Surface:** select an open surface or named face and the cutting geometry
+used by Trim. Preview shows the resulting regions. Apply creates a hidden Split
+operation and separately selectable, hideable region features in the model tree.
+Edit the parent Split operation to replace its cutter. Source-face U/V anchors
+retain region identities across compatible edits and source regeneration; if a
+region disappears or its source face is replaced, the edit fails atomically or
+the remaining regions are matched to the closest compatible anchors.
+
+All three tools use **Preview**, **Apply** and **Cancel** in the modeling panel.
+After an initial preview, parameter changes refresh the draft. Their source
+references, definitions and resulting surfaces participate in Undo/Redo and
+native/JSON save and reload.
 
 ## Sew and Solidify
 

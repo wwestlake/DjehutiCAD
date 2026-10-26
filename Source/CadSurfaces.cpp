@@ -1,5 +1,6 @@
 #include "CadDocument.h"
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -23,7 +24,14 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopTools_ListIteratorOfListOfShape.hxx>
 #include <BRep_Builder.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <gp_Pnt2d.hxx>
+#include <Standard_Failure.hxx>
+#include <algorithm>
 #include <cmath>
+#include <exception>
+#include <limits>
 
 namespace djehuti::cad
 {
@@ -57,6 +65,35 @@ bool validCreationSource(const juce::var& ref,juce::String& error)
     const auto key=sketch?"entities":"edges";if((feature||ref.hasProperty(key))&&!ref[key].isArray())return fail("Source entities/edges must be an array of stable identifiers.");
     if(feature&&ref[key].size()==0)return fail("Select the connected edges defining the surface boundary or curve.");
     juce::StringArray seen;if(const auto* values=ref[key].getArray())for(const auto& value:*values){if(!value.isString()||value.toString().isEmpty()||seen.contains(value.toString()))return fail("Source identifiers must be nonempty, unique strings (use persistent edge references).");seen.add(value.toString());}
+    return true;
+}
+bool validCutTool(const juce::var& ref,juce::String& error,bool allowFace=true)
+{
+    if(!ref.isObject()){error="Choose a sketch curve, connected model edges or an intersecting surface.";return false;}
+    for(const auto& field:ref.getDynamicObject()->getProperties())
+        if(!juce::StringArray{"sketch","entities","feature","edges","face"}.contains(field.name.toString())||
+           (field.name.toString()=="face"&&!allowFace)){error="Unknown or unsupported cutting-geometry reference field.";return false;}
+    const bool sketch=ref["sketch"].isString()&&ref["sketch"].toString().isNotEmpty();
+    const bool feature=ref["feature"].isString()&&ref["feature"].toString().isNotEmpty();
+    if(sketch==feature){error="Choose exactly one sketch or model feature for cutting geometry.";return false;}
+    if((sketch&&(ref.hasProperty("face")||ref.hasProperty("edges")))||
+       (feature&&ref.hasProperty("entities"))||(ref.hasProperty("face")&&ref.hasProperty("edges")))
+    {error="Sketches use entity IDs; model geometry uses either persistent edges or one face.";return false;}
+    const auto key=sketch?"entities":"edges";
+    if(ref.hasProperty(key)&&!ref[key].isArray()){error="Selected curve/edge identifiers must be an array.";return false;}
+    if(ref.hasProperty("edges")&&ref["edges"].size()==0){error="Select at least one persistent cutting edge.";return false;}
+    if(ref.hasProperty("face")&&(!ref["face"].isString()||ref["face"].toString().isEmpty())){error="The selected cutting face needs a persistent face token.";return false;}
+    juce::StringArray seen;if(const auto* ids=ref[key].getArray())for(const auto& id:*ids)
+        if(!id.isString()||id.toString().isEmpty()||seen.contains(id.toString())){error="Cutting curve/edge IDs must be unique nonempty strings.";return false;}else seen.add(id.toString());
+    return true;
+}
+bool validRegionReference(const juce::var& ref,juce::String& error,bool required)
+{
+    if(!ref.isObject()){error="Region reference must be an object.";return false;}
+    if(ref.getDynamicObject()->getProperties().size()==0){if(required){error="A split region needs a source-face anchor.";return false;}return true;}
+    if(!ref["face"].isString()||ref["face"].toString().isEmpty()||!number(ref["u"])||!number(ref["v"]))
+    {error="Region reference needs a persistent face and finite U/V coordinates.";return false;}
+    for(const auto& field:ref.getDynamicObject()->getProperties())if(!juce::StringArray{"face","u","v"}.contains(field.name.toString())){error="Unknown region-reference field.";return false;}
     return true;
 }
 double area(const TopoDS_Shape& s) { GProp_GProps p;BRepGProp::SurfaceProperties(s,p);return p.Mass(); }
@@ -133,7 +170,7 @@ juce::String modelingLabel(const juce::String& type)
     if(type=="tslot_rail")return "T-slot rail";if(type=="tslot_half")return "T-slot rail half";
     if(type=="din_rail")return "DIN rail";if(type=="din_bottom")return "DIN module bottom";if(type=="din_clip")return "DIN clip";if(type=="din_screw")return "DIN friction screw";
     if(type=="gear")return "Gear";    if(type=="sweep")return "Sweep";if(type=="loft")return "Loft";if(type=="mill")return "Virtual Router / Mill";
-    if(type=="surface")return "Surface";if(type=="surface_trim")return "Trim Surface";if(type=="surface_extend")return "Extend Surface";
+    if(type=="surface")return "Surface";if(type=="surface_trim")return "Trim Surface";if(type=="surface_extend")return "Extend Surface";if(type=="surface_split")return "Split Surface";if(type=="surface_split_region")return "Split Region";
     if(type=="surface_sew")return "Sew Surfaces";if(type=="surface_solidify")return "Solidify Shell";return "Thicken Surface";
 }
 
@@ -153,7 +190,9 @@ juce::var surfaceDefaults(const juce::String& type)
     if(type!="surface_solidify")o->setProperty("face","");
     if(type=="surface_trim")
     {auto tool=obj();tool.getDynamicObject()->setProperty("sketch","");o->setProperty("tool",tool);o->setProperty("regionReference",obj());o->setProperty("seed",juce::Array<juce::var>{0,0,0});o->setProperty("keep",true);}
-    if(type=="surface_extend") {o->setProperty("distance",5.0);o->setProperty("sides",juce::Array<juce::var>{true,true,true,true});}
+    if(type=="surface_extend") {o->setProperty("distance",5.0);o->setProperty("sides",juce::Array<juce::var>{true,true,true,true});o->setProperty("boundary","");o->setProperty("toward",obj());}
+    if(type=="surface_split") {o->setProperty("tool",obj());}
+    if(type=="surface_split_region") {o->setProperty("parent","");o->setProperty("regionReference",obj());}
     if(type=="surface_thicken") {o->setProperty("thickness",2.0);o->setProperty("direction","positive");}
     return p;
 }
@@ -189,22 +228,23 @@ bool validateSurface(const juce::String& type,const juce::var& p,juce::String& e
     }
     if(!p["target"].isString()||p["target"].toString().isEmpty())return fail("Choose a source surface or shell.");
     if(p.hasProperty("face")&&!p["face"].isString())return fail("Face must be a persistent face token, or empty for the whole source.");
-    if(type=="surface_trim")
+    if(type=="surface_trim"||type=="surface_split")
     {
-        const auto t=p["tool"];if(!t.isObject())return fail("Trim tool must reference a boundary sketch or intersecting feature.");
-        for(const auto& v:t.getDynamicObject()->getProperties())if(!juce::StringArray{"sketch","feature","face"}.contains(v.name.toString())||!v.value.isString())return fail("Invalid trim-tool field.");
-        if(t["sketch"].toString().isNotEmpty()==t["feature"].toString().isNotEmpty())return fail("Choose either a trim sketch or an intersecting feature.");
-        if(!vector3(p["seed"])||!p["keep"].isBool())return fail("Trim requires a finite world-space seed point and keep boolean.");
-        const auto ref=p["regionReference"];if(!ref.isObject())return fail("Trim region reference must be an object.");
-        if(ref.getDynamicObject()->getProperties().size()>0)
-        {if(!ref["face"].isString()||ref["face"].toString().isEmpty()||!number(ref["u"])||!number(ref["v"]))return fail("Invalid trim region face/UV reference.");for(const auto& v:ref.getDynamicObject()->getProperties())if(!juce::StringArray{"face","u","v"}.contains(v.name.toString()))return fail("Unknown trim region reference field.");}
+        if(!validCutTool(p["tool"],error))return false;
+        if(type=="surface_trim")
+        {if(!vector3(p["seed"])||!p["keep"].isBool())return fail("Trim requires a finite world-space seed point and keep boolean.");if(!validRegionReference(p["regionReference"],error,false))return false;}
     }
     if(type=="surface_extend")
     {
         if(!number(p["distance"])||(double)p["distance"]<1e-6||(double)p["distance"]>1e5)return fail("Extension distance must be between 0.000001 and 100000 mm.");
+        if(!p["boundary"].isString())return fail("Extension boundary must be a persistent edge token or empty for legacy U/V selection.");
+        if(!p["toward"].isObject())return fail("Extension target geometry must be an object.");
+        if(p["toward"].getDynamicObject()->getProperties().size()>0&&!validCutTool(p["toward"],error,false))return false;
         if(!p["sides"].isArray()||p["sides"].size()!=4)return fail("Extension sides are four booleans: U min, U max, V min, V max.");
-        bool any=false;for(const auto& v:*p["sides"].getArray()){if(!v.isBool())return fail("Extension sides must be booleans.");any=any||(bool)v;}if(!any)return fail("Choose at least one boundary to extend.");
+        bool any=p["boundary"].toString().isNotEmpty();for(const auto& v:*p["sides"].getArray()){if(!v.isBool())return fail("Extension sides must be booleans.");any=any||(bool)v;}if(!any)return fail("Choose at least one boundary to extend.");
     }
+    if(type=="surface_split_region")
+    {if(!p["parent"].isString()||p["parent"].toString().isEmpty())return fail("Split region needs its parent operation.");if(!validRegionReference(p["regionReference"],error,true))return false;}
     if(type=="surface_thicken"&&(!number(p["thickness"])||(double)p["thickness"]<1e-6||(double)p["thickness"]>1e5||!juce::StringArray{"positive","negative","symmetric"}.contains(p["direction"].toString())))return fail("Thickness must be positive (0.000001ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ100000 mm); direction is positive, negative or symmetric.");
     return true;
 }
@@ -252,6 +292,14 @@ bool CadDocument::surfaceInput(const juce::String& id,const juce::String& faceTo
     CadTopologyEvolution copying;copying.featureId=active[active.size()-1];
     for(const auto kind:{TopAbs_FACE,TopAbs_EDGE})for(TopExp_Explorer e(shape,kind);e.More();e.Next()){const auto image=copied.ModifiedShape(e.Current());if(!image.IsNull())copying.modified.push_back({e.Current(),image});}
     operationHistory.push_back(std::move(copying));shape=copied.Shape();names=std::move(newNames);return true;
+}
+
+bool CadDocument::surfaceCutTool(const juce::var& reference,TopoDS_Shape& shape,CadFaceOrigins& names,juce::String& error,juce::StringArray& active)
+{
+    if(!validCutTool(reference,error))return false;
+    if(reference["sketch"].toString().isNotEmpty()||reference["edges"].isArray())
+    {auto wire=modelingPath(reference,nullptr,error,active);if(wire.IsNull())return false;shape=wire;return true;}
+    return surfaceInput(reference["feature"].toString(),reference["face"].toString(),shape,names,error,active);
 }
 
 TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigins& origins,juce::String& error,juce::StringArray& active)
@@ -340,19 +388,39 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
         {const auto mapped=sew.IsModifiedSubShape(e.Current())?sew.ModifiedSubShape(e.Current()):e.Current();history.modified.push_back({e.Current(),mapped});}
         for(const auto& n:inputNames){const auto image=sew.IsModifiedSubShape(n.first)?sew.ModifiedSubShape(n.first):n.first;for(TopExp_Explorer e(result,TopAbs_FACE);e.More();e.Next())if(e.Current().IsSame(image))origins.push_back({e.Current(),n.second});}
     }
+    else if(type=="surface_split_region")
+    {
+        TopoDS_Shape parent,source;CadFaceOrigins parentNames,sourceNames;
+        if(!surfaceInput(p["parent"].toString(),{},parent,parentNames,error,active)||
+           !surfaceInput(p["target"].toString(),p["face"].toString(),source,sourceNames,error,active))return {};
+        gp_Pnt seed;int supports=0;TopoDS_Shape supportingFace;
+        const auto anchor=p["regionReference"];
+        for(const auto& named:sourceNames)if(named.second.contains(anchor["face"].toString()))
+        {if(!supportingFace.IsNull()&&supportingFace.IsSame(named.first))continue;supportingFace=named.first;seed=BRepAdaptor_Surface(TopoDS::Face(named.first)).Value((double)anchor["u"],(double)anchor["v"]);++supports;}
+        if(supports!=1){error="Split region source face is missing or ambiguous after regeneration.";return {};}
+        const auto vertex=BRepBuilderAPI_MakeVertex(seed).Vertex();int matches=0;
+        for(TopExp_Explorer e(parent,TopAbs_FACE);e.More();e.Next())
+        {BRepExtrema_DistShapeShape distance(vertex,e.Current());distance.Perform();if(distance.IsDone()&&distance.NbSolution()==1&&distance.Value()<1e-6&&distance.SupportTypeShape2(1)==BRepExtrema_IsInFace)
+         {result=e.Current();++matches;}}
+        if(matches!=1){error="Split region changed or vanished. Edit the split or its source geometry.";return {};}
+        for(const auto& named:parentNames)if(named.first.IsSame(result))origins.push_back({result,named.second});
+        history.generated.push_back({parent,result});
+    }
     else
     {
         TopoDS_Shape source;CadFaceOrigins names;if(!surfaceInput(p["target"].toString(),p["face"].toString(),source,names,error,active))return {};
         if(TopExp_Explorer(source,TopAbs_SOLID).More()){error="Select an open surface/shell or a named face; whole solids are not surface inputs.";return {};}
-        if(type=="surface_trim")
+        if(type=="surface_trim"||type=="surface_split")
         {
-            TopoDS_Shape tool;CadFaceOrigins toolNames;const auto t=p["tool"];
-            if(t["sketch"].toString().isNotEmpty()){TopoDS_Wire w;CadSketchFrame frame;if(!modelingProfile(t["sketch"].toString(),w,frame,error,active))return {};tool=w;}
-            else if(!surfaceInput(t["feature"].toString(),t["face"].toString(),tool,toolNames,error,active))return {};
+            TopoDS_Shape tool;CadFaceOrigins toolNames;if(!surfaceCutTool(p["tool"],tool,toolNames,error,active))return {};
             TopTools_ListOfShape arguments,tools;arguments.Append(source);tools.Append(tool);BRepAlgoAPI_Splitter split;split.SetArguments(arguments);split.SetTools(tools);split.SetNonDestructive(true);split.Build();
-            if(!split.IsDone()||split.HasErrors()||split.Shape().IsNull()){error="Trim intersection failed. The curves must lie on the surface or intersecting geometry must cross it.";return {};}
+            if(!split.IsDone()||split.HasErrors()||split.Shape().IsNull()){error="Surface cutting intersection failed. The curves must lie on the surface or intersecting geometry must cross it.";return {};}
             TopTools_IndexedMapOfShape before,after;TopExp::MapShapes(source,TopAbs_FACE,before);TopExp::MapShapes(split.Shape(),TopAbs_FACE,after);
             if(after.Extent()<=before.Extent()){error="The trim tool does not divide the surface into selectable regions.";return {};}
+            if(type=="surface_split")
+            {if(after.Extent()>64){error="Split would create more than 64 regions; simplify the cutting geometry.";return {};}result=split.Shape();track(split,source,names,result,feature.id,origins,history);}
+            else
+            {
             gp_Pnt seed((double)p["seed"][0],(double)p["seed"][1],(double)p["seed"][2]);
             if(p["regionReference"]["face"].toString().isNotEmpty())
             {int count=0;for(const auto& n:names)if(n.second.contains(p["regionReference"]["face"].toString())){seed=BRepAdaptor_Surface(TopoDS::Face(n.first)).Value((double)p["regionReference"]["u"],(double)p["regionReference"]["v"]);++count;}if(count!=1){error="The trim region's anchored source face is missing or split. Pick its region again.";return {};}}
@@ -364,6 +432,7 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
             std::vector<TopoDS_Face> retained;for(int i=1;i<=after.Extent();++i)if((bool)p["keep"]?(i==selected):(i!=selected))retained.push_back(TopoDS::Face(after(i)));
             if(retained.empty()){error="Trimming would remove the entire surface.";return {};}result=facesTogether(retained);track(split,source,names,result,feature.id,origins,history);
             const double delta=area(source)-area(result);if(delta<1e-8){error="Trim did not remove surface area.";return {};}
+            }
         }
         if(type=="surface_extend")
         {
@@ -371,14 +440,64 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
             const auto face=TopoDS::Face(faces(1));double u0,u1,v0,v1;BRepTools::UVBounds(face,u0,u1,v0,v1);
             BRepBuilderAPI_MakeFace rectangle(BRep_Tool::Surface(face),u0,u1,v0,v1,1e-7);
             if(!rectangle.IsDone()||std::abs(area(rectangle.Face())-area(face))>std::max(1e-7,area(face)*1e-7)){error="Extend supports untrimmed rectangular U/V boundaries. Trimmed contours, holes and arbitrary boundary extensions are unsupported.";return {};}
-            TopoDS_Face extended;BRepLib::ExtendFace(face,(double)p["distance"],(bool)p["sides"][0],(bool)p["sides"][1],(bool)p["sides"][2],(bool)p["sides"][3],extended);
+            bool sides[4]={(bool)p["sides"][0],(bool)p["sides"][1],(bool)p["sides"][2],(bool)p["sides"][3]};
+            double extension=(double)p["distance"];
+            const auto surface=BRep_Tool::Surface(face);
+            const auto project=[&](const gp_Pnt& world,double& u,double& v,double& gap)->bool
+            {GeomAPI_ProjectPointOnSurf projection(world,surface);if(!projection.IsDone()||projection.NbPoints()<1)return false;projection.LowerDistanceParameters(u,v);gap=projection.LowerDistance();return std::isfinite(u)&&std::isfinite(v)&&std::isfinite(gap);};
+            int boundarySide=-1;
+            if(p["boundary"].toString().isNotEmpty())
+            {
+                const auto* target=find(p["target"].toString());TopoDS_Edge boundary;
+                if(target==nullptr||!modelingEdge(*target,p["boundary"].toString(),boundary,error))return {};
+                BRepAdaptor_Curve curve(boundary);const auto a=curve.FirstParameter(),b=curve.LastParameter();
+                double uv[2][2],gap=0;
+                for(int i=0;i<2;++i)if(!project(curve.Value(a+(b-a)*(i==0?0.25:0.75)),uv[i][0],uv[i][1],gap)||gap>1e-5)
+                {error="The selected edge does not lie on the target surface.";return {};}
+                const double tolerance=1e-5;
+                const bool candidates[4]={std::abs(uv[0][0]-u0)<tolerance&&std::abs(uv[1][0]-u0)<tolerance,
+                                          std::abs(uv[0][0]-u1)<tolerance&&std::abs(uv[1][0]-u1)<tolerance,
+                                          std::abs(uv[0][1]-v0)<tolerance&&std::abs(uv[1][1]-v0)<tolerance,
+                                          std::abs(uv[0][1]-v1)<tolerance&&std::abs(uv[1][1]-v1)<tolerance};
+                for(int i=0;i<4;++i)if(candidates[i]){if(boundarySide>=0){error="The picked edge is ambiguous at a surface seam. Choose another boundary.";return {};}boundarySide=i;}
+                if(boundarySide<0){error="Select one untrimmed rectangular U/V boundary edge on the target face.";return {};}
+                for(auto& side:sides)side=false;sides[boundarySide]=true;
+            }
+            if(p["toward"].isObject()&&p["toward"].getDynamicObject()->getProperties().size()>0)
+            {
+                if(boundarySide<0){error="Select the surface boundary edge before extending toward geometry.";return {};}
+                if((p["toward"]["sketch"].toString().isEmpty()&&!p["toward"]["edges"].isArray())||p["toward"]["face"].toString().isNotEmpty())
+                {error="Extend toward requires a sketch curve or selected persistent model edges.";return {};}
+                TopoDS_Shape guide;CadFaceOrigins guideNames;if(!surfaceCutTool(p["toward"],guide,guideNames,error,active))return {};
+                const bool alongU=boundarySide<2;const auto boundaryParameter=boundarySide==0?u0:boundarySide==1?u1:boundarySide==2?v0:v1;
+                double guideParameter=0;int samples=0;
+                for(TopExp_Explorer e(guide,TopAbs_EDGE);e.More();e.Next())
+                {
+                    BRepAdaptor_Curve curve(TopoDS::Edge(e.Current()));const auto a=curve.FirstParameter(),b=curve.LastParameter();
+                    for(int i=0;i<3;++i)
+                    {
+                        double u=0,v=0,gap=0;if(!project(curve.Value(a+(b-a)*(i+1)/4.0),u,v,gap)||gap>1e-5)
+                        {error="The extension target must lie on the natural continuation of the source surface.";return {};}
+                        const auto parameter=alongU?u:v;
+                        if(samples>0&&std::abs(parameter-guideParameter)>1e-5){error="The extension target must follow one parallel surface-parameter boundary.";return {};}
+                        guideParameter=parameter;++samples;
+                    }
+                }
+                if(samples==0){error="The extension target contains no usable curve edges.";return {};}
+                const auto delta=(boundarySide==0||boundarySide==2)?boundaryParameter-guideParameter:guideParameter-boundaryParameter;
+                if(delta<=1e-7){error="The extension target must lie beyond the chosen boundary.";return {};}
+                BRepAdaptor_Surface basis(face,true);const auto resolution=alongU?basis.UResolution(1.0):basis.VResolution(1.0);
+                if(!std::isfinite(resolution)||resolution<=0){error="This surface has no usable extension direction.";return {};}
+                extension=delta/resolution;if(!std::isfinite(extension)||extension<1e-6||extension>1e5){error="Target extension distance is outside the supported range.";return {};}
+            }
+            TopoDS_Face extended;BRepLib::ExtendFace(face,extension,sides[0],sides[1],sides[2],sides[3],extended);
             if(extended.IsNull()||area(extended)<=area(face)+1e-8){error="This surface cannot continue in the requested U/V directions (closed/periodic limit or unsupported basis surface).";return {};}
             BRepAdaptor_Surface basis(face,true);const auto kind=basis.GetType();
             if(kind==GeomAbs_Plane||kind==GeomAbs_Cylinder||kind==GeomAbs_Cone||kind==GeomAbs_Sphere||kind==GeomAbs_Torus)
             {
                 double eu0,eu1,ev0,ev1;BRepTools::UVBounds(extended,eu0,eu1,ev0,ev1);
-                const auto requestedU=u1-u0+basis.UResolution((double)p["distance"])*(int(bool(p["sides"][0]))+int(bool(p["sides"][1])));
-                const auto requestedV=v1-v0+basis.VResolution((double)p["distance"])*(int(bool(p["sides"][2]))+int(bool(p["sides"][3])));
+                const auto requestedU=u1-u0+basis.UResolution(extension)*(int(sides[0])+int(sides[1]));
+                const auto requestedV=v1-v0+basis.VResolution(extension)*(int(sides[2])+int(sides[3]));
                 if(eu1-eu0<requestedU-1e-7||ev1-ev0<requestedV-1e-7){error="The requested extension reaches a periodic or natural surface limit. Reduce the distance or choose another boundary.";return {};}
             }
             result=extended;history.modified.push_back({face,extended});for(const auto& n:names)if(n.first.IsSame(face))origins.push_back({extended,n.second});
@@ -417,5 +536,66 @@ TopoDS_Shape CadDocument::evaluateSurface(const CadFeature& feature,CadFaceOrigi
     {history.generated.insert(history.generated.end(),step.generated.begin(),step.generated.end());history.modified.insert(history.modified.end(),step.modified.begin(),step.modified.end());history.deleted.insert(history.deleted.end(),step.deleted.begin(),step.deleted.end());}
     std::erase_if(operationHistory,[&](const auto& step){return step.featureId==feature.id;});
     nameFaces(result,feature.id,origins);if(!history.generated.empty()||!history.modified.empty()||!history.deleted.empty())operationHistory.push_back(std::move(history));return result;
+}
+
+bool CadDocument::splitRegionAnchors(const juce::var& parameters,juce::Array<juce::var>& anchors,juce::String& error) const
+{
+    try
+    {
+    anchors.clear();CadDocument draft;
+    if(!draft.deserialize(serialize(),error))return false;
+    CadFeature operation;operation.id="surface-split-preview";operation.type="surface_split";operation.modeling=parameters;
+    juce::StringArray active;active.add(operation.id);CadFaceOrigins regions;
+    const auto divided=draft.evaluateSurface(operation,regions,error,active);if(divided.IsNull())return false;
+    TopoDS_Shape source;CadFaceOrigins names;
+    if(!draft.surfaceInput(parameters["target"].toString(),parameters["face"].toString(),source,names,error,active))return false;
+    for(TopExp_Explorer region(divided,TopAbs_FACE);region.More();region.Next())
+    {
+        const auto face=TopoDS::Face(region.Current());double u0,u1,v0,v1;BRepTools::UVBounds(face,u0,u1,v0,v1);
+        if(!std::isfinite(u0)||!std::isfinite(u1)||!std::isfinite(v0)||!std::isfinite(v1))
+        {error="A split region has unbounded parameters and cannot be identified persistently.";return false;}
+        double bestClearance=-1;
+        juce::var bestAnchor;
+        for(const double fu:{0.5,0.25,0.75,0.125,0.875})
+        {
+            for(const double fv:{0.5,0.25,0.75,0.125,0.875})
+            {
+                const auto u=u0+(u1-u0)*fu,v=v0+(v1-v0)*fv;
+                BRepClass_FaceClassifier inside(face,gp_Pnt2d(u,v),1e-8);
+                if(inside.State()!=TopAbs_IN)continue;
+                const auto point=BRepAdaptor_Surface(face).Value(u,v);
+                const auto vertex=BRepBuilderAPI_MakeVertex(point).Vertex();juce::var anchor;int count=0;std::vector<TopoDS_Shape> visited;
+                for(const auto& named:names)
+                {
+                    bool duplicate=false;for(const auto& prior:visited)if(prior.IsSame(named.first)){duplicate=true;break;}if(duplicate)continue;visited.push_back(named.first);
+                    BRepExtrema_DistShapeShape distance(vertex,named.first);distance.Perform();
+                    if(!distance.IsDone()||distance.NbSolution()!=1||distance.Value()>1e-6||distance.SupportTypeShape2(1)!=BRepExtrema_IsInFace)continue;
+                    auto token=juce::String();for(const auto& name:named.second)if(name.startsWith(parameters["target"].toString()+"/surface:")){token=name;break;}
+                    if(token.isEmpty()&&!named.second.isEmpty())token=named.second[0];
+                    if(token.isEmpty())continue;
+                    double su=0,sv=0;distance.ParOnFaceS2(1,su,sv);
+                    anchor=obj();anchor.getDynamicObject()->setProperty("face",token);anchor.getDynamicObject()->setProperty("u",su);anchor.getDynamicObject()->setProperty("v",sv);++count;
+                }
+                if(count==1)
+                {
+                    double clearance=std::numeric_limits<double>::infinity();
+                    for(TopExp_Explorer edge(face,TopAbs_EDGE);edge.More();edge.Next())
+                    {
+                        BRepExtrema_DistShapeShape boundaryDistance(vertex,edge.Current());boundaryDistance.Perform();
+                        if(!boundaryDistance.IsDone()){clearance=0;break;}
+                        clearance=std::min(clearance,boundaryDistance.Value());
+                    }
+                    if(clearance>bestClearance){bestClearance=clearance;bestAnchor=anchor;}
+                }
+            }
+        }
+        if(bestClearance<=1e-7){error="Could not locate a stable interior anchor for a split region. Simplify the cutter or source.";return false;}
+        anchors.add(bestAnchor);
+    }
+    if(anchors.size()<2||anchors.size()>64){error="Split needs 2 to 64 stable regions.";return false;}
+    return true;
+    }
+    catch(const Standard_Failure& failure){error=juce::String("OCCT could not identify the split regions: ")+failure.GetMessageString();return false;}
+    catch(const std::exception& failure){error=juce::String("Could not identify the split regions: ")+failure.what();return false;}
 }
 }

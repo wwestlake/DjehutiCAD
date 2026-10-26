@@ -9,8 +9,9 @@ from `cad_list_faces`. Source IDs remain stable through parameter editing.
 | Tool / feature type | Parameters |
 |---|---|
 | `cad_surface` / `surface` | `method`: planar/extrude/revolve/ruled/sweep/loft. Phase-1 methods use `source` (below); ruled also requires `secondSource`. Legacy `profile` and optional `profileEntities` remain accepted. Extrude: signed `distance`, normalized world `direction:[x,y,z]`. Revolve: `axis:{type,origin?,direction?,sketch?,entity?}`, `angleDegrees`, `reverse`. Sweep/Loft retain their existing parameters. |
-| `cad_surface_trim` / `surface_trim` | `target`, optional persistent `face`, `tool:{sketch}` or `{feature,face?}`, world-space `seed:[x,y,z]`, `keep` boolean. |
-| `cad_surface_extend` / `surface_extend` | `target`, optional `face`, positive `distance`, `sides:[uMin,uMax,vMin,vMax]` booleans. |
+| `cad_surface_trim` / `surface_trim` | `target`, optional persistent `face`, `tool:{sketch,entities?}` or `{feature,edges:[persistent tokens]}` or `{feature,face?}`, world-space `seed:[x,y,z]`, `keep` boolean. |
+| `cad_surface_extend` / `surface_extend` | `target`, optional `face`, selected persistent `boundary` edge token, positive `distance`, optional `toward:{sketch,entities?}` or `{feature,edges:[persistent tokens]}`. Without `boundary`, legacy `sides:[uMin,uMax,vMin,vMax]` booleans apply. |
+| `cad_surface_split` / `surface_split` | `target`, optional persistent `face`, `tool` as for Trim. Returns `regions` with stable IDs of independent `surface_split_region` features. |
 | `cad_surface_sew` / `surface_sew` | `sources`: 2–128 feature IDs or `{feature,face}` references; `tolerance`: 1e-7–0.1 mm (default 1e-5). |
 | `cad_surface_solidify` / `surface_solidify` | `target`: one closed-shell feature ID. |
 | `cad_surface_thicken` / `surface_thicken` | `target`, optional `face`, positive `thickness`, `direction`: positive/negative/symmetric. |
@@ -52,6 +53,12 @@ objects. The LLM `cad_surface` schema describes the same source objects. Existin
 FRust `djehuti_cad_surface` and compiled `cad_surface` nodes pass them to the
 same command service without a second modeling implementation.
 
+`surface_trim`, `surface_extend` and `surface_split` also open modeling forms from
+the Surfaces menu or Modify toolbar. Sketch entity IDs and edge tokens are stable
+references. A picked Extend boundary overrides the legacy U/V switches. Toward
+curves must lie on the natural continuation and follow one parallel parameter
+boundary; trimmed or nonrectangular source faces are unsupported.
+
 Success returns `ok:true`, `id`, `type`, complete `parameters`, and `topology`.
 Topology contains `faces`, `shells`, `solids`, `area_mm2`, `volume_mm3`, `closed`,
 `unmatchedEdges`, `nonmanifoldEdges`, and `freeBoundaries` with world-space endpoints
@@ -64,6 +71,11 @@ complete definitions through persistence or update commands.
 `seed` records the last supplied world point; `regionReference` drives subsequent
 rebuilds. After source movement, specify a new complete world point (or use the
 GUI region picker) when changing region selection.
+Split region IDs are returned on creation and inspection. The parent operation is
+hidden; its region features are independently selectable and can be hidden or
+deleted. Edit the parent to change the split. Compatible edits preserve region
+IDs using source-face U/V anchors. Deleting the parent removes its regions in
+one OCAF transaction when no other feature depends on them.
 
 Preview executes the same create/update command on an isolated engineering
 document; it adds `preview:true`, `committed:false` and `volume_mm3`. Create previews
@@ -72,6 +84,7 @@ the live revision, definitions, visibility and Undo history remain intact.
 
 The corresponding FRust hosts are `djehuti_cad_surface`,
 `djehuti_cad_surface_trim`, `djehuti_cad_surface_extend`,
+`djehuti_cad_surface_split`,
 `djehuti_cad_surface_sew`, `djehuti_cad_surface_solidify`, and
 `djehuti_cad_surface_thicken`. Each accepts an argument JSON `String` and returns
 a structured result JSON `String`. The CAD node palette provides one node per

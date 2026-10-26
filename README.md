@@ -49,7 +49,8 @@ reference-based move, rotate, align, mirror and scale with an explicit Create co
 [Surface modeling](docs/SURFACE_MODELING.md) provides direct Planar, Extruded,
 Revolved and Ruled Surface workspace commands with selected curve/wire sources,
 live drafts and normal property editing. It also retains swept and lofted
-surfaces, region trimming, eligible U/V boundary extension,
+surfaces, region trimming, selected-edge/toward-curve extension, independently
+selectable split regions,
 shell sewing, separate solidification, and positive/negative/symmetric thickening.
 These share GUI previews, APIs, FRust hosts, CAD nodes and
 [version 14 interchange](docs/SURFACE_MODELING_API.md).

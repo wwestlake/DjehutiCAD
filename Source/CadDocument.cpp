@@ -975,7 +975,38 @@ bool CadDocument::setDimensions(const juce::String& id,double w,double d,double 
 bool CadDocument::booleanOp(const juce::String& kind,const juce::String& first,const juce::String& second,juce::String& id,juce::String& error) { return mutate([&](juce::String& e){if((kind!="union"&&kind!="subtract"&&kind!="intersect")||find(first)==nullptr||find(second)==nullptr||first==second){e="Boolean operation requires two distinct existing features.";return false;}for(const auto* operand:{find(first),find(second)})if(operand->type=="sketch"||operand->shape.IsNull()){e=operand->name+" is not a solid body; Boolean operations need two solid bodies.";return false;}CadFeature f;f.id=newId(kind.toRawUTF8(),nextNumber++);f.name=kind.substring(0,1).toUpperCase()+kind.substring(1)+" "+juce::String(nextNumber-1);f.type=kind;f.firstOperand=first;f.secondOperand=second;for(auto& source:items)if(source.id==first||source.id==second)source.visible=false;items.push_back(f);juce::StringArray active;const auto result=evaluate(f.id,e,active);if(result.IsNull())return false;if(!TopExp_Explorer(result,TopAbs_SOLID).More()){e=f.name+" would produce no solid: the bodies do not overlap.";return false;}id=f.id;return true;},error); }
 bool CadDocument::rename(const juce::String& id,const juce::String& name,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){if(name.trim().isEmpty()){e="Name cannot be empty.";return false;}f.name=name.trim();return true;}e="Unknown feature id: "+id;return false;},error); }
 bool CadDocument::setVisible(const juce::String& id,bool visible,juce::String& error) { return mutate([&](juce::String& e){for(auto& f:items)if(f.id==id){f.visible=visible;return true;}e="Unknown feature id: "+id;return false;},error); }
-bool CadDocument::remove(const juce::String& id,juce::String& error) { return mutate([&](juce::String& e){for(const auto& sketch:sketches)if(sketch.supportFeature==id){e="Cannot delete a body that supports "+(find(sketch.id)!=nullptr?find(sketch.id)->name:sketch.id)+"; delete that sketch first.";return false;}for(const auto& instance:mechanics.instances)if(instance.featureId==id){e="Cannot delete a body used by assembly instance "+instance.name+"; delete the instance first.";return false;}for(const auto& f:items)if(f.firstOperand==id||f.secondOperand==id||f.targetFeatureId==id||replicationDependencies(f.replication).contains(id)||modelingDependencies(f.modeling).contains(id)){e="Cannot delete a feature used by another modeling feature.";return false;}const auto* targetItem = find(id);if(targetItem==nullptr){e="Unknown feature id: "+id;return false;}const auto targetOp1=targetItem->firstOperand,targetOp2=targetItem->secondOperand,targetBody=targetItem->targetFeatureId;items.erase(std::remove_if(items.begin(),items.end(),[&](const CadFeature& f){return f.id==id;}),items.end());auto& assigned=materials.assignments;assigned.erase(std::remove_if(assigned.begin(),assigned.end(),[&](const CadMaterialAssignment& a){return a.featureId==id;}),assigned.end());for(const auto& candidate:{targetOp1,targetOp2,targetBody})if(candidate.isNotEmpty()){bool stillConsumed=false;for(const auto& remaining:items)if(remaining.firstOperand==candidate||remaining.secondOperand==candidate||remaining.targetFeatureId==candidate){stillConsumed=true;break;}if(!stillConsumed)for(auto& prior:items)if(prior.id==candidate&&prior.type!="sketch")prior.visible=true;}return true;},error); }
+bool CadDocument::remove(const juce::String& id,juce::String& error)
+{
+    return mutate([&](juce::String& e)
+    {
+        const auto* targetItem=find(id);if(targetItem==nullptr){e="Unknown feature id: "+id;return false;}
+        juce::StringArray deleting{id};
+        if(targetItem->type=="surface_split")for(const auto& item:items)
+            if(item.type=="surface_split_region"&&item.modeling["parent"].toString()==id)deleting.add(item.id);
+        for(const auto& sketch:sketches)if(deleting.contains(sketch.supportFeature))
+        {e="Cannot delete a body that supports "+(find(sketch.id)!=nullptr?find(sketch.id)->name:sketch.id)+"; delete that sketch first.";return false;}
+        for(const auto& instance:mechanics.instances)if(deleting.contains(instance.featureId))
+        {e="Cannot delete a body used by assembly instance "+instance.name+"; delete the instance first.";return false;}
+        for(const auto& feature:items)
+        {
+            if(deleting.contains(feature.id))continue;
+            for(const auto& removed:deleting)if(feature.firstOperand==removed||feature.secondOperand==removed||feature.targetFeatureId==removed||replicationDependencies(feature.replication).contains(removed)||modelingDependencies(feature.modeling).contains(removed))
+            {e="Cannot delete a feature used by another modeling feature.";return false;}
+        }
+        juce::StringArray consumed;
+        for(const auto& feature:items)if(deleting.contains(feature.id))
+            for(const auto& candidate:{feature.firstOperand,feature.secondOperand,feature.targetFeatureId})if(candidate.isNotEmpty()&&!deleting.contains(candidate))consumed.addIfNotAlreadyThere(candidate);
+        items.erase(std::remove_if(items.begin(),items.end(),[&](const CadFeature& feature){return deleting.contains(feature.id);}),items.end());
+        auto& assigned=materials.assignments;
+        assigned.erase(std::remove_if(assigned.begin(),assigned.end(),[&](const CadMaterialAssignment& assignment){return deleting.contains(assignment.featureId);}),assigned.end());
+        for(const auto& candidate:consumed)
+        {
+            bool stillConsumed=false;for(const auto& remaining:items)if(remaining.firstOperand==candidate||remaining.secondOperand==candidate||remaining.targetFeatureId==candidate){stillConsumed=true;break;}
+            if(!stillConsumed)for(auto& prior:items)if(prior.id==candidate&&prior.type!="sketch"&&prior.type!="surface_split")prior.visible=true;
+        }
+        return true;
+    },error);
+}
 bool CadDocument::restoreMechanicsFromOCAF(juce::String& error)
 {
     const auto text = readString(ocafDocument->Main().FindChild(kMechanicsContainerTag, false), 1);
