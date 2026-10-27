@@ -145,6 +145,8 @@ target_sources(DjehutiCAD PRIVATE
     Source/CadSketchEditing.cpp
     Source/CadExport.h
     Source/CadExport.cpp
+    Source/CadExportMesh.h
+    Source/CadExportMesh.cpp
     Source/CadInterference.h
     Source/CadInterference.cpp
     Source/CadGeometricProperties.h

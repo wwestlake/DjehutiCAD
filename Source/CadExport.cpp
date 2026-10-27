@@ -1,5 +1,6 @@
 #include "CadExport.h"
 #include "CadDocument.h"
+#include "CadExportMesh.h"
 
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
@@ -15,6 +16,7 @@
 #include <Poly_Triangulation.hxx>
 #include <gp_Quaternion.hxx>
 #include <STEPCAFControl_Writer.hxx>
+#include <StepData_StepModel.hxx>
 #include <StepData_ConfParameters.hxx>
 #include <StlAPI_Writer.hxx>
 #include <TDataStd_Name.hxx>
@@ -30,6 +32,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <mutex>
 #include <set>
@@ -214,18 +217,35 @@ Lib3MF_single toSingle(double v) { return static_cast<Lib3MF_single>(v); }
 
 juce::String formatName(CadExportFormat format)
 {
-    return format == CadExportFormat::threeMF ? "3MF" : format == CadExportFormat::stl ? "Binary STL" : format == CadExportFormat::step ? "STEP AP214" : "glTF 2.0 Binary (GLB)";
+    switch (format)
+    {
+        case CadExportFormat::threeMF: return "3MF";
+        case CadExportFormat::stl: return "Binary STL";
+        case CadExportFormat::step: return "STEP AP214";
+        case CadExportFormat::obj: return "Wavefront OBJ + MTL";
+        case CadExportFormat::ply: return "Binary PLY";
+        case CadExportFormat::gltf: return "glTF 2.0 (.gltf)";
+        case CadExportFormat::glb: break;
+    }
+    return "glTF 2.0 Binary (GLB)";
 }
 
 juce::String formatKey(CadExportFormat format)
 {
-    return format == CadExportFormat::threeMF ? "3mf" : format == CadExportFormat::stl ? "stl" : format == CadExportFormat::step ? "step" : "glb";
+    switch (format)
+    {
+        case CadExportFormat::threeMF: return "3mf";
+        case CadExportFormat::stl: return "stl";
+        case CadExportFormat::step: return "step";
+        case CadExportFormat::obj: return "obj";
+        case CadExportFormat::ply: return "ply";
+        case CadExportFormat::gltf: return "gltf";
+        case CadExportFormat::glb: break;
+    }
+    return "glb";
 }
 
-juce::String extension(CadExportFormat format)
-{
-    return format == CadExportFormat::threeMF ? ".3mf" : format == CadExportFormat::stl ? ".stl" : format == CadExportFormat::step ? ".step" : ".glb";
-}
+juce::String extension(CadExportFormat format) { return "." + formatKey(format); }
 
 bool parseFormat(const juce::String& text, CadExportFormat& format)
 {
@@ -233,9 +253,38 @@ bool parseFormat(const juce::String& text, CadExportFormat& format)
     if (key == "3mf") format = CadExportFormat::threeMF;
     else if (key == "stl") format = CadExportFormat::stl;
     else if (key == "step" || key == "stp") format = CadExportFormat::step;
-    else if (key == "glb" || key == "gltf") format = CadExportFormat::glb;
+    else if (key == "glb") format = CadExportFormat::glb;
+    else if (key == "gltf") format = CadExportFormat::gltf;
+    else if (key == "obj") format = CadExportFormat::obj;
+    else if (key == "ply") format = CadExportFormat::ply;
     else return false;
     return true;
+}
+
+juce::String unitKey(CadExportUnit unit) { return unit == CadExportUnit::centimetre ? "cm" : unit == CadExportUnit::metre ? "m" : unit == CadExportUnit::inch ? "in" : "mm"; }
+juce::String unitName(CadExportUnit unit) { return unit == CadExportUnit::centimetre ? "centimetres" : unit == CadExportUnit::metre ? "metres" : unit == CadExportUnit::inch ? "inches" : "millimetres"; }
+double unitsPerMillimetre(CadExportUnit unit) { return unit == CadExportUnit::centimetre ? 0.1 : unit == CadExportUnit::metre ? 0.001 : unit == CadExportUnit::inch ? 1.0 / 25.4 : 1.0; }
+
+bool parseUnit(const juce::String& text, CadExportUnit& unit)
+{
+    const auto key = text.trim().toLowerCase();
+    if (key.isEmpty() || key == "mm" || key == "millimetre" || key == "millimeter" || key == "millimetres" || key == "millimeters") unit = CadExportUnit::millimetre;
+    else if (key == "cm" || key == "centimetre" || key == "centimeter" || key == "centimetres" || key == "centimeters") unit = CadExportUnit::centimetre;
+    else if (key == "m" || key == "metre" || key == "meter" || key == "metres" || key == "meters") unit = CadExportUnit::metre;
+    else if (key == "in" || key == "inch" || key == "inches") unit = CadExportUnit::inch;
+    else return false;
+    return true;
+}
+
+bool isGltf(CadExportFormat format) { return format == CadExportFormat::glb || format == CadExportFormat::gltf; }
+
+CadExportUnit effectiveUnits(const CadExportSettings& settings) { return isGltf(settings.format) ? CadExportUnit::metre : settings.units; }
+
+bool effectiveYUp(const CadExportSettings& settings)
+{
+    if (isGltf(settings.format)) return true;
+    if (settings.format == CadExportFormat::threeMF || settings.format == CadExportFormat::step) return false;   // both are defined as Z-up
+    return settings.yUp;
 }
 
 bool qualityPreset(const juce::String& name, CadMeshQuality& quality, juce::String& error)
@@ -261,7 +310,7 @@ bool validateQuality(const CadMeshQuality& quality, juce::String& error)
 bool settingsFromJson(const juce::var& args, CadExportSettings& settings, juce::String& error)
 {
     settings = {};
-    if (!parseFormat(args.getProperty("format", "").toString(), settings.format)) { error = "format must be 3mf, stl, step or glb."; return false; }
+    if (!parseFormat(args.getProperty("format", "").toString(), settings.format)) { error = "format must be 3mf, stl, step, obj, ply, gltf or glb."; return false; }
     const auto path = args.getProperty("path", "").toString().trim();
     if (path.isEmpty() || !juce::File::isAbsolutePath(path)) { error = "path must be an absolute file path."; return false; }
     settings.output = juce::File(path);
@@ -276,6 +325,10 @@ bool settingsFromJson(const juce::var& args, CadExportSettings& settings, juce::
         settings.quality.angularDeg = args.getProperty("angular_deg", juce::var()).isVoid() ? std::nan("") : (double) args.getProperty("angular_deg", 0.0);
     }
     settings.overwrite = (bool) args.getProperty("overwrite", false);
+    if (!parseUnit(args.getProperty("units", "mm").toString(), settings.units)) { error = "units must be mm, cm, m or in."; return false; }
+    const auto axis = args.getProperty("up_axis", "z").toString().trim().toLowerCase();
+    if (axis != "z" && axis != "y" && !axis.isEmpty()) { error = "up_axis must be z or y."; return false; }
+    settings.yUp = axis == "y";
     return true;
 }
 
@@ -289,6 +342,13 @@ bool plan(const CadDocument& document, const CadExportSettings& settings, CadExp
     const auto& mechanics = document.mechanicsData();
     std::set<juce::String> instanced;
     for (const auto& instance : mechanics.instances) if (document.find(instance.featureId) != nullptr) instanced.insert(instance.featureId);
+    const auto materialNameFor = [&](const juce::String& featureId) -> juce::String
+    {
+        const auto& materials = document.materialsData();
+        const auto* assignment = materials.assignmentFor(featureId);
+        const auto* material = assignment != nullptr ? materials.find(assignment->materialId) : nullptr;
+        return material != nullptr ? material->name : juce::String();
+    };
     const auto addSource = [&](const CadFeature& feature)
     {
         for (const auto& s : out.sources) if (s.id == feature.id) return;
@@ -303,6 +363,7 @@ bool plan(const CadDocument& document, const CadExportSettings& settings, CadExp
         CadExportPart part;
         part.id = instance.id; part.name = instance.name; part.sourceId = feature->id; part.instance = true;
         part.placement = document.instanceShapeTransform(feature->id, instance.placement.toTrsf());   // reference configuration
+        part.materialName = materialNameFor(feature->id);
         out.parts.push_back(part);
         return true;
     };
@@ -311,6 +372,7 @@ bool plan(const CadDocument& document, const CadExportSettings& settings, CadExp
         addSource(feature);
         CadExportPart part;
         part.id = feature.id; part.name = feature.name; part.sourceId = feature.id;   // shape already carries its placement
+        part.materialName = materialNameFor(feature.id);
         out.parts.push_back(part);
     };
 
@@ -380,6 +442,8 @@ bool plan(const CadDocument& document, const CadExportSettings& settings, CadExp
     auto base = settings.output;
     if (!base.hasFileExtension(extension(settings.format).substring(1)) && !(settings.format == CadExportFormat::step && base.hasFileExtension("stp")))
         base = base.withFileExtension(extension(settings.format));
+    if (settings.format == CadExportFormat::obj) { out.outputs.add(base); out.outputs.add(base.withFileExtension(".mtl")); }
+    else
     if (settings.format == CadExportFormat::stl && out.parts.size() > 1)
     {
         juce::StringArray names;
@@ -409,7 +473,8 @@ juce::var djehuti::cad::CadExportResult::toVar(const CadExportPlan& plan) const
     if (error.isNotEmpty()) root->setProperty("error", error);
     root->setProperty("format", formatKey(plan.settings.format));
     root->setProperty("scope", plan.scope);
-    root->setProperty("units", "mm");
+    root->setProperty("units", unitKey(effectiveUnits(plan.settings)));
+    if (plan.settings.format != CadExportFormat::step) root->setProperty("up_axis", effectiveYUp(plan.settings) ? "y" : "z");
     root->setProperty("placement", "reference configuration (authored placements; no simulation or IK pose)");
     if (plan.settings.format != CadExportFormat::step)
     {
@@ -419,12 +484,13 @@ juce::var djehuti::cad::CadExportResult::toVar(const CadExportPlan& plan) const
     }
     juce::Array<juce::var> fileList; for (const auto& f : files) fileList.add(f);
     root->setProperty("files", fileList);
-    root->setProperty("size_mm", vec3(size));
+    root->setProperty("size_mm", vec3(size));   // always millimetres, whatever unit the file uses
     juce::Array<juce::var> partList;
     for (const auto& p : parts)
     {
         auto o = std::make_unique<juce::DynamicObject>();
         o->setProperty("id", p.id); o->setProperty("name", p.name); o->setProperty("solids", p.solids);
+        if (p.material.isNotEmpty()) o->setProperty("material", p.material);
         o->setProperty("size_mm", vec3(p.size)); o->setProperty("volume_mm3", p.solidVolume);
         if (p.triangles > 0) { o->setProperty("triangles", p.triangles); o->setProperty("mesh_volume_mm3", p.meshVolume); }
         if (!p.warnings.isEmpty()) { juce::Array<juce::var> w; for (const auto& s : p.warnings) w.add(s); o->setProperty("warnings", w); }
@@ -455,6 +521,10 @@ CadExportResult run(const CadExportPlan& plan, const std::function<bool(double, 
     };
     if (plan.outputs.isEmpty() || plan.parts.empty()) { result.error = "Choose an output file."; return result; }
     const bool meshing = plan.settings.format != CadExportFormat::step;
+    const auto format = plan.settings.format;
+    const bool shaded = format == CadExportFormat::obj || format == CadExportFormat::ply || format == CadExportFormat::glb || format == CadExportFormat::gltf;
+    const OutputFrame frame { unitsPerMillimetre(effectiveUnits(plan.settings)), effectiveYUp(plan.settings) };
+    MeshSet shadedMeshes;
     const auto total = (double) plan.sources.size() + 1.0;
 
     // 1. Solid checks and, for printing formats, the manufacturing mesh of every source body.
@@ -489,13 +559,19 @@ CadExportResult run(const CadExportPlan& plan, const std::function<bool(double, 
                         + juce::String(nonManifold) + " non-manifold edges, " + juce::String(misoriented) + " inconsistently oriented edges).");
         if (!(signedVolume(mesh) > 0.0)) return fail(source.name + ": the printing mesh is inside out (negative volume).");
         meshes[source.id] = std::move(mesh);
+        if (shaded)
+        {
+            ShadedMesh shadedMesh; juce::String shadedError;
+            if (!extractShadedMesh(source.shape, shadedMesh, shadedError)) return fail(source.name + ": " + shadedError + ".");
+            shadedMeshes[source.id] = std::move(shadedMesh);
+        }
     }
 
     // 2. Per-part report from the placed geometry.
     for (const auto& part : plan.parts)
     {
         CadExportPartReport r;
-        r.id = part.id; r.name = part.name;
+        r.id = part.id; r.name = part.name; r.material = part.materialName;
         r.solids = solidInfo[part.sourceId].first; r.solidVolume = solidInfo[part.sourceId].second;
         for (int k = 0; k < 3; ++k) r.size[k] = part.max[k] - part.min[k];
         if (meshing)
@@ -524,18 +600,41 @@ CadExportResult run(const CadExportPlan& plan, const std::function<bool(double, 
             {
                 const auto& part = plan.parts[i];
                 if (!report((total - 1.0 + (double) i / (double) plan.parts.size()) / total, "Writing " + part.name)) return fail({});
-                StlAPI_Writer writer;
-                writer.ASCIIMode() = Standard_False;
-                const auto placed = sourceShape(part.sourceId).Moved(TopLoc_Location(part.placement));   // placement applied once
-                if (!writer.Write(placed, temporaries[(int) i].getFullPathName().toRawUTF8()) || temporaries[(int) i].getSize() < 84)
-                    return fail("Writing the STL file for " + part.name + " failed.");
+                if (frame.scale == 1.0 && !frame.yUp)
+                {
+                    StlAPI_Writer writer;
+                    writer.ASCIIMode() = Standard_False;
+                    const auto placed = sourceShape(part.sourceId).Moved(TopLoc_Location(part.placement));   // placement applied once
+                    if (!writer.Write(placed, temporaries[(int) i].getFullPathName().toRawUTF8()) || temporaries[(int) i].getSize() < 84)
+                        return fail("Writing the STL file for " + part.name + " failed.");
+                }
+                else
+                {
+                    // Units or orientation differ from the authored mm / Z-up: write the checked mesh through the same frame as the other mesh formats.
+                    const auto& mesh = meshes[part.sourceId];
+                    juce::MemoryOutputStream stl;
+                    char header[80] {}; std::snprintf(header, sizeof header, "DjehutiCAD binary STL, units %s, up axis %s", unitName(effectiveUnits(plan.settings)).toRawUTF8(), frame.yUp ? "+Y" : "+Z");
+                    stl.write(header, 80); stl.writeInt((int) mesh.triangles.size());
+                    for (const auto& t : mesh.triangles)
+                    {
+                        gp_Pnt q[3]; for (int k = 0; k < 3; ++k) q[k] = frame.point(mesh.points[t[(size_t) k]].Transformed(part.placement));
+                        gp_Vec n = gp_Vec(q[0], q[1]).Crossed(gp_Vec(q[0], q[2]));
+                        if (n.Magnitude() > 1.0e-300) n.Normalize(); else n = gp_Vec(0, 0, 0);
+                        stl.writeFloat((float) n.X()); stl.writeFloat((float) n.Y()); stl.writeFloat((float) n.Z());
+                        for (int k = 0; k < 3; ++k) { stl.writeFloat((float) q[k].X()); stl.writeFloat((float) q[k].Y()); stl.writeFloat((float) q[k].Z()); }
+                        stl.writeShort(0);
+                    }
+                    if (!temporaries[(int) i].replaceWithData(stl.getData(), stl.getDataSize())) return fail("Writing the STL file for " + part.name + " failed.");
+                }
             }
         }
         else if (plan.settings.format == CadExportFormat::threeMF)
         {
             auto wrapper = Lib3MF::CWrapper::loadLibrary();
             auto model = wrapper->CreateModel();
-            model->SetUnit(Lib3MF::eModelUnit::MilliMeter);
+            const auto unit = effectiveUnits(plan.settings);
+            model->SetUnit(unit == CadExportUnit::centimetre ? Lib3MF::eModelUnit::CentiMeter : unit == CadExportUnit::metre ? Lib3MF::eModelUnit::Meter : unit == CadExportUnit::inch ? Lib3MF::eModelUnit::Inch : Lib3MF::eModelUnit::MilliMeter);
+            const double unitScale = unitsPerMillimetre(unit);
             auto metadata = model->GetMetaDataGroup();
             metadata->AddMetaData("", "Title", plan.assemblyName.toStdString(), "string", false);
             metadata->AddMetaData("", "Application", "DjehutiCAD", "string", false);
@@ -544,7 +643,7 @@ CadExportResult run(const CadExportPlan& plan, const std::function<bool(double, 
                 // Vertices in the source body's coordinates; the build item transform carries the placement once.
                 const auto& mesh = meshes[part.sourceId];
                 std::vector<Lib3MF::sPosition> vertices(mesh.points.size());
-                for (size_t v = 0; v < mesh.points.size(); ++v) vertices[v] = { { toSingle(mesh.points[v].X()), toSingle(mesh.points[v].Y()), toSingle(mesh.points[v].Z()) } };
+                for (size_t v = 0; v < mesh.points.size(); ++v) vertices[v] = { { toSingle(mesh.points[v].X() * unitScale), toSingle(mesh.points[v].Y() * unitScale), toSingle(mesh.points[v].Z() * unitScale) } };
                 std::vector<Lib3MF::sTriangle> triangles(mesh.triangles.size());
                 for (size_t t = 0; t < mesh.triangles.size(); ++t) triangles[t] = { { mesh.triangles[t][0], mesh.triangles[t][1], mesh.triangles[t][2] } };
                 auto object = model->AddMeshObject();
@@ -555,438 +654,34 @@ CadExportResult run(const CadExportPlan& plan, const std::function<bool(double, 
                 Lib3MF::sTransform transform {};
                 for (int axis = 0; axis < 3; ++axis)
                     for (int c = 0; c < 3; ++c) transform.m_Fields[axis][c] = toSingle(part.placement.Value(c + 1, axis + 1));
-                for (int c = 0; c < 3; ++c) transform.m_Fields[3][c] = toSingle(part.placement.Value(c + 1, 4));
+                for (int c = 0; c < 3; ++c) transform.m_Fields[3][c] = toSingle(part.placement.Value(c + 1, 4) * unitScale);
                 auto item = model->AddBuildItem(object.get(), transform);
                 item->SetPartNumber(part.id.toStdString());
             }
             model->QueryWriter("3mf")->WriteToFile(temporaries[0].getFullPathName().toStdString());
         }
-        else if (plan.settings.format == CadExportFormat::glb)
+        else if (format == CadExportFormat::obj)
         {
-            // glTF 2.0 Binary (.glb) Writer
-            // Convert meshes (points in mm -> meters, outward normals, 16-bit or 32-bit indices)
-            // Hierarchical scene graph with nodes, meshes, accessors, bufferViews, and 1 bin buffer.
-            juce::MemoryOutputStream binBuffer;
-
-            struct GlbPrimitive
-            {
-                int positionAccessor = -1;
-                int normalAccessor = -1;
-                int indexAccessor = -1;
-                int material = 0;
-            };
-
-            struct GlbMesh
-            {
-                juce::String name;
-                std::vector<GlbPrimitive> primitives;
-            };
-
-            struct GlbNode
-            {
-                juce::String name;
-                int meshIndex = -1;
-                float matrix[16] {};
-                bool hasMatrix = false;
-                std::vector<int> children;
-            };
-
-            std::vector<GlbMesh> glbMeshes;
-            std::vector<GlbNode> glbNodes;
-            juce::Array<juce::var> bufferViews;
-            juce::Array<juce::var> accessors;
-
-            // Track bufferView offset
-            size_t currentOffset = 0;
-
-            const auto pad4 = [&](juce::MemoryOutputStream& stream, char padByte = 0)
-            {
-                while (stream.getDataSize() % 4 != 0) stream.writeByte(padByte);
-                currentOffset = stream.getDataSize();
-            };
-
-            // Part colors: assign distinct pleasing CAD colors to distinct parts
-            const juce::Colour defaultPalette[] = {
-                juce::Colour(0xff2e9ec7), // cyan / primary
-                juce::Colour(0xffe8a448), // orange / secondary
-                juce::Colour(0xff48b478), // green
-                juce::Colour(0xffa068d4), // purple
-                juce::Colour(0xffe05060), // red
-                juce::Colour(0xffe8d27a)  // yellow
-            };
-            const int numPalette = (int)(sizeof(defaultPalette) / sizeof(defaultPalette[0]));
-
-            // Build mesh data for each part
-            for (size_t i = 0; i < plan.parts.size(); ++i)
-            {
-                const auto& part = plan.parts[i];
-                if (!report((total - 1.0 + (double) i / (double) plan.parts.size()) / total, "Encoding " + part.name)) return fail({});
-                const auto& sourceMesh = meshes[part.sourceId];
-
-                // Determine pivot transformation:
-                // If part has a pivot frame (from joint), mesh vertices are expressed relative to that pivot frame:
-                //   P_mesh = (pivotFrame^-1 * placement) * P_source
-                // Node transform in parent/world is:
-                //   T_node = parentFrame^-1 * pivotFrame
-                // If part has no pivot frame:
-                //   P_mesh = P_source
-                //   T_node = parentFrame^-1 * placement
-                gp_Trsf meshRelTrsf;
-                gp_Trsf nodeWorldTrsf;
-
-                if (part.hasPivot)
-                {
-                    meshRelTrsf = part.pivotFrame.Inverted().Multiplied(part.placement);
-                    nodeWorldTrsf = part.pivotFrame;
-                }
-                else
-                {
-                    meshRelTrsf = gp_Trsf(); // identity
-                    nodeWorldTrsf = part.placement;
-                }
-
-                // If part has a parentPartId in the assembly, compute relative transform to parent's node transform
-                gp_Trsf nodeLocalTrsf = nodeWorldTrsf;
-                if (part.parentPartId.isNotEmpty())
-                {
-                    for (const auto& parentCandidate : plan.parts)
-                    {
-                        if (parentCandidate.id == part.parentPartId)
-                        {
-                            gp_Trsf parentNodeWorld = parentCandidate.hasPivot ? parentCandidate.pivotFrame : parentCandidate.placement;
-                            nodeLocalTrsf = parentNodeWorld.Inverted().Multiplied(nodeWorldTrsf);
-                            break;
-                        }
-                    }
-                }
-
-                // Transform points and normals into part-local mesh space (in meters)
-                std::vector<float> positions;
-                positions.reserve(sourceMesh.points.size() * 3);
-                std::vector<float> normals;
-                normals.reserve(sourceMesh.normals.size() * 3);
-
-                float pMin[3] = { 1e9f, 1e9f, 1e9f };
-                float pMax[3] = { -1e9f, -1e9f, -1e9f };
-
-                for (size_t v = 0; v < sourceMesh.points.size(); ++v)
-                {
-                    const auto pt = sourceMesh.points[v].Transformed(meshRelTrsf);
-                    // Convert mm to meters: 1 mm = 0.001 m
-                    const float x = static_cast<float>(pt.X() * 0.001);
-                    const float y = static_cast<float>(pt.Y() * 0.001);
-                    const float z = static_cast<float>(pt.Z() * 0.001);
-                    positions.push_back(x);
-                    positions.push_back(y);
-                    positions.push_back(z);
-
-                    pMin[0] = std::min(pMin[0], x); pMin[1] = std::min(pMin[1], y); pMin[2] = std::min(pMin[2], z);
-                    pMax[0] = std::max(pMax[0], x); pMax[1] = std::max(pMax[1], y); pMax[2] = std::max(pMax[2], z);
-
-                    const auto n = sourceMesh.normals[v].Transformed(meshRelTrsf);
-                    normals.push_back(static_cast<float>(n.X()));
-                    normals.push_back(static_cast<float>(n.Y()));
-                    normals.push_back(static_cast<float>(n.Z()));
-                }
-
-                // 1. Write positions bufferView & accessor
-                pad4(binBuffer);
-                const size_t posByteOffset = binBuffer.getDataSize();
-                const size_t posByteLength = positions.size() * sizeof(float);
-                binBuffer.write(positions.data(), posByteLength);
-
-                auto posBv = std::make_unique<juce::DynamicObject>();
-                posBv->setProperty("buffer", 0);
-                posBv->setProperty("byteOffset", (juce::int64)posByteOffset);
-                posBv->setProperty("byteLength", (juce::int64)posByteLength);
-                posBv->setProperty("target", 34962); // ARRAY_BUFFER
-                const int posBvIdx = bufferViews.size();
-                bufferViews.add(juce::var(posBv.release()));
-
-                auto posAcc = std::make_unique<juce::DynamicObject>();
-                posAcc->setProperty("bufferView", posBvIdx);
-                posAcc->setProperty("byteOffset", 0);
-                posAcc->setProperty("componentType", 5126); // FLOAT
-                posAcc->setProperty("count", (juce::int64)sourceMesh.points.size());
-                posAcc->setProperty("type", "VEC3");
-                posAcc->setProperty("min", juce::Array<juce::var>{ pMin[0], pMin[1], pMin[2] });
-                posAcc->setProperty("max", juce::Array<juce::var>{ pMax[0], pMax[1], pMax[2] });
-                const int posAccIdx = accessors.size();
-                accessors.add(juce::var(posAcc.release()));
-
-                // 2. Write normals bufferView & accessor
-                pad4(binBuffer);
-                const size_t normByteOffset = binBuffer.getDataSize();
-                const size_t normByteLength = normals.size() * sizeof(float);
-                binBuffer.write(normals.data(), normByteLength);
-
-                auto normBv = std::make_unique<juce::DynamicObject>();
-                normBv->setProperty("buffer", 0);
-                normBv->setProperty("byteOffset", (juce::int64)normByteOffset);
-                normBv->setProperty("byteLength", (juce::int64)normByteLength);
-                normBv->setProperty("target", 34962); // ARRAY_BUFFER
-                const int normBvIdx = bufferViews.size();
-                bufferViews.add(juce::var(normBv.release()));
-
-                auto normAcc = std::make_unique<juce::DynamicObject>();
-                normAcc->setProperty("bufferView", normBvIdx);
-                normAcc->setProperty("byteOffset", 0);
-                normAcc->setProperty("componentType", 5126); // FLOAT
-                normAcc->setProperty("count", (juce::int64)sourceMesh.normals.size());
-                normAcc->setProperty("type", "VEC3");
-                const int normAccIdx = accessors.size();
-                accessors.add(juce::var(normAcc.release()));
-
-                // 3. Write indices bufferView & accessor
-                pad4(binBuffer);
-                const size_t idxByteOffset = binBuffer.getDataSize();
-                const bool useUint16 = sourceMesh.points.size() < 65536;
-                const size_t indexCount = sourceMesh.triangles.size() * 3;
-                size_t idxByteLength = 0;
-
-                std::uint32_t minIdx = 0xFFFFFFFF, maxIdx = 0;
-                if (useUint16)
-                {
-                    std::vector<std::uint16_t> idx16(indexCount);
-                    for (size_t t = 0; t < sourceMesh.triangles.size(); ++t)
-                    {
-                        for (int k = 0; k < 3; ++k)
-                        {
-                            const auto idx = static_cast<std::uint16_t>(sourceMesh.triangles[t][k]);
-                            idx16[t * 3 + k] = idx;
-                            minIdx = std::min(minIdx, (std::uint32_t)idx);
-                            maxIdx = std::max(maxIdx, (std::uint32_t)idx);
-                        }
-                    }
-                    idxByteLength = idx16.size() * sizeof(std::uint16_t);
-                    binBuffer.write(idx16.data(), idxByteLength);
-                }
-                else
-                {
-                    std::vector<std::uint32_t> idx32(indexCount);
-                    for (size_t t = 0; t < sourceMesh.triangles.size(); ++t)
-                    {
-                        for (int k = 0; k < 3; ++k)
-                        {
-                            const auto idx = sourceMesh.triangles[t][k];
-                            idx32[t * 3 + k] = idx;
-                            minIdx = std::min(minIdx, idx);
-                            maxIdx = std::max(maxIdx, idx);
-                        }
-                    }
-                    idxByteLength = idx32.size() * sizeof(std::uint32_t);
-                    binBuffer.write(idx32.data(), idxByteLength);
-                }
-
-                auto idxBv = std::make_unique<juce::DynamicObject>();
-                idxBv->setProperty("buffer", 0);
-                idxBv->setProperty("byteOffset", (juce::int64)idxByteOffset);
-                idxBv->setProperty("byteLength", (juce::int64)idxByteLength);
-                idxBv->setProperty("target", 34963); // ELEMENT_ARRAY_BUFFER
-                const int idxBvIdx = bufferViews.size();
-                bufferViews.add(juce::var(idxBv.release()));
-
-                auto idxAcc = std::make_unique<juce::DynamicObject>();
-                idxAcc->setProperty("bufferView", idxBvIdx);
-                idxAcc->setProperty("byteOffset", 0);
-                idxAcc->setProperty("componentType", useUint16 ? 5123 : 5125); // UNSIGNED_SHORT : UNSIGNED_INT
-                idxAcc->setProperty("count", (juce::int64)indexCount);
-                idxAcc->setProperty("type", "SCALAR");
-                idxAcc->setProperty("min", juce::Array<juce::var>{ (int)minIdx });
-                idxAcc->setProperty("max", juce::Array<juce::var>{ (int)maxIdx });
-                const int idxAccIdx = accessors.size();
-                accessors.add(juce::var(idxAcc.release()));
-
-                // Create GlbPrimitive and GlbMesh
-                GlbPrimitive prim;
-                prim.positionAccessor = posAccIdx;
-                prim.normalAccessor = normAccIdx;
-                prim.indexAccessor = idxAccIdx;
-                prim.material = static_cast<int>(i % numPalette);
-
-                GlbMesh glbMesh;
-                glbMesh.name = part.name;
-                glbMesh.primitives.push_back(prim);
-                const int meshIdx = (int)glbMeshes.size();
-                glbMeshes.push_back(std::move(glbMesh));
-
-                // Create GlbNode
-                GlbNode glbNode;
-                glbNode.name = part.name;
-                glbNode.meshIndex = meshIdx;
-                glbNode.hasMatrix = true;
-
-                // Column-major 4x4 matrix for glTF (with translation in meters)
-                // glTF matrix: m[0..3] is col 0, m[4..7] is col 1, m[8..11] is col 2, m[12..15] is col 3
-                for (int col = 0; col < 3; ++col)
-                {
-                    for (int row = 0; row < 3; ++row)
-                        glbNode.matrix[col * 4 + row] = static_cast<float>(nodeLocalTrsf.Value(row + 1, col + 1));
-                    glbNode.matrix[col * 4 + 3] = 0.0f;
-                }
-                // Translation in meters (1 mm = 0.001 m)
-                glbNode.matrix[12] = static_cast<float>(nodeLocalTrsf.Value(1, 4) * 0.001);
-                glbNode.matrix[13] = static_cast<float>(nodeLocalTrsf.Value(2, 4) * 0.001);
-                glbNode.matrix[14] = static_cast<float>(nodeLocalTrsf.Value(3, 4) * 0.001);
-                glbNode.matrix[15] = 1.0f;
-
-                glbNodes.push_back(std::move(glbNode));
-            }
-
-            // Build parent-child relationships between nodes
-            std::vector<int> rootNodeIndices;
-            for (size_t i = 0; i < plan.parts.size(); ++i)
-            {
-                const auto& part = plan.parts[i];
-                int parentIdx = -1;
-                if (part.parentPartId.isNotEmpty())
-                {
-                    for (size_t p = 0; p < plan.parts.size(); ++p)
-                    {
-                        if (plan.parts[p].id == part.parentPartId)
-                        {
-                            parentIdx = (int)p;
-                            break;
-                        }
-                    }
-                }
-                if (parentIdx >= 0 && parentIdx < (int)glbNodes.size())
-                {
-                    glbNodes[parentIdx].children.push_back((int)i);
-                }
-                else
-                {
-                    rootNodeIndices.push_back((int)i);
-                }
-            }
-
-            // Ensure 4-byte padding on binary buffer
-            pad4(binBuffer);
-
-            // Construct JSON document
-            auto gltf = std::make_unique<juce::DynamicObject>();
-
-            // Asset
-            auto asset = std::make_unique<juce::DynamicObject>();
-            asset->setProperty("version", "2.0");
-            asset->setProperty("generator", "DjehutiCAD Game-Ready Mesh Exporter");
-            gltf->setProperty("asset", juce::var(asset.release()));
-
-            // Materials
-            juce::Array<juce::var> materials;
-            for (int m = 0; m < numPalette; ++m)
-            {
-                auto mat = std::make_unique<juce::DynamicObject>();
-                mat->setProperty("name", "CAD_Material_" + juce::String(m + 1));
-                auto pbr = std::make_unique<juce::DynamicObject>();
-                const auto col = defaultPalette[m];
-                pbr->setProperty("baseColorFactor", juce::Array<juce::var>{
-                    col.getFloatRed(), col.getFloatGreen(), col.getFloatBlue(), 1.0f
-                });
-                pbr->setProperty("metallicFactor", 0.2f);
-                pbr->setProperty("roughnessFactor", 0.5f);
-                mat->setProperty("pbrMetallicRoughness", juce::var(pbr.release()));
-                materials.add(juce::var(mat.release()));
-            }
-            gltf->setProperty("materials", materials);
-
-            // Meshes
-            juce::Array<juce::var> meshesVar;
-            for (const auto& gm : glbMeshes)
-            {
-                auto mObj = std::make_unique<juce::DynamicObject>();
-                mObj->setProperty("name", gm.name);
-                juce::Array<juce::var> primsVar;
-                for (const auto& prim : gm.primitives)
-                {
-                    auto pObj = std::make_unique<juce::DynamicObject>();
-                    auto attrs = std::make_unique<juce::DynamicObject>();
-                    attrs->setProperty("POSITION", prim.positionAccessor);
-                    if (prim.normalAccessor >= 0) attrs->setProperty("NORMAL", prim.normalAccessor);
-                    pObj->setProperty("attributes", juce::var(attrs.release()));
-                    if (prim.indexAccessor >= 0) pObj->setProperty("indices", prim.indexAccessor);
-                    pObj->setProperty("material", prim.material);
-                    primsVar.add(juce::var(pObj.release()));
-                }
-                mObj->setProperty("primitives", primsVar);
-                meshesVar.add(juce::var(mObj.release()));
-            }
-            gltf->setProperty("meshes", meshesVar);
-
-            // Nodes
-            juce::Array<juce::var> nodesVar;
-            for (const auto& gn : glbNodes)
-            {
-                auto nObj = std::make_unique<juce::DynamicObject>();
-                nObj->setProperty("name", gn.name);
-                if (gn.meshIndex >= 0) nObj->setProperty("mesh", gn.meshIndex);
-                if (gn.hasMatrix)
-                {
-                    juce::Array<juce::var> mArray;
-                    for (int k = 0; k < 16; ++k) mArray.add(gn.matrix[k]);
-                    nObj->setProperty("matrix", mArray);
-                }
-                if (!gn.children.empty())
-                {
-                    juce::Array<juce::var> chArray;
-                    for (int ch : gn.children) chArray.add(ch);
-                    nObj->setProperty("children", chArray);
-                }
-                nodesVar.add(juce::var(nObj.release()));
-            }
-            gltf->setProperty("nodes", nodesVar);
-
-            // Scene
-            gltf->setProperty("scene", 0);
-            auto sceneObj = std::make_unique<juce::DynamicObject>();
-            sceneObj->setProperty("name", plan.assemblyName);
-            juce::Array<juce::var> rootNodesVar;
-            for (int rIdx : rootNodeIndices) rootNodesVar.add(rIdx);
-            sceneObj->setProperty("nodes", rootNodesVar);
-            gltf->setProperty("scenes", juce::Array<juce::var>{ juce::var(sceneObj.release()) });
-
-            // Buffers, BufferViews, Accessors
-            auto bufObj = std::make_unique<juce::DynamicObject>();
-            bufObj->setProperty("byteLength", (juce::int64)binBuffer.getDataSize());
-            gltf->setProperty("buffers", juce::Array<juce::var>{ juce::var(bufObj.release()) });
-            gltf->setProperty("bufferViews", bufferViews);
-            gltf->setProperty("accessors", accessors);
-
-            // Format JSON
-            const auto jsonString = juce::JSON::toString(juce::var(gltf.release()), false);
-            juce::MemoryOutputStream jsonChunk;
-            jsonChunk.write(jsonString.toRawUTF8(), (size_t)jsonString.getNumBytesAsUTF8());
-            while (jsonChunk.getDataSize() % 4 != 0) jsonChunk.writeByte(' '); // pad JSON chunk with spaces
-
-            // Construct GLB file
-            // Header: 12 bytes: magic (0x46546C67), version (2), length
-            // Chunk 0: length, type (0x4E4F534A 'JSON'), data
-            // Chunk 1: length, type (0x004E4942 'BIN\0'), data
-            const uint32_t glbMagic = 0x46546C67;
-            const uint32_t glbVersion = 2;
-            const uint32_t jsonChunkLength = (uint32_t)jsonChunk.getDataSize();
-            const uint32_t jsonChunkType = 0x4E4F534A;
-            const uint32_t binChunkLength = (uint32_t)binBuffer.getDataSize();
-            const uint32_t binChunkType = 0x004E4942;
-            const uint32_t totalGlbLength = 12 + 8 + jsonChunkLength + 8 + binChunkLength;
-
-            juce::FileOutputStream fileStream(temporaries[0]);
-            if (!fileStream.openedOk()) return fail("Unable to open temporary file for writing GLB.");
-
-            fileStream.writeInt((int)glbMagic);
-            fileStream.writeInt((int)glbVersion);
-            fileStream.writeInt((int)totalGlbLength);
-
-            fileStream.writeInt((int)jsonChunkLength);
-            fileStream.writeInt((int)jsonChunkType);
-            fileStream.write(jsonChunk.getData(), jsonChunk.getDataSize());
-
-            fileStream.writeInt((int)binChunkLength);
-            fileStream.writeInt((int)binChunkType);
-            fileStream.write(binBuffer.getData(), binBuffer.getDataSize());
-
-            fileStream.flush();
-            if (temporaries[0].getSize() < 20) return fail("Writing GLB file failed.");
+            if (!report((total - 1.0) / total, "Writing OBJ")) return fail({});
+            juce::String writeError;
+            if (!writeObj(plan, shadedMeshes, frame, temporaries[0], temporaries[1], plan.outputs[1].getFileName(), writeError)) return fail(writeError);
+            bool hierarchy = false;
+            for (const auto& part : plan.parts) hierarchy = hierarchy || part.parentPartId.isNotEmpty();
+            if (hierarchy) result.warnings.add("OBJ has no assembly hierarchy or transforms: parts are separate objects with their placements applied to the vertices.");
+        }
+        else if (format == CadExportFormat::ply)
+        {
+            if (!report((total - 1.0) / total, "Writing PLY")) return fail({});
+            juce::String writeError;
+            if (!writePly(plan, shadedMeshes, frame, temporaries[0], writeError)) return fail(writeError);
+            if (plan.parts.size() > 1) result.warnings.add("PLY has no objects, names or hierarchy: " + juce::String((int) plan.parts.size()) + " parts were merged into one mesh (part ranges are listed in header comments).");
+        }
+        else if (format == CadExportFormat::glb || format == CadExportFormat::gltf)
+        {
+            juce::String writeError;
+            const auto written = writeGltf(plan, shadedMeshes, format == CadExportFormat::glb, temporaries[0], writeError,
+                                           [&](size_t i) { return report((total - 1.0 + (double) i / (double) plan.parts.size()) / total, "Encoding " + plan.parts[i].name); });
+            if (!written) return fail(writeError);
         }
         else
         {
@@ -1013,8 +708,13 @@ CadExportResult run(const CadExportPlan& plan, const std::function<bool(double, 
             writer.SetNameMode(Standard_True);
             StepData_ConfParameters parameters;
             parameters.InitFromStatic();
+            // Declared unit (parameters) and the factor that scales the written coordinates (model) are set separately in OCCT;
+            // the model keeps the millimetre factor unless it is told, which would write mm numbers under an inch declaration.
+            const auto stepUnit = effectiveUnits(plan.settings);
+            parameters.WriteUnit = stepUnit == CadExportUnit::centimetre ? UnitsMethods_LengthUnit_Centimeter : stepUnit == CadExportUnit::metre ? UnitsMethods_LengthUnit_Meter : stepUnit == CadExportUnit::inch ? UnitsMethods_LengthUnit_Inch : UnitsMethods_LengthUnit_Millimeter;
+            writer.ChangeWriter().Model()->SetWriteLengthUnit(1.0 / unitsPerMillimetre(stepUnit));
             parameters.WriteSchema = StepData_ConfParameters::WriteMode_StepSchema_AP214IS;
-            parameters.WriteUnit = UnitsMethods_LengthUnit_Millimeter;
+
             parameters.WriteName = true;
             const bool transferred = writer.Transfer(xdoc, parameters, STEPControl_AsIs, nullptr, indicator->Start());
             const bool written = transferred && !cancelled && writer.Write(temporaries[0].getFullPathName().toRawUTF8()) == IFSelect_RetDone;

@@ -1,4 +1,7 @@
 // Advanced Sketch editing and focused validation.
+#include <array>
+#include <cstring>
+#include <functional>
 #include <JuceHeader.h>
 
 #include "DjehutiCAD.h"
@@ -1057,6 +1060,339 @@ bool runCadExportCheck(juce::var& report)
         record(!svc.planExport(settings, failPlan, planError) && planError.contains("already exists"), "existing file is not replaced without overwrite", planError);
         settings.quality = { "custom", 0.0, 15.0 };
         record(!svc.planExport(settings, failPlan, planError) && planError.contains("chordal"), "invalid custom tolerance is refused", planError);
+    }
+
+    // 4. Universal geometry formats: OBJ, PLY, glTF/GLB (strict readers below), plus units and axes for STL, 3MF and STEP.
+    {
+        CadCommandService model;
+        juce::String me, box, cyl, hollowOuter, hollowInner, hollow, plate, hole, drilled, filletBase, filleted, copy, material;
+        const bool built2 = model.createBox(40, 30, 20, box, me) && model.rename(box, "Box", me)
+            && model.createCylinder(10, 30, cyl, me) && model.setPlacement(cyl, 100, 0, 0, 0, 0, 0, me) && model.rename(cyl, "Cylinder", me)
+            && model.createCylinder(12, 20, hollowOuter, me) && model.createCylinder(8, 30, hollowInner, me) && model.setPlacement(hollowInner, 0, 0, -5, 0, 0, 0, me)
+            && model.setPlacement(hollowOuter, 200, 0, 0, 0, 0, 0, me) && model.setPlacement(hollowInner, 200, 0, -5, 0, 0, 0, me)
+            && model.booleanOp("subtract", hollowOuter, hollowInner, hollow, me) && model.rename(hollow, "Hollow cylinder", me)
+            && model.createBox(50, 30, 10, plate, me) && model.createCylinder(5, 20, hole, me) && model.setPlacement(plate, 300, 0, 0, 0, 0, 0, me) && model.setPlacement(hole, 325, 15, -5, 0, 0, 0, me)
+            && model.booleanOp("subtract", plate, hole, drilled, me) && model.rename(drilled, "Drilled plate", me)
+            && model.createBox(30, 30, 10, filletBase, me) && model.setPlacement(filletBase, 400, 0, 0, 0, 0, 0, me) && model.createFillet(filletBase, { 0, 1 }, 3.0, filleted, me) && model.rename(filleted, "Filleted block", me)
+            && model.createInstance(box, "Box copy", copy, me);
+        if (record(built2, "universal-format models: box, cylinder, hollow cylinder, Boolean-subtracted plate, filleted block and a box instance", me))
+        {
+            CadFrame placed; placed.y = -80.0; placed.qw = std::cos(juce::MathConstants<double>::pi / 6.0); placed.qz = std::sin(juce::MathConstants<double>::pi / 6.0);   // 60 deg about Z
+            record(model.setInstancePlacement(copy, placed, me), "instance placed at y -80, turned 60 deg about Z", me);
+            juce::String arm, jointId; CadJointRequest hinge; hinge.name = "hinge"; hinge.type = "revolute"; hinge.parentInstance = copy; hinge.childInstance = arm; hinge.originX = 100; hinge.originY = 0; hinge.originZ = 0;
+            const bool jointed = model.createInstance(cyl, "Cylinder arm", arm, me); hinge.childInstance = arm;
+            record(jointed && model.createJoint(hinge, jointId, me), "Cylinder arm is an instance hinged to Box copy (assembly hierarchy and joint pivot)", me);
+            CadMaterial petg; petg.name = "PETG"; petg.densityKgPerM3 = 1270.0; petg.youngsModulusMPa = 2100.0; petg.poissonsRatio = 0.38;
+            record(model.createMaterial(petg, material, me) && model.assignMaterial(drilled, material, me), "material PETG assigned to the drilled plate", me);
+        }
+        const auto revisionModel = model.document().revision();
+
+        struct Shape { juce::String name; std::vector<gp_Pnt> points; std::vector<gp_Vec> normals; std::vector<std::array<int, 3>> triangles; juce::String material; };
+        const auto toCad = [](gp_Pnt p, double unitsPerMm, bool yUp) { p = gp_Pnt(p.X() / unitsPerMm, p.Y() / unitsPerMm, p.Z() / unitsPerMm); return yUp ? gp_Pnt(p.X(), -p.Z(), p.Y()) : p; };
+        struct Measure { double min[3], max[3], volume = 0.0; int triangles = 0; int outward = 0; bool unitNormals = true; };
+        const auto measure = [&](const Shape& shape, double unitsPerMm, bool yUp)
+        {
+            Measure m { { 1e30, 1e30, 1e30 }, { -1e30, -1e30, -1e30 } };
+            std::vector<gp_Pnt> cad; for (const auto& p : shape.points) cad.push_back(toCad(p, unitsPerMm, yUp));
+            for (const auto& p : cad) for (int c = 0; c < 3; ++c) { m.min[c] = std::min(m.min[c], p.Coord(c + 1)); m.max[c] = std::max(m.max[c], p.Coord(c + 1)); }
+            for (const auto& t : shape.triangles)
+            {
+                const auto &a = cad[(size_t) t[0]], &b = cad[(size_t) t[1]], &c = cad[(size_t) t[2]];
+                m.volume += gp_Vec(a.XYZ()).Dot(gp_Vec(b.XYZ()).Crossed(gp_Vec(c.XYZ()))) / 6.0;
+                ++m.triangles;
+                if (!shape.normals.empty())
+                {
+                    const gp_Vec face = gp_Vec(a, b).Crossed(gp_Vec(a, c));
+                    gp_Vec n(0, 0, 0); for (int k = 0; k < 3; ++k) { auto v = shape.normals[(size_t) t[(size_t) k]]; n += yUp ? gp_Vec(v.X(), -v.Z(), v.Y()) : v; }
+                    if (face.Dot(n) > 0.0) ++m.outward;
+                }
+            }
+            for (const auto& n : shape.normals) if (std::abs(n.Magnitude() - 1.0) > 1.0e-3) m.unitNormals = false;
+            return m;
+        };
+        // OBJ: o/usemtl/v/vn/f with 1-based global indices; reports vertices with their own normals.
+        const auto readObj = [](const juce::File& file, std::vector<Shape>& shapes, juce::StringArray& mtllibs, juce::String& error)
+        {
+            std::vector<gp_Pnt> v; std::vector<gp_Vec> vn; juce::StringArray lines; lines.addLines(file.loadFileAsString());
+            std::map<int, int> remap;
+            for (const auto& line : lines)
+            {
+                const auto t = juce::StringArray::fromTokens(line, " ", "");
+                if (t.isEmpty() || line.startsWith("#")) continue;
+                if (t[0] == "mtllib") mtllibs.add(line.fromFirstOccurrenceOf("mtllib ", false, false).trim());
+                else if (t[0] == "o") { shapes.push_back({}); shapes.back().name = line.fromFirstOccurrenceOf("o ", false, false).trim(); remap.clear(); }
+                else if (t[0] == "usemtl" && !shapes.empty()) shapes.back().material = t[1];
+                else if (t[0] == "v") v.emplace_back(t[1].getDoubleValue(), t[2].getDoubleValue(), t[3].getDoubleValue());
+                else if (t[0] == "vn") vn.emplace_back(t[1].getDoubleValue(), t[2].getDoubleValue(), t[3].getDoubleValue());
+                else if (t[0] == "f" && !shapes.empty() && t.size() == 4)
+                {
+                    std::array<int, 3> tri {};
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        const auto parts = juce::StringArray::fromTokens(t[k + 1], "/", "");
+                        const int vi = parts[0].getIntValue() - 1, ni = parts[2].getIntValue() - 1;
+                        if (vi < 0 || vi >= (int) v.size() || ni < 0 || ni >= (int) vn.size() || vi != ni) { error = "bad face index"; return false; }
+                        auto& s = shapes.back();
+                        const auto it = remap.find(vi);
+                        if (it == remap.end()) { remap[vi] = (int) s.points.size(); s.points.push_back(v[(size_t) vi]); s.normals.push_back(vn[(size_t) ni]); }
+                        tri[(size_t) k] = remap[vi];
+                    }
+                    shapes.back().triangles.push_back(tri);
+                }
+            }
+            return !shapes.empty();
+        };
+        // PLY: binary little-endian, x y z nx ny nz floats, faces "uchar uint" lists, per-part ranges from header comments.
+        const auto readPly = [](const juce::File& file, std::vector<Shape>& shapes, juce::String& header, juce::String& error)
+        {
+            juce::MemoryBlock data; file.loadFileAsData(data);
+            const auto* bytes = static_cast<const char*>(data.getData());
+            const juce::String text = juce::String::fromUTF8(bytes, juce::jmin((int) data.getSize(), 4096));
+            const int end = text.indexOf("end_header\n");
+            if (end < 0) { error = "no header"; return false; }
+            header = text.substring(0, end);
+            size_t cursor = (size_t) header.getNumBytesAsUTF8() + 11;
+            int vertexCount = 0, faceCount = 0;
+            juce::StringArray lines; lines.addLines(header);
+            for (const auto& l : lines) { if (l.startsWith("element vertex")) vertexCount = l.getTrailingIntValue(); if (l.startsWith("element face")) faceCount = l.getTrailingIntValue(); }
+            if (!header.contains("format binary_little_endian 1.0") || !header.contains("property float nx")) { error = "unexpected layout"; return false; }
+            if (cursor + (size_t) vertexCount * 24 + (size_t) faceCount * 13 != data.getSize()) { error = "size mismatch"; return false; }
+            std::vector<gp_Pnt> pts; std::vector<gp_Vec> nrm;
+            for (int i = 0; i < vertexCount; ++i) { float f[6]; std::memcpy(f, bytes + cursor + (size_t) i * 24, 24); pts.emplace_back(f[0], f[1], f[2]); nrm.emplace_back(f[3], f[4], f[5]); }
+            cursor += (size_t) vertexCount * 24;
+            std::vector<std::array<int, 3>> tris;
+            for (int i = 0; i < faceCount; ++i)
+            {
+                const char* at = bytes + cursor + (size_t) i * 13; if (at[0] != 3) { error = "not a triangle"; return false; }
+                std::uint32_t idx[3]; std::memcpy(idx, at + 1, 12);
+                for (auto k : idx) if ((int) k >= vertexCount) { error = "index out of range"; return false; }
+                tris.push_back({ (int) idx[0], (int) idx[1], (int) idx[2] });
+            }
+            for (const auto& l : lines)
+            {
+                if (!l.startsWith("comment part \"")) continue;
+                const auto name = l.fromFirstOccurrenceOf("\"", false, false).upToLastOccurrenceOf("\"", false, false);
+                const auto rest = l.fromLastOccurrenceOf("\"", false, false);
+                const auto vr = rest.fromFirstOccurrenceOf("vertices ", false, false).upToFirstOccurrenceOf(" faces", false, false);
+                const auto fr = rest.fromFirstOccurrenceOf("faces ", false, false);
+                const int v0 = vr.upToFirstOccurrenceOf("..", false, false).getIntValue(), v1 = vr.fromFirstOccurrenceOf("..", false, false).getIntValue();
+                const int f0 = fr.upToFirstOccurrenceOf("..", false, false).getIntValue(), f1 = fr.fromFirstOccurrenceOf("..", false, false).getIntValue();
+                Shape s; s.name = name;
+                for (int i = v0; i <= v1; ++i) { s.points.push_back(pts[(size_t) i]); s.normals.push_back(nrm[(size_t) i]); }
+                for (int i = f0; i <= f1; ++i) s.triangles.push_back({ tris[(size_t) i][0] - v0, tris[(size_t) i][1] - v0, tris[(size_t) i][2] - v0 });
+                shapes.push_back(std::move(s));
+            }
+            return !shapes.empty();
+        };
+        // glTF 2.0 (.gltf with data URI or .glb): validates structure and returns the world-space meshes (metres, +Y up) of every node.
+        struct GltfRead { std::vector<Shape> shapes; juce::StringArray problems; juce::var json; int rootNodes = 0, maxDepth = 0; };
+        const auto readGltf = [](const juce::File& file, GltfRead& out)
+        {
+            juce::MemoryBlock data; file.loadFileAsData(data);
+            const auto* bytes = static_cast<const std::uint8_t*>(data.getData());
+            juce::String jsonText; juce::MemoryBlock bin;
+            if (data.getSize() >= 20 && std::memcmp(bytes, "glTF", 4) == 0)
+            {
+                std::uint32_t version, length, chunk0, type0; std::memcpy(&version, bytes + 4, 4); std::memcpy(&length, bytes + 8, 4); std::memcpy(&chunk0, bytes + 12, 4); std::memcpy(&type0, bytes + 16, 4);
+                if (version != 2 || length != data.getSize() || type0 != 0x4E4F534A || chunk0 % 4 != 0) { out.problems.add("bad GLB header"); return false; }
+                jsonText = juce::String::fromUTF8((const char*) bytes + 20, (int) chunk0);
+                std::uint32_t binLength, binType; if (20 + chunk0 + 8 > data.getSize()) { out.problems.add("no BIN chunk"); return false; }
+                std::memcpy(&binLength, bytes + 20 + chunk0, 4); std::memcpy(&binType, bytes + 24 + chunk0, 4);
+                if (binType != 0x004E4942 || 28 + chunk0 + binLength != data.getSize() || binLength % 4 != 0) { out.problems.add("bad BIN chunk"); return false; }
+                bin.append(bytes + 28 + chunk0, binLength);
+            }
+            else jsonText = file.loadFileAsString();
+            out.json = juce::JSON::parse(jsonText);
+            const auto& g = out.json;
+            if (!g.isObject() || g["asset"]["version"].toString() != "2.0") { out.problems.add("not glTF 2.0"); return false; }
+            if (bin.getSize() == 0)
+            {
+                const auto uri = g["buffers"][0]["uri"].toString();
+                const juce::String prefix = "data:application/octet-stream;base64,";
+                if (!uri.startsWith(prefix)) { out.problems.add("buffer is not an embedded data URI"); return false; }
+                juce::MemoryOutputStream decoded; if (!juce::Base64::convertFromBase64(decoded, uri.substring(prefix.length()))) { out.problems.add("bad base64"); return false; }
+                bin = decoded.getMemoryBlock();
+            }
+            if ((juce::int64) g["buffers"][0]["byteLength"] != (juce::int64) bin.getSize()) out.problems.add("buffer length mismatch");
+            const auto* views = g["bufferViews"].getArray(); const auto* accessors = g["accessors"].getArray(); const auto* meshes = g["meshes"].getArray(); const auto* nodes = g["nodes"].getArray();
+            if (views == nullptr || accessors == nullptr || meshes == nullptr || nodes == nullptr) { out.problems.add("missing arrays"); return false; }
+            const auto accessorData = [&](int index, std::vector<double>& values, int& comps, int& componentType)
+            {
+                const auto& a = (*accessors)[index]; const auto& v = (*views)[(int) a["bufferView"]];
+                const juce::String type = a["type"].toString(); comps = type == "VEC3" ? 3 : 1; componentType = (int) a["componentType"];
+                const int count = (int) a["count"], size = componentType == 5126 || componentType == 5125 ? 4 : 2;
+                const size_t offset = (size_t) (int) v["byteOffset"] + (size_t) (int) a["byteOffset"];
+                if (offset + (size_t) count * (size_t) comps * (size_t) size > bin.getSize() || offset % (size_t) size != 0) { out.problems.add("accessor outside buffer or misaligned"); return false; }
+                const auto* base = static_cast<const std::uint8_t*>(bin.getData()) + offset;
+                for (int i = 0; i < count * comps; ++i)
+                {
+                    if (componentType == 5126) { float f; std::memcpy(&f, base + (size_t) i * 4, 4); values.push_back(f); }
+                    else if (componentType == 5125) { std::uint32_t u; std::memcpy(&u, base + (size_t) i * 4, 4); values.push_back(u); }
+                    else { std::uint16_t u; std::memcpy(&u, base + (size_t) i * 2, 2); values.push_back(u); }
+                }
+                if (a.hasProperty("min") && type == "VEC3")   // required for POSITION: declared bounds must be real
+                    for (int c = 0; c < 3; ++c) { double lo = 1e30, hi = -1e30; for (int i = 0; i < count; ++i) { lo = std::min(lo, values[(size_t) (i * 3 + c)]); hi = std::max(hi, values[(size_t) (i * 3 + c)]); }
+                                                  if (std::abs(lo - (double) a["min"][c]) > 1e-5 || std::abs(hi - (double) a["max"][c]) > 1e-5) out.problems.add("accessor min/max wrong"); }
+                return true;
+            };
+            std::vector<char> isChild(nodes->size(), 0);
+            for (const auto& n : *nodes) if (const auto* ch = n["children"].getArray()) for (const auto& c : *ch) isChild[(size_t) (int) c] = 1;
+            const auto* sceneRoots = g["scenes"][0]["nodes"].getArray();
+            out.rootNodes = sceneRoots != nullptr ? sceneRoots->size() : 0;
+            std::function<void(int, const std::array<double, 16>&, int)> visit = [&](int index, const std::array<double, 16>& parent, int depth)
+            {
+                const auto& n = (*nodes)[index]; out.maxDepth = std::max(out.maxDepth, depth);
+                std::array<double, 16> m {}; for (int k = 0; k < 16; ++k) m[(size_t) k] = n.hasProperty("matrix") ? (double) n["matrix"][k] : (k % 5 == 0 ? 1.0 : 0.0);
+                std::array<double, 16> w {};
+                for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r) { double sum = 0; for (int k = 0; k < 4; ++k) sum += parent[(size_t) (k * 4 + r)] * m[(size_t) (c * 4 + k)]; w[(size_t) (c * 4 + r)] = sum; }
+                if (n.hasProperty("mesh"))
+                {
+                    const auto& mesh = (*meshes)[(int) n["mesh"]]; const auto& prim = mesh["primitives"][0];
+                    std::vector<double> pos, nor, idx; int c1, c2, c3, t1, t2, t3;
+                    if (!accessorData((int) prim["attributes"]["POSITION"], pos, c1, t1) || !accessorData((int) prim["attributes"]["NORMAL"], nor, c2, t2) || !accessorData((int) prim["indices"], idx, c3, t3)) return;
+                    Shape s; s.name = n["name"].toString(); s.material = g["materials"][(int) prim["material"]]["name"].toString();
+                    for (size_t i = 0; i + 2 < pos.size(); i += 3) { s.points.emplace_back(w[0] * pos[i] + w[4] * pos[i + 1] + w[8] * pos[i + 2] + w[12], w[1] * pos[i] + w[5] * pos[i + 1] + w[9] * pos[i + 2] + w[13], w[2] * pos[i] + w[6] * pos[i + 1] + w[10] * pos[i + 2] + w[14]);
+                                                                      s.normals.emplace_back(w[0] * nor[i] + w[4] * nor[i + 1] + w[8] * nor[i + 2], w[1] * nor[i] + w[5] * nor[i + 1] + w[9] * nor[i + 2], w[2] * nor[i] + w[6] * nor[i + 1] + w[10] * nor[i + 2]); }
+                    for (size_t i = 0; i + 2 < idx.size(); i += 3) { if (idx[i] >= (double) s.points.size() || idx[i + 1] >= (double) s.points.size() || idx[i + 2] >= (double) s.points.size()) { out.problems.add("index out of range"); return; } s.triangles.push_back({ (int) idx[i], (int) idx[i + 1], (int) idx[i + 2] }); }
+                    out.shapes.push_back(std::move(s));
+                }
+                if (const auto* ch = n["children"].getArray()) for (const auto& c : *ch) visit((int) c, w, depth + 1);
+            };
+            const std::array<double, 16> identity { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+            if (sceneRoots != nullptr) for (const auto& r : *sceneRoots) visit((int) r, identity, 0);
+            return out.problems.isEmpty() && !out.shapes.empty();
+        };
+        // Binary STL: 80 byte header, triangle count, 50 bytes each; one shape.
+        const auto readStlFile = [](const juce::File& file, Shape& shape)
+        {
+            juce::MemoryBlock data; file.loadFileAsData(data); const auto* b = static_cast<const std::uint8_t*>(data.getData());
+            if (data.getSize() < 84) return false;
+            std::uint32_t n; std::memcpy(&n, b + 80, 4); if (data.getSize() != 84 + 50 * (size_t) n) return false;
+            for (std::uint32_t i = 0; i < n; ++i) { float f[12]; std::memcpy(f, b + 84 + 50 * (size_t) i, 48); const int base = (int) shape.points.size(); for (int k = 0; k < 3; ++k) shape.points.emplace_back(f[3 + k * 3], f[4 + k * 3], f[5 + k * 3]); shape.triangles.push_back({ base, base + 1, base + 2 }); }
+            return true;
+        };
+
+        const auto exportWith = [&](CadExportSettings settings, const juce::File& out, CadExportResult& result, CadExportPlan& planOut, juce::String& error)
+        {
+            settings.output = out; settings.overwrite = true;
+            if (!model.planExport(settings, planOut, error)) return false;
+            result = CadCommandService::runExport(planOut);
+            if (!result.ok) error = result.error;
+            return result.ok;
+        };
+        // Compares every exported part with the B-rep: bounds, volume and (for shaded formats) outward unit normals.
+        const auto compareParts = [&](const std::vector<Shape>& shapes, const CadExportPlan& planIn, const CadExportResult& resultIn, double unitsPerMm, bool yUp, bool withNormals, const juce::String& label)
+        {
+            bool allFound = shapes.size() == planIn.parts.size(), geometry = true, normalsOk = true; juce::String detail;
+            for (size_t i = 0; i < planIn.parts.size() && allFound; ++i)
+            {
+                const auto& part = planIn.parts[i]; const Shape* found = nullptr;
+                for (const auto& s : shapes) if (s.name == part.name) found = &s;
+                if (found == nullptr) { allFound = false; detail << part.name << " missing; "; break; }
+                const auto m = measure(*found, unitsPerMm, yUp);
+                bool ok = true; for (int c = 0; c < 3; ++c) ok = ok && approx(m.min[c], part.min[c], 0.06) && approx(m.max[c], part.max[c], 0.06);   // meshes sit inside curved surfaces by up to the 0.05 mm chordal tolerance
+                const double volume = resultIn.parts[i].solidVolume;
+                ok = ok && approx(m.volume, volume, volume * 0.015);
+                geometry = geometry && ok;
+                if (!ok) detail << part.name << ": " << fmt3(m.min) << " .. " << fmt3(m.max) << " volume " << juce::String(m.volume, 1) << " vs " << juce::String(volume, 1) << "; ";
+                if (withNormals) normalsOk = normalsOk && m.unitNormals && m.outward == m.triangles;
+            }
+            record(allFound && geometry, label + ": every part has the right name, placement, bounds and volume", detail);
+            if (withNormals) record(normalsOk, label + ": normals are unit length and agree with the outward winding");
+        };
+
+        CadExportResult result2; CadExportPlan plan2; juce::String error2;
+        CadExportSettings base; base.format = CadExportFormat::obj;   // whole visible model
+
+        // OBJ, millimetres, Z up.
+        const auto fileObj = dir.getChildFile("universal.obj");
+        if (record(exportWith(base, fileObj, result2, plan2, error2), "OBJ export of the complete model", error2))
+        {
+            std::vector<Shape> shapes; juce::StringArray libs; juce::String readError;
+            const bool read = readObj(fileObj, shapes, libs, readError);
+            record(read && libs.size() == 1 && libs[0] == "universal.mtl" && dir.getChildFile("universal.mtl").existsAsFile() && result2.files.size() == 2, "OBJ writes universal.obj and its universal.mtl and references it", readError + libs.joinIntoString(","));
+            if (read) compareParts(shapes, plan2, result2, 1.0, false, true, "OBJ mm/Z-up");
+            juce::String drilledMaterial; for (const auto& s : shapes) if (s.name == "Drilled plate") drilledMaterial = s.material;
+            const auto mtl = dir.getChildFile("universal.mtl").loadFileAsString();
+            record(drilledMaterial == "PETG" && mtl.contains("newmtl PETG") && mtl.contains("newmtl Default"), "OBJ keeps the document material name (PETG) and Default for unassigned parts", drilledMaterial);
+        }
+        // OBJ, inches and Y up (Blender default import).
+        auto inchesY = base; inchesY.units = CadExportUnit::inch; inchesY.yUp = true;
+        const auto fileObjY = dir.getChildFile("universal-inch-yup.obj");
+        if (record(exportWith(inchesY, fileObjY, result2, plan2, error2), "OBJ export in inches, Y up", error2))
+        {
+            std::vector<Shape> shapes; juce::StringArray libs; juce::String readError;
+            if (readObj(fileObjY, shapes, libs, readError)) compareParts(shapes, plan2, result2, 1.0 / 25.4, true, true, "OBJ inch/Y-up");
+            record(result2.toVar(plan2).getProperty("units", "").toString() == "in" && result2.toVar(plan2).getProperty("up_axis", "").toString() == "y", "result reports units in and up_axis y");
+        }
+        // PLY.
+        auto plyIn = base; plyIn.format = CadExportFormat::ply;
+        const auto filePly = dir.getChildFile("universal.ply");
+        if (record(exportWith(plyIn, filePly, result2, plan2, error2), "PLY export of the complete model", error2))
+        {
+            std::vector<Shape> shapes; juce::String header, readError;
+            const bool read = readPly(filePly, shapes, header, readError);
+            record(read, "PLY reads back: binary little-endian layout, byte size identity, indices in range", readError);
+            if (read) compareParts(shapes, plan2, result2, 1.0, false, true, "PLY mm/Z-up");
+            record(result2.warnings.joinIntoString(" ").contains("merged into one mesh"), "PLY reports that parts were merged (no hierarchy)", result2.warnings.joinIntoString(" "));
+        }
+        // glTF text and GLB.
+        for (const bool binary : { false, true })
+        {
+            auto gl = base; gl.format = binary ? CadExportFormat::glb : CadExportFormat::gltf; gl.units = CadExportUnit::inch; gl.yUp = false;   // glTF must ignore both
+            const auto file = dir.getChildFile(binary ? "universal.glb" : "universal.gltf");
+            const juce::String label = binary ? "GLB" : "glTF";
+            if (record(exportWith(gl, file, result2, plan2, error2), label + " export of the complete model", error2))
+            {
+                GltfRead read; const bool ok = readGltf(file, read);
+                record(ok, label + " structure is valid: " + (binary ? "GLB chunks" : "embedded buffer") + ", accessor ranges, POSITION min/max, indices", read.problems.joinIntoString("; "));
+                if (ok) compareParts(read.shapes, plan2, result2, 0.001, true, true, label + " metres/Y-up");
+                juce::String drilledMaterial; for (const auto& s : read.shapes) if (s.name == "Drilled plate") drilledMaterial = s.material;
+                record(ok && drilledMaterial == "PETG", label + " keeps the document material name", drilledMaterial);
+                record(ok && read.maxDepth >= 1 && read.rootNodes < (int) plan2.parts.size(), label + " keeps the assembly hierarchy: the hinged arm is a child node of Box copy", "depth " + juce::String(read.maxDepth) + ", roots " + juce::String(read.rootNodes));
+                record(ok && read.json["asset"]["extras"]["units"].toString() == "metres" && result2.toVar(plan2).getProperty("units", "").toString() == "m", label + " is metres whatever unit was requested");
+            }
+        }
+        // STL: inches and Y up go through the transformed writer; default stays on OCCT's StlAPI.
+        {
+            auto stl = base; stl.format = CadExportFormat::stl; stl.units = CadExportUnit::inch; stl.yUp = true;
+            const auto file = dir.getChildFile("single.stl");
+            auto one = stl; one.partIds = { drilled };
+            if (record(exportWith(one, file, result2, plan2, error2), "STL export of the drilled plate in inches, Y up", error2))
+            {
+                Shape s; const bool read = readStlFile(file, s);
+                const auto m = read ? measure(s, 1.0 / 25.4, true) : Measure {};
+                record(read && approx(m.min[0], 300, 1e-3) && approx(m.max[0], 350, 1e-3) && approx(m.min[1], 0, 1e-3) && approx(m.max[1], 30, 1e-3) && approx(m.min[2], 0, 1e-3) && approx(m.max[2], 10, 1e-3),
+                       "STL inch/Y-up reads back as 50 x 30 x 10 mm at x 300", fmt3(m.min) + " .. " + fmt3(m.max));
+                record(read && approx(m.volume, result2.parts.front().solidVolume, result2.parts.front().solidVolume * 0.01), "STL inch/Y-up volume matches the solid", juce::String(m.volume, 1));
+            }
+        }
+        // 3MF in centimetres and STEP in inches: declared unit and real size.
+        {
+            auto three = base; three.format = CadExportFormat::threeMF; three.units = CadExportUnit::centimetre; three.partIds = { drilled };
+            const auto file = dir.getChildFile("single-cm.3mf");
+            if (record(exportWith(three, file, result2, plan2, error2), "3MF export in centimetres", error2))
+            {
+                try
+                {
+                    auto wrapper = Lib3MF::CWrapper::loadLibrary(); auto m3 = wrapper->CreateModel(); m3->QueryReader("3mf")->ReadFromFile(file.getFullPathName().toStdString());
+                    auto it = m3->GetBuildItems(); it->MoveNext(); auto item = it->GetCurrent(); auto mesh = m3->GetMeshObjectByID(item->GetObjectResource()->GetResourceID());
+                    std::vector<Lib3MF::sPosition> vertices; mesh->GetVertices(vertices); const auto t = item->GetObjectTransform();
+                    double lo = 1e30, hi = -1e30;
+                    for (const auto& v : vertices) { const double x = v.m_Coordinates[0] * t.m_Fields[0][0] + v.m_Coordinates[1] * t.m_Fields[1][0] + v.m_Coordinates[2] * t.m_Fields[2][0] + t.m_Fields[3][0]; lo = std::min(lo, x); hi = std::max(hi, x); }
+                    record(m3->GetUnit() == Lib3MF::eModelUnit::CentiMeter && approx(hi - lo, 5.0, 1e-3) && approx(lo, 30.0, 1e-3), "3MF declares centimetres and the 50 mm plate is 5.000 cm wide at x 30 cm", juce::String(lo, 4) + " .. " + juce::String(hi, 4));
+                }
+                catch (const std::exception& ex) { record(false, "3MF centimetre read-back", ex.what()); }
+            }
+            auto step = base; step.format = CadExportFormat::step; step.units = CadExportUnit::inch; step.partIds = { drilled };
+            const auto stepFile = dir.getChildFile("single-inch.step");
+            if (record(exportWith(step, stepFile, result2, plan2, error2), "STEP export in inches", error2))
+            {
+                StepRead read; juce::String readError; const bool ok = readStep(stepFile, read, readError);
+                record(ok && approx(read.max[0] - read.min[0], 50.0, 1e-3) && approx(read.min[0], 300.0, 1e-3) && stepFile.loadFileAsString().contains("INCH"), "STEP declares inches and reads back as 50 mm wide at x 300 mm (unit converted, not rescaled)", fmt3(read.min) + " .. " + fmt3(read.max));
+            }
+        }
+        record(model.document().revision() == revisionModel, "universal exports did not change the document (same revision)");
     }
     return passed;
 }

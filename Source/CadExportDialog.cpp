@@ -42,14 +42,17 @@ class ExportDialog final : public juce::Component, private juce::Timer
 public:
     ExportDialog(std::shared_ptr<CadCommandService> serviceIn, const juce::StringArray& preselected) : service(std::move(serviceIn))
     {
-        for (auto* l : { &formatLabel, &partsLabel, &unitsLabel, &placementLabel, &qualityLabel, &outputLabel }) { l->setColour(juce::Label::textColourId, kDim); addAndMakeVisible(*l); }
+        for (auto* l : { &formatLabel, &partsLabel, &unitsLabel, &placementLabel, &qualityLabel, &outputLabel, &fileUnitsLabel }) { l->setColour(juce::Label::textColourId, kDim); addAndMakeVisible(*l); }
         for (auto* l : { &summary, &placementNote, &formatNote, &status }) { l->setColour(juce::Label::textColourId, kText); l->setJustificationType(juce::Justification::topLeft); addAndMakeVisible(*l); }
         placementNote.setText("Reference configuration: authored body and instance placements. Simulation and IK poses are not exported.", juce::dontSendNotification);
 
         format.addItem("3MF - preferred for 3-D printing", 1);
         format.addItem("Binary STL - one file per part", 2);
         format.addItem("STEP AP214 - exact solids for CAD exchange", 3);
-        format.addItem("glTF 2.0 Binary (GLB) - game-ready mesh export", 4);
+        format.addItem("glTF 2.0 Binary (GLB) - game engines, one file", 4);
+        format.addItem("glTF 2.0 (.gltf) - game engines, readable JSON", 5);
+        format.addItem("Wavefront OBJ + MTL - Blender and polygon modeling", 6);
+        format.addItem("Binary PLY - polygon mesh with normals", 7);
         format.setSelectedId(1, juce::dontSendNotification);
         format.onChange = [this] { formatChanged(); };
         addAndMakeVisible(format);
@@ -57,7 +60,13 @@ public:
         quality.addItem("Standard - surface 0.05 mm, angle 15 deg", 1);
         quality.addItem("Fine - surface 0.01 mm, angle 5 deg", 2);
         quality.addItem("Custom", 3);
+        quality.addItem("Low - surface 0.2 mm, angle 28 deg (draft)", 4);
         quality.setSelectedId(1, juce::dontSendNotification);
+        unitsBox.addItem("Millimetres (mm)", 1); unitsBox.addItem("Centimetres (cm)", 2); unitsBox.addItem("Metres (m)", 3); unitsBox.addItem("Inches (in)", 4);
+        unitsBox.setSelectedId(1, juce::dontSendNotification); unitsBox.onChange = [this] { refreshSummary(); };
+        upBox.addItem("Z up (CAD, 3-D printing)", 1); upBox.addItem("Y up (Blender OBJ default, game engines)", 2);
+        upBox.setSelectedId(1, juce::dontSendNotification); upBox.onChange = [this] { refreshSummary(); };
+        addAndMakeVisible(unitsBox); addAndMakeVisible(upBox);
         quality.onChange = [this] { qualityChanged(); };
         addAndMakeVisible(quality);
         for (auto* e : { &chordal, &angular }) { e->setInputRestrictions(8, "0123456789."); e->onTextChange = [this] { refreshSummary(); }; addAndMakeVisible(*e); }
@@ -100,7 +109,7 @@ public:
         bar.setVisible(false);
         qualityChanged();
         formatChanged();
-        setSize(620, 640);
+        setSize(620, 680);
     }
 
     ~ExportDialog() override { stopTimer(); job.reset(); }
@@ -121,6 +130,7 @@ public:
         partsContent.setSize(parts.getWidth() - 14, juce::jmax(y, 1));
         summary.setBounds(row(unitsLabel, 36));
         placementNote.setBounds(row(placementLabel, 36));
+        auto fileUnits = row(fileUnitsLabel, 26); unitsBox.setBounds(fileUnits.removeFromLeft(190)); fileUnits.removeFromLeft(8); upBox.setBounds(fileUnits);
         auto q = row(qualityLabel, 26); quality.setBounds(q);
         auto tolerances = area.removeFromTop(26).withTrimmedLeft(110); area.removeFromTop(8);
         chordal.setBounds(tolerances.removeFromLeft(60)); chordalUnit.setBounds(tolerances.removeFromLeft(150));
@@ -136,7 +146,19 @@ public:
     }
 
 private:
-    CadExportFormat currentFormat() const { return format.getSelectedId() == 2 ? CadExportFormat::stl : format.getSelectedId() == 3 ? CadExportFormat::step : format.getSelectedId() == 4 ? CadExportFormat::glb : CadExportFormat::threeMF; }
+    CadExportFormat currentFormat() const
+    {
+        switch (format.getSelectedId())
+        {
+            case 2: return CadExportFormat::stl;
+            case 3: return CadExportFormat::step;
+            case 4: return CadExportFormat::glb;
+            case 5: return CadExportFormat::gltf;
+            case 6: return CadExportFormat::obj;
+            case 7: return CadExportFormat::ply;
+            default: return CadExportFormat::threeMF;
+        }
+    }
 
     static double number(const juce::TextEditor& editor)
     {
@@ -153,23 +175,43 @@ private:
         s.partIds.addArray(extraIds);
         if (everything) s.partIds.clear();   // the whole visible model
         juce::String ignored;
-        exporting::qualityPreset(quality.getSelectedId() == 2 ? "fine" : quality.getSelectedId() == 3 ? "custom" : "standard", s.quality, ignored);
+        exporting::qualityPreset(qualityKey(), s.quality, ignored);
+        s.units = unitsBox.getSelectedId() == 2 ? CadExportUnit::centimetre : unitsBox.getSelectedId() == 3 ? CadExportUnit::metre : unitsBox.getSelectedId() == 4 ? CadExportUnit::inch : CadExportUnit::millimetre;
+        s.yUp = upBox.getSelectedId() == 2;
         if (quality.getSelectedId() == 3) { s.quality.chordalMm = number(chordal); s.quality.angularDeg = number(angular); }
         return s;
     }
+
+    juce::String qualityKey() const { return quality.getSelectedId() == 2 ? "fine" : quality.getSelectedId() == 3 ? "custom" : quality.getSelectedId() == 4 ? "low" : "standard"; }
 
     void formatChanged()
     {
         const auto f = currentFormat();
         const bool mesh = f != CadExportFormat::step;
+        // Fixed by the format: glTF is metres and Y up, 3MF and STEP are Z up.
+        const bool gltf = f == CadExportFormat::glb || f == CadExportFormat::gltf;
+        if (gltf) { unitsBox.setSelectedId(3, juce::dontSendNotification); upBox.setSelectedId(2, juce::dontSendNotification); }
+        else if (f == CadExportFormat::threeMF || f == CadExportFormat::step) upBox.setSelectedId(1, juce::dontSendNotification);
+        updateFileControls();
         for (juce::Component* c : { (juce::Component*) &quality, (juce::Component*) &qualityLabel, (juce::Component*) &chordal, (juce::Component*) &angular, (juce::Component*) &chordalUnit, (juce::Component*) &angularUnit }) c->setVisible(mesh);
         formatNote.setText(f == CadExportFormat::threeMF ? "Millimetre units; one named object per part, placed by its build transform. Slicer settings stay in the slicer."
                            : f == CadExportFormat::stl ? "Binary STL has no units: coordinates are millimetres. Several parts give one file per part (<name>-<part>.stl); use 3MF to keep an assembly in one file."
-                           : f == CadExportFormat::glb ? "glTF 2.0 Binary: metre units (converted from mm), indexed triangles, vertex normals, separate named nodes, assembly hierarchy and joint pivot frames preserved."
+                           : f == CadExportFormat::glb ? "glTF 2.0 Binary: metres and Y up (the glTF rules), indexed triangles, normals, named nodes, assembly hierarchy, joint pivots and document material names."
+                           : f == CadExportFormat::gltf ? "glTF 2.0 as one readable .gltf file with the mesh buffer embedded: metres and Y up, named nodes, assembly hierarchy and material names."
+                           : f == CadExportFormat::obj ? "Wavefront OBJ plus a .mtl file: one named object per part with placement applied, normals, material names. No hierarchy. Choose Y up for the default Blender import."
+                           : f == CadExportFormat::ply ? "Binary PLY with vertex normals. PLY has no objects, names or hierarchy: all parts are merged into one mesh."
                            : "Exact B-rep solids in millimetres with part names and placements. Feature history, scripts, constraints and simulation are not transferred.", juce::dontSendNotification);
         const auto current = juce::File::isAbsolutePath(path.getText().trim()) ? juce::File(path.getText().trim()) : juce::File();
         if (current != juce::File()) path.setText(current.withFileExtension(exporting::extension(f)).getFullPathName(), juce::dontSendNotification);
         refreshSummary();
+    }
+
+    // Units are fixed for glTF (metres); the up axis is a choice only for STL, OBJ and PLY.
+    void updateFileControls()
+    {
+        const auto f = currentFormat();
+        unitsBox.setEnabled(f != CadExportFormat::glb && f != CadExportFormat::gltf);
+        upBox.setEnabled(f == CadExportFormat::stl || f == CadExportFormat::obj || f == CadExportFormat::ply);
     }
 
     void qualityChanged()
@@ -178,7 +220,7 @@ private:
         if (!custom)
         {
             CadMeshQuality q; juce::String ignored;
-            exporting::qualityPreset(quality.getSelectedId() == 2 ? "fine" : "standard", q, ignored);
+            exporting::qualityPreset(qualityKey(), q, ignored);
             chordal.setText(juce::String(q.chordalMm), juce::dontSendNotification); angular.setText(juce::String(q.angularDeg), juce::dontSendNotification);
         }
         chordal.setEnabled(custom); angular.setEnabled(custom);
@@ -192,9 +234,9 @@ private:
         auto s = settings();
         int checked = extraIds.size();
         for (auto* t : partToggles) if (t->getToggleState()) ++checked;
-        if (checked == 0) { summary.setText("Millimetres (mm). No parts checked.", juce::dontSendNotification); exportButton.setEnabled(false); return; }
-        if (!service->planExport(s, preview, error)) { summary.setText("Millimetres (mm).", juce::dontSendNotification); status.setText(error, juce::dontSendNotification); status.setColour(juce::Label::textColourId, kError); exportButton.setEnabled(false); return; }
-        summary.setText("Millimetres (mm). " + preview.scope + ", overall " + juce::String(preview.max[0] - preview.min[0], 2) + " x " + juce::String(preview.max[1] - preview.min[1], 2)
+        if (checked == 0) { summary.setText("No parts checked.", juce::dontSendNotification); exportButton.setEnabled(false); return; }
+        if (!service->planExport(s, preview, error)) { summary.setText({}, juce::dontSendNotification); status.setText(error, juce::dontSendNotification); status.setColour(juce::Label::textColourId, kError); exportButton.setEnabled(false); return; }
+        summary.setText("Sizes in mm; file units " + exporting::unitName(exporting::effectiveUnits(s)) + ", " + (exporting::effectiveYUp(s) ? "Y up. " : "Z up. ") + preview.scope + ", overall " + juce::String(preview.max[0] - preview.min[0], 2) + " x " + juce::String(preview.max[1] - preview.min[1], 2)
                         + " x " + juce::String(preview.max[2] - preview.min[2], 2) + " mm (X x Y x Z).", juce::dontSendNotification);
         status.setText({}, juce::dontSendNotification);
         exportButton.setEnabled(true);
@@ -274,10 +316,10 @@ private:
 
     void setRunning(bool running)
     {
-        for (juce::Component* c : { (juce::Component*) &format, (juce::Component*) &quality, (juce::Component*) &chordal, (juce::Component*) &angular, (juce::Component*) &path,
+        for (juce::Component* c : { (juce::Component*) &format, (juce::Component*) &quality, (juce::Component*) &unitsBox, (juce::Component*) &upBox, (juce::Component*) &chordal, (juce::Component*) &angular, (juce::Component*) &path,
                                     (juce::Component*) &chooseButton, (juce::Component*) &exportButton, (juce::Component*) &partsView, (juce::Component*) &allButton, (juce::Component*) &noneButton })
             c->setEnabled(!running);
-        if (!running) qualityChanged();
+        if (!running) { qualityChanged(); updateFileControls(); }
         closeButton.setButtonText(running ? "Cancel" : "Close");
         progressValue = 0.0;
         bar.setVisible(running);
@@ -290,8 +332,8 @@ private:
 
     std::shared_ptr<CadCommandService> service;
     juce::Label formatLabel { {}, "Format" }, partsLabel { {}, "Parts" }, unitsLabel { {}, "Units and size" }, placementLabel { {}, "Placement" },
-                qualityLabel { {}, "Mesh quality" }, outputLabel { {}, "Output" }, summary, placementNote, formatNote, status, chordalUnit, angularUnit;
-    juce::ComboBox format, quality;
+                qualityLabel { {}, "Mesh quality" }, fileUnitsLabel { {}, "Units / axes" }, outputLabel { {}, "Output" }, summary, placementNote, formatNote, status, chordalUnit, angularUnit;
+    juce::ComboBox format, quality, unitsBox, upBox;
     juce::TextEditor chordal, angular, path;
     juce::OwnedArray<juce::ToggleButton> partToggles;
     juce::StringArray extraIds;
