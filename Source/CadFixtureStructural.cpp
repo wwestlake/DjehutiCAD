@@ -69,8 +69,8 @@ bool CadTestFixture::executeCantilever(juce::var&,juce::Array<juce::var>& rows,j
     if(std::abs(std::abs(direction.Dot(transverse))-1)>1.0e-8)
         return fail("Force must be transverse and in the plane defined by the beam and explicit bending axes (source feature local axes).");
     CadMaterial material;const auto effective=materialFor(body.target);
-    if(!effective.isObject()||!matl::materialFromJson(effective,material,error)||!material.youngsModulusMPa)
-        return fail("Assign a material or fixture substitution with a positive Young's modulus.");
+    if(!effective.isObject()||!matl::materialFromJson(effective,material,error)||material.model!="isotropic"||!material.youngsModulusMPa)
+        return fail("Assign an isotropic material or fixture substitution with a positive Young's modulus.");
     const beam::Input input{units::mmToM(dimensions[beamAxis]),units::mmToM(dimensions[bendingAxis]),
                             units::mmToM(dimensions[transverseAxis]),units::mpaToPa(*material.youngsModulusMPa),signedForce};
     const auto solved=beam::solve(input);if(!solved.valid)return fail(juce::String(solved.error));

@@ -1,7 +1,7 @@
 {
   "format": "djehuti-engineering-catalog",
   "schemaVersion": 1,
-  "materialSchemaVersion": 2,
+  "materialSchemaVersion": 3,
   "stockSchemaVersion": 1,
   "materials": [
     {
@@ -192,6 +192,618 @@
           "unit": "kg/m^3"
         }
       }
+    },
+    {
+      "id": "mat-research-mat-001",
+      "name": "UltiMaker PLA — XY (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker PLA",
+      "condition": "FDM printed; XY",
+      "source": "https://ultimaker.com/materials/pla/",
+      "note": "Research workbook MAT-001, checked 2026-10-20. Process/form: FDM printed; orientation: XY. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 45.5 MPa (not a supported material-model property). Workbook HDT (°C): 58.8 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: No reported yield for Z orientation; HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 3250,
+          "unit": "MPa"
+        },
+        "yieldStrength": {
+          "value": 52.5,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-002",
+      "name": "UltiMaker PLA — YZ (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker PLA",
+      "condition": "FDM printed; YZ",
+      "source": "https://ultimaker.com/materials/pla/",
+      "note": "Research workbook MAT-002, checked 2026-10-20. Process/form: FDM printed; orientation: YZ. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 56 MPa (not a supported material-model property). Workbook HDT (°C): 58.8 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: No reported yield for Z orientation; HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 3292,
+          "unit": "MPa"
+        },
+        "yieldStrength": {
+          "value": 59,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-003",
+      "name": "UltiMaker PLA — Z (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker PLA",
+      "condition": "FDM printed; Z",
+      "source": "https://ultimaker.com/materials/pla/",
+      "note": "Research workbook MAT-003, checked 2026-10-20. Process/form: FDM printed; orientation: Z. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 33.1 MPa (not a supported material-model property). Workbook HDT (°C): 58.8 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: No reported yield for Z orientation; HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 3071,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-004",
+      "name": "UltiMaker Tough PLA — XY (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Tough PLA",
+      "condition": "FDM printed; XY",
+      "source": "https://ultimaker.com/materials/tough-pla/",
+      "note": "Research workbook MAT-004, checked 2026-10-20. Process/form: FDM printed; orientation: XY. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 27.5 MPa (not a supported material-model property). Workbook HDT (°C): 58.3 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 2797,
+          "unit": "MPa"
+        },
+        "yieldStrength": {
+          "value": 45.3,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-005",
+      "name": "UltiMaker Tough PLA — YZ (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Tough PLA",
+      "condition": "FDM printed; YZ",
+      "source": "https://ultimaker.com/materials/tough-pla/",
+      "note": "Research workbook MAT-005, checked 2026-10-20. Process/form: FDM printed; orientation: YZ. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 31.3 MPa (not a supported material-model property). Workbook HDT (°C): 58.3 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 2797,
+          "unit": "MPa"
+        },
+        "yieldStrength": {
+          "value": 47.5,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-006",
+      "name": "UltiMaker Tough PLA — Z (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Tough PLA",
+      "condition": "FDM printed; Z",
+      "source": "https://ultimaker.com/materials/tough-pla/",
+      "note": "Research workbook MAT-006, checked 2026-10-20. Process/form: FDM printed; orientation: Z. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 32.5 MPa (not a supported material-model property). Workbook HDT (°C): 58.3 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 2696,
+          "unit": "MPa"
+        },
+        "yieldStrength": {
+          "value": 33.4,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-007",
+      "name": "UltiMaker ABS — XY (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker ABS",
+      "condition": "FDM printed; XY",
+      "source": "https://ultimaker.com/materials/abs/",
+      "note": "Research workbook MAT-007, checked 2026-10-20. Process/form: FDM printed; orientation: XY. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 33.9 MPa (not a supported material-model property). Workbook HDT (°C): 86.6 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: No yield for Z orientation; HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 1962,
+          "unit": "MPa"
+        },
+        "yieldStrength": {
+          "value": 38.1,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-008",
+      "name": "UltiMaker ABS — YZ (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker ABS",
+      "condition": "FDM printed; YZ",
+      "source": "https://ultimaker.com/materials/abs/",
+      "note": "Research workbook MAT-008, checked 2026-10-20. Process/form: FDM printed; orientation: YZ. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 35.7 MPa (not a supported material-model property). Workbook HDT (°C): 86.6 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: No yield for Z orientation; HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 1931,
+          "unit": "MPa"
+        },
+        "yieldStrength": {
+          "value": 38.2,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-009",
+      "name": "UltiMaker ABS — Z (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker ABS",
+      "condition": "FDM printed; Z",
+      "source": "https://ultimaker.com/materials/abs/",
+      "note": "Research workbook MAT-009, checked 2026-10-20. Process/form: FDM printed; orientation: Z. Basis: UltiMaker printed specimen; orientation specific. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Break Stress (MPa): 19 MPa (not a supported material-model property). Workbook HDT (°C): 86.6 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: No yield for Z orientation; HDT at 0.455 MPa.",
+      "properties": {
+        "youngsModulus": {
+          "value": 1699,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-010",
+      "name": "UltiMaker Method PETG (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Method PETG",
+      "condition": "Method-series FDM; Unspecified",
+      "source": "https://ultimaker.com/materials/method-materials/",
+      "note": "Research workbook MAT-010, checked 2026-10-20. Process/form: Method-series FDM; orientation: Unspecified. Basis: Manufacturer Method series; tensile strength and flexural modulus as shown. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2050 MPa (not a supported material-model property). Workbook HDT (°C): 70 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Do not substitute flexural modulus for tensile modulus.",
+      "properties": {
+        "tensileStrength": {
+          "value": 50,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-011",
+      "name": "UltiMaker Method ABS (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Method ABS",
+      "condition": "Method-series FDM; Unspecified",
+      "source": "https://ultimaker.com/materials/method-materials/",
+      "note": "Research workbook MAT-011, checked 2026-10-20. Process/form: Method-series FDM; orientation: Unspecified. Basis: Manufacturer Method series; tensile strength and flexural modulus as shown. Incomplete reference data; not a qualified isotropic constitutive model. Workbook HDT (°C): 84 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Do not substitute flexural modulus for tensile modulus.",
+      "properties": {
+        "tensileStrength": {
+          "value": 43,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-012",
+      "name": "UltiMaker Method ABS-R (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Method ABS-R",
+      "condition": "Method-series FDM; Unspecified",
+      "source": "https://ultimaker.com/materials/method-materials/",
+      "note": "Research workbook MAT-012, checked 2026-10-20. Process/form: Method-series FDM; orientation: Unspecified. Basis: Manufacturer Method series; tensile strength and flexural modulus as shown. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2600 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Published HDT range: 102–105 °C; no midpoint stored as a measured value. Flexural ≠ tensile modulus..",
+      "properties": {
+        "tensileStrength": {
+          "value": 41,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-013",
+      "name": "UltiMaker Method ASA (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Method ASA",
+      "condition": "Method-series FDM; Unspecified",
+      "source": "https://ultimaker.com/materials/method-materials/",
+      "note": "Research workbook MAT-013, checked 2026-10-20. Process/form: Method-series FDM; orientation: Unspecified. Basis: Manufacturer Method series; tensile strength and flexural modulus as shown. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2300 MPa (not a supported material-model property). Workbook HDT (°C): 96 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Do not substitute flexural modulus for tensile modulus.",
+      "properties": {
+        "tensileStrength": {
+          "value": 49,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-014",
+      "name": "UltiMaker Method Nylon (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Printed polymer",
+      "specification": "UltiMaker Method Nylon",
+      "condition": "Method-series FDM; Unspecified",
+      "source": "https://ultimaker.com/materials/method-materials/",
+      "note": "Research workbook MAT-014, checked 2026-10-20. Process/form: Method-series FDM; orientation: Unspecified. Basis: Manufacturer Method series; tensile strength and flexural modulus as shown. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 1700 MPa (not a supported material-model property). Workbook HDT (°C): 91 °C (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Do not substitute flexural modulus for tensile modulus.",
+      "properties": {
+        "tensileStrength": {
+          "value": 66,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-015",
+      "name": "Extruded Nylon 6/6 (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Extruded Nylon 6/6",
+      "condition": "Bulk/extruded or cast; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/Nylon/",
+      "note": "Research workbook MAT-015, checked 2026-10-20. Process/form: Bulk/extruded or cast; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2826.9 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade properties; density approximated from SG at water reference, not a printed-part property.",
+      "properties": {
+        "density": {
+          "value": 1140,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 3240.5,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 85.5,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-016",
+      "name": "Cast Nylon 6 (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Cast Nylon 6",
+      "condition": "Bulk/extruded or cast; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/Nylon/",
+      "note": "Research workbook MAT-016, checked 2026-10-20. Process/form: Bulk/extruded or cast; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 3447.4 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade properties; density approximated from SG at water reference, not a printed-part property.",
+      "properties": {
+        "density": {
+          "value": 1150,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 2757.9,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 82.7,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-017",
+      "name": "MD-filled Cast Nylon 6 (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "MD-filled Cast Nylon 6",
+      "condition": "Bulk/extruded or cast; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/Nylon/",
+      "note": "Research workbook MAT-017, checked 2026-10-20. Process/form: Bulk/extruded or cast; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 3447.4 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade properties; density approximated from SG at water reference, not a printed-part property.",
+      "properties": {
+        "density": {
+          "value": 1160,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 2757.9,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 75.8,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-018",
+      "name": "Oil-filled Cast Nylon 6 (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Oil-filled Cast Nylon 6",
+      "condition": "Bulk/extruded or cast; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/Nylon/",
+      "note": "Research workbook MAT-018, checked 2026-10-20. Process/form: Bulk/extruded or cast; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 3619.7 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade properties; density approximated from SG at water reference, not a printed-part property.",
+      "properties": {
+        "density": {
+          "value": 1140,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 3206.1,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 68.3,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-019",
+      "name": "Acetal homopolymer (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Acetal homopolymer",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/acetal/",
+      "note": "Research workbook MAT-019, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2895.8 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade data; check values with manufacturer before design allowables.",
+      "properties": {
+        "density": {
+          "value": 1420,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 3102.6,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 68.9,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-020",
+      "name": "Acetal copolymer (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Acetal copolymer",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/acetal/",
+      "note": "Research workbook MAT-020, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2551.1 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade data; check values with manufacturer before design allowables.",
+      "properties": {
+        "density": {
+          "value": 1410,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 2964.7,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 67.6,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-021",
+      "name": "Acetal PTFE-filled (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Acetal PTFE-filled",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/acetal/",
+      "note": "Research workbook MAT-021, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2413.2 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade data; check values with manufacturer before design allowables.",
+      "properties": {
+        "youngsModulus": {
+          "value": 2620,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 46.9,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-022",
+      "name": "Acetal homopolymer 20% GF (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Acetal homopolymer 20% GF",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/acetal/",
+      "note": "Research workbook MAT-022, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 5033.2 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Typical grade data; check values with manufacturer before design allowables.",
+      "properties": {
+        "youngsModulus": {
+          "value": 2413.2,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 58.6,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-023",
+      "name": "Polycarbonate (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Polycarbonate",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/polycarbonate/",
+      "note": "Research workbook MAT-023, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2378.7 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Representative bulk-stock data, not for 3D printed geometry.",
+      "properties": {
+        "density": {
+          "value": 1200,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 2378.7,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 65.5,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-024",
+      "name": "Polycarbonate 20% glass-filled (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "Polycarbonate 20% glass-filled",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/polycarbonate/",
+      "note": "Research workbook MAT-024, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 tensile; ASTM D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 5515.8 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Representative bulk-stock data, not for 3D printed geometry.",
+      "properties": {
+        "density": {
+          "value": 1350,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 5929.5,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 110.3,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-025",
+      "name": "ABS (general purpose bulk) (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "ABS (general purpose bulk)",
+      "condition": "Extruded/machined stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/abs/",
+      "note": "Research workbook MAT-025, checked 2026-10-20. Process/form: Extruded/machined stock; orientation: Isotropic typical. Basis: ASTM D638 tensile, D790 flexural, D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 2096 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Bulk grade only; printed ABS properties tracked separately.",
+      "properties": {
+        "density": {
+          "value": 1040,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 2027.1,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 28.3,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-026",
+      "name": "HDPE (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "HDPE",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/hdpe/",
+      "note": "Research workbook MAT-026, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 strength; D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 1379 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Tensile Young's modulus not published in cited table; DO NOT equate it to flexural modulus.",
+      "properties": {
+        "density": {
+          "value": 960,
+          "unit": "kg/m^3"
+        },
+        "tensileStrength": {
+          "value": 27.6,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-027",
+      "name": "UHMW-PE (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "UHMW-PE",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/uhmw/",
+      "note": "Research workbook MAT-027, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 strength; D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 758.4 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Tensile Young's modulus not published in cited table; DO NOT equate it to flexural modulus.",
+      "properties": {
+        "density": {
+          "value": 930,
+          "unit": "kg/m^3"
+        },
+        "tensileStrength": {
+          "value": 21.4,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-028",
+      "name": "PPS (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Engineering plastic",
+      "specification": "PPS",
+      "condition": "Bulk stock; Isotropic typical",
+      "source": "https://www.curbellplastics.com/materials/plastics/pps/",
+      "note": "Research workbook MAT-028, checked 2026-10-20. Process/form: Bulk stock; orientation: Isotropic typical. Basis: ASTM D638 tensile; D790 flexural; D792 SG. Incomplete reference data; not a qualified isotropic constitutive model. Workbook Flexural Modulus (MPa): 4136.9 MPa (not a supported material-model property). Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Representative stock values; verify supplier grade.",
+      "properties": {
+        "density": {
+          "value": 1350,
+          "unit": "kg/m^3"
+        },
+        "youngsModulus": {
+          "value": 3309.5,
+          "unit": "MPa"
+        },
+        "tensileStrength": {
+          "value": 86.2,
+          "unit": "MPa"
+        }
+      }
+    },
+    {
+      "id": "mat-research-mat-029",
+      "name": "6063-T5 aluminum (REV stock) (reference)",
+      "revision": 1,
+      "model": "referenceOnly",
+      "family": "Aluminum",
+      "specification": "6063-T5 aluminum (REV stock)",
+      "condition": "Extruded rail; Unspecified",
+      "source": "https://www.revrobotics.com/15mm-extrusions/",
+      "note": "Research workbook MAT-029, checked 2026-10-20. Process/form: Extruded rail; orientation: Unspecified. Basis: Material identification from REV product page. Incomplete reference data; not a qualified isotropic constitutive model. Data Status: Reference only. Rights / Terms: Published data; verify reproduction rights. Notes / Cautions: Mechanical strength and elastic modulus not populated; require alloy-condition datasheet.",
+      "properties": {}
     }
   ],
   "stocks": [

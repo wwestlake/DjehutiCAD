@@ -3,6 +3,30 @@
     "schemaVersion":  1,
     "records":  [
                     {
+                        "id": "servo-positional-adafruit-1143-mg90d",
+                        "name": "Adafruit 1143 MG90D digital micro servo",
+                        "manufacturer": "OEM unspecified; sold by Adafruit",
+                        "partNumber": "1143",
+                        "model": "MG90D",
+                        "revision": 1,
+                        "origin": "commercial",
+                        "category": "Motion/Servos",
+                        "description": "Research snapshot from Robot Purchased Components — Mechanical & Electrical Reference (2026-10-21). Housing dimensions are a nominal envelope only. Mounting tabs, horn, 20-tooth spline geometry and shaft height are not specified sufficiently for a fit model. Stall torque is not a continuous-duty rating.",
+                        "sourceUrl": "https://www.adafruit.com/product/1143",
+                        "massKg": 0.0134,
+                        "properties": [
+                            {"id":"mass","label":"Published mass","quantity":"mass","value":13.4,"unit":"g","conditions":{},"provenance":"manufacturer_published","verification":"unverified","sourceRefs":["adafruit-1143"]},
+                            {"id":"supply_min","label":"Operating voltage minimum","quantity":"voltage","value":4.8,"unit":"V","conditions":{},"provenance":"manufacturer_published","verification":"unverified","sourceRefs":["adafruit-1143"]},
+                            {"id":"supply_max","label":"Operating voltage maximum","quantity":"voltage","value":6,"unit":"V","conditions":{},"provenance":"manufacturer_published","verification":"unverified","sourceRefs":["adafruit-1143"]},
+                            {"id":"stall_torque_4v8","label":"Stall torque at 4.8 V","quantity":"torque","value":2.1,"unit":"kgf cm","conditions":{"supply":{"quantity":"voltage","value":4.8,"unit":"V"}},"provenance":"manufacturer_published","verification":"unverified","sourceRefs":["adafruit-1143"]},
+                            {"id":"stall_torque_6v","label":"Stall torque at 6 V","quantity":"torque","value":2.4,"unit":"kgf cm","conditions":{"supply":{"quantity":"voltage","value":6,"unit":"V"}},"provenance":"manufacturer_published","verification":"unverified","sourceRefs":["adafruit-1143"]},
+                            {"id":"transit_4v8","label":"No-load transit per 60 degrees at 4.8 V","quantity":"time","value":0.1,"unit":"s","conditions":{"supply":{"quantity":"voltage","value":4.8,"unit":"V"}},"provenance":"manufacturer_published","verification":"unverified","sourceRefs":["adafruit-1143"]},
+                            {"id":"transit_6v","label":"No-load transit per 60 degrees at 6 V","quantity":"time","value":0.08,"unit":"s","conditions":{"supply":{"quantity":"voltage","value":6,"unit":"V"}},"provenance":"manufacturer_published","verification":"unverified","sourceRefs":["adafruit-1143"]}
+                        ],
+                        "geometry": {"kind":"envelope","level":"envelope","label":"Approximate rectangular housing envelope only; 22.8 x 12.2 x 28.5 mm. Mounting and spline omitted.","widthMm":12.2,"heightMm":28.5,"lengthMm":22.8},
+                        "provenance": {"sourceDocument":"Robot Purchased Components — Mechanical & Electrical Reference — 2026-10-21.docx","sourceUrl":"https://www.adafruit.com/product/1143","sourceAccessDate":"2026-10-21","geometryStatus":"approximate envelope; no manufacturer CAD acquired"}
+                    },
+                    {
                         "id":  "servo-positional-towerpro-sg90",
                         "name":  "TowerPro SG90 micro servo",
                         "manufacturer":  "TowerPro",

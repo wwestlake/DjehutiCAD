@@ -211,6 +211,11 @@ bool extractModel(const CadDocument& doc, const CadAnalysisCase& analysisCase,
         {
             if (const auto* mat = doc.materialsData().find(assign->materialId))
             {
+                if (mat->model == "referenceOnly")
+                {
+                    diagnostic = "Material " + mat->name + " is reference-only; choose a qualified structural material for analysis.";
+                    return false;
+                }
                 if (mat->youngsModulusMPa.has_value())
                 {
                     E = *mat->youngsModulusMPa * 1e6;

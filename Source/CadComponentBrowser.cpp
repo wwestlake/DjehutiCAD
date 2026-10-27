@@ -193,7 +193,9 @@ bool CadComponentBrowser::componentCheck(juce::var& report,const juce::File& fol
     search.clear();geometry.setSelectedId(3,juce::dontSendNotification);filter();check(shown.size()>=7&&!insert.isEnabled(),"Catalog-only records are browsable and cannot fabricate geometry");geometry.setSelectedId(1,juce::dontSendNotification);search.setText("BLF-1203W");filter();
     // TreeView normally lays out asynchronously. Flush its public root binding before the synchronous
     // component snapshot, so the diagnostic captures final category bounds rather than startup bounds.
-    categories.setRootItem(nullptr);categories.setRootItem(root.get());check(root->getNumSubItems()==4&&categories.getNumRowsInTree()>=8,"Actual category hierarchy contains Structure, Motion and Electrical, with expandable children");
+    search.clear();filter();categories.setRootItem(nullptr);categories.setRootItem(root.get());
+    juce::StringArray topCategories;for(int i=0;i<root->getNumSubItems();++i)topCategories.add(static_cast<Category*>(root->getSubItem(i))->label);
+    check(topCategories.contains("Structure")&&topCategories.contains("Motion")&&topCategories.contains("Electrical")&&categories.getNumRowsInTree()>=8,"Actual category hierarchy contains Structure, Motion and Electrical, with expandable children");
     // Navigation responsiveness: the selection callback must return at once, show the selection and a loading state, and a
     // later selection must stay authoritative over slower earlier loads.
     search.clear();manufacturer.setSelectedId(1,juce::dontSendNotification);origin.setSelectedId(1,juce::dontSendNotification);geometry.setSelectedId(1,juce::dontSendNotification);chemistry.setSelectedId(1,juce::dontSendNotification);

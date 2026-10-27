@@ -43,7 +43,7 @@ const PropertySlot slots[] {
 bool isNumber(const juce::var& v) { return v.isInt() || v.isInt64() || v.isDouble(); }
 }
 
-juce::StringArray knownModels() { return { "isotropic", "densityOnly" }; }
+juce::StringArray knownModels() { return { "isotropic", "densityOnly", "referenceOnly" }; }
 
 juce::String unitOf(const juce::String& propertyKey)
 {

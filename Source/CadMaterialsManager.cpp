@@ -36,9 +36,11 @@ public:
         scope.addItemList({"Application catalog", "Current document"}, 1); scope.setSelectedId(1);
         kind.addItemList({"Engineering materials", "Sheet stock"}, 1); kind.setSelectedId(1);
         scope.onChange = [this] { selected.clear(); reload(); }; kind.onChange = [this] { selected.clear(); reload(); };
+        search.setTextToShowWhenEmpty("Search materials or stock...", juce::Colour(0xff8da5b6));
+        search.onTextChange = [this] { reload(); };
         list.setModel(this); list.setRowHeight(48); list.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff18232c));
         part.onChange = [this] { partsSelection = part.getSelectedId() > 0 ? partIds[part.getSelectedId()-1] : juce::String(); updateSummary(); };
-        for (auto* c : std::vector<juce::Component*>{&title,&scope,&kind,&list,&properties,&part,&summary,&status,&newButton,&edit,&duplicate,&remove,&save,&cancel,&importButton,&assign,&clearMaterial,&makeDefault,&clearDefault,&undo,&redo,&importFile,&exportFile,&refresh}) addAndMakeVisible(*c);
+        for (auto* c : std::vector<juce::Component*>{&title,&scope,&kind,&search,&list,&properties,&part,&summary,&status,&newButton,&edit,&duplicate,&remove,&save,&cancel,&importButton,&assign,&clearMaterial,&makeDefault,&clearDefault,&undo,&redo,&importFile,&exportFile,&refresh}) addAndMakeVisible(*c);
         newButton.onClick = [this] { begin("create"); }; edit.onClick = [this] { begin("update"); }; duplicate.onClick = [this] { begin("duplicate"); };
         cancel.onClick = [this] { editing = false; reload(); };
         save.onClick = [this] { saveDraft(); };
@@ -95,6 +97,12 @@ public:
             juce::FileOutputStream output(folder.getChildFile(filename));
             check(output.openedOk() && juce::PNGImageFormat().writeImageToStream(image, output), juce::String("Render ") + filename);
         };
+        search.setText("PETG",true);
+        reload();
+        check(rows.size()==1&&rows[0]["id"].toString()=="mat-research-mat-010"&&current()["model"]=="referenceOnly",
+              "Material search finds the researched PETG reference and its incomplete model (rows="+juce::String(rows.size())+", selected="+selected+")");
+        search.setText(juce::String(),true);
+        reload();
         check(scope.getText() == "Application catalog" && material() && !edit.isEnabled() && duplicate.isEnabled(), "Bundled references are inspectable and read-only");
         capture("01-reference-material.png");
         newButton.onClick(); save.onClick();
@@ -160,6 +168,7 @@ public:
         auto filters=area.removeFromTop(38); scope.setBounds(filters.removeFromLeft(245).reduced(2)); kind.setBounds(filters.removeFromLeft(235).reduced(2));
         importFile.setBounds(filters.removeFromLeft(140).reduced(2)); exportFile.setBounds(filters.removeFromLeft(140).reduced(2)); refresh.setBounds(filters.removeFromLeft(90).reduced(2));
         auto actions=area.removeFromTop(38); for(auto* b:{&newButton,&edit,&duplicate,&remove,&save,&cancel}) b->setBounds(actions.removeFromLeft(100).reduced(2));
+        search.setBounds(area.removeFromTop(34).removeFromLeft(340).reduced(2));
         auto bottom=area.removeFromBottom(165); status.setBounds(bottom.removeFromBottom(44));
         auto history=bottom.removeFromBottom(36); undo.setBounds(history.removeFromLeft(85).reduced(2)); redo.setBounds(history.removeFromLeft(85).reduced(2)); clearDefault.setBounds(history.removeFromLeft(170).reduced(2));
         auto usage=bottom.removeFromBottom(38); importButton.setBounds(usage.removeFromLeft(172).reduced(2)); assign.setBounds(usage.removeFromLeft(182).reduced(2)); clearMaterial.setBounds(usage.removeFromLeft(150).reduced(2)); makeDefault.setBounds(usage.removeFromLeft(190).reduced(2));
@@ -178,7 +187,8 @@ private:
         g.setColour(juce::Colours::white); g.setFont(14.0f); g.drawFittedText(row["name"].toString(),8,3,width-16,23,juce::Justification::centredLeft,1);
         g.setColour(juce::Colour(0xffaac0d1));g.setFont(11.0f);
         const auto origin=catalog()?((bool)row["bundled"]?"Bundled / read-only":"User catalog"):"Document snapshot";
-        g.drawText(juce::String(origin)+"  |  rev "+row["revision"].toString(),8,26,width-16,height-28,juce::Justification::centredLeft);
+        const auto family=material()?row["family"].toString():juce::String();
+        g.drawText(juce::String(origin)+(family.isNotEmpty()?"  |  "+family:juce::String())+"  |  rev "+row["revision"].toString(),8,26,width-16,height-28,juce::Justification::centredLeft);
     }
     void selectedRowsChanged(int index) override
     {
@@ -199,6 +209,13 @@ private:
         }
         else if(material())for(const auto& m:service->document().materialsData().materials)rows.add(matl::materialToJson(m));
         else for(const auto& s:service->document().stocksData().stocks)rows.add(stock::toJson(s));
+        const auto query=search.getText().trim();
+        if(query.isNotEmpty())
+            for(int i=rows.size()-1;i>=0;--i)
+            {
+                const auto& row=rows.getReference(i);
+                if(!(row["name"].toString()+" "+row["family"].toString()+" "+row["specification"].toString()+" "+row["condition"].toString()+" "+row["source"].toString()).containsIgnoreCase(query))rows.remove(i);
+            }
         if(rowIndex()<0)selected=rows.isEmpty()?juce::String():rows[0]["id"].toString();
         list.updateContent();list.selectRow(rowIndex());showRow();updateSummary();
         shownRevision=service->document().revision();shownDocument=service->document().documentInstance();
@@ -216,7 +233,7 @@ private:
         {
             draft["model"] = value.getProperty("model", "isotropic").toString();
             for(auto key:{"name","family","specification","condition","source","note"})draft[key]=value[key].toString();
-            for(auto pair:{std::pair<const char*,const char*>{"densityKgPerM3","density"},{"youngsModulusMPa","youngsModulus"},{"poissonsRatio","poissonsRatio"},{"yieldStrengthMPa","yieldStrength"}})
+            for(auto pair:{std::pair<const char*,const char*>{"densityKgPerM3","density"},{"youngsModulusMPa","youngsModulus"},{"poissonsRatio","poissonsRatio"},{"yieldStrengthMPa","yieldStrength"},{"tensileStrengthMPa","tensileStrength"}})
                 draft[pair.first]=value["properties"][pair.second]["value"].toString();
         }
         else
@@ -234,9 +251,9 @@ private:
         text("name","Name");
         if(material())
         {
-            fields.add(new ChoiceField("Material model", draft["model"], {"Isotropic elastic", "Density only (no structural properties)"}, {"isotropic", "densityOnly"}));
+            fields.add(new ChoiceField("Material model", draft["model"], {"Isotropic elastic", "Density only (no structural properties)", "Reference only (incomplete properties)"}, {"isotropic", "densityOnly", "referenceOnly"}));
             text("family","Material family");text("specification","Alloy / specification");text("condition","Condition / temper");
-            text("densityKgPerM3","Density (kg/m^3)");text("youngsModulusMPa","Young's modulus (MPa)");text("poissonsRatio","Poisson's ratio");text("yieldStrengthMPa","Yield strength (MPa)");
+            text("densityKgPerM3","Density (kg/m^3)");text("youngsModulusMPa","Young's modulus (MPa)");text("poissonsRatio","Poisson's ratio");text("yieldStrengthMPa","Yield strength (MPa)");text("tensileStrengthMPa","Tensile strength (MPa)");
         }
         else
         {
@@ -268,7 +285,7 @@ private:
     bool definition(juce::var& result,juce::String& error)
     {
         result=object();auto* o=result.getDynamicObject();
-        const juce::StringArray numbers=material()?juce::StringArray{"densityKgPerM3","youngsModulusMPa","poissonsRatio","yieldStrengthMPa"}:juce::StringArray{"thicknessMm","finishedThicknessMm","sheetWidthMm","sheetLengthMm","insideRadiusMm","kFactor"};
+        const juce::StringArray numbers=material()?juce::StringArray{"densityKgPerM3","youngsModulusMPa","poissonsRatio","yieldStrengthMPa","tensileStrengthMPa"}:juce::StringArray{"thicknessMm","finishedThicknessMm","sheetWidthMm","sheetLengthMm","insideRadiusMm","kFactor"};
         juce::Array<juce::var> clear;
         for(const auto& [key,value]:draft)
         {
@@ -277,7 +294,7 @@ private:
             const auto raw=value.trim().toStdString();
             if(raw.empty())
             {
-                if(key=="densityKgPerM3"||key=="thicknessMm"||((key=="youngsModulusMPa"||key=="poissonsRatio")&&draft["model"]=="isotropic")){error=key+" is required.";return false;}
+                if((key=="densityKgPerM3"&&draft["model"]!="referenceOnly")||key=="thicknessMm"||((key=="youngsModulusMPa"||key=="poissonsRatio")&&draft["model"]=="isotropic")){error=key+" is required.";return false;}
                 if(material())clear.add(key);else o->setProperty(key,juce::var());continue;
             }
             char* end=nullptr;const auto number=std::strtod(raw.c_str(),&end);
@@ -328,7 +345,7 @@ private:
         save.setEnabled(editing);cancel.setEnabled(editing);importButton.setEnabled(!editing&&catalog()&&exists);assign.setEnabled(!editing&&material()&&exists&&partsSelection.isNotEmpty());
         clearMaterial.setEnabled(!editing&&partsSelection.isNotEmpty()&&service->document().materialsData().assignmentFor(partsSelection));
         makeDefault.setEnabled(!editing&&!material()&&exists);clearDefault.setEnabled(!editing&&service->document().stocksData().defaultStockId.isNotEmpty());
-        undo.setEnabled(!editing);redo.setEnabled(!editing);importFile.setEnabled(!editing);exportFile.setEnabled(!editing);refresh.setEnabled(!editing);
+        undo.setEnabled(!editing);redo.setEnabled(!editing);importFile.setEnabled(!editing);exportFile.setEnabled(!editing);refresh.setEnabled(!editing);search.setEnabled(!editing);
     }
     void updateSummary()
     {
@@ -352,7 +369,7 @@ private:
     }
     void timerCallback() override {if(!editing&&(shownRevision!=service->document().revision()||shownDocument!=service->document().documentInstance()))reload();}
     std::shared_ptr<CadCommandService> service;
-    juce::Label title,summary,status;juce::ComboBox scope,kind,part;juce::ListBox list;juce::PropertyPanel properties;
+    juce::Label title,summary,status;juce::ComboBox scope,kind,part;juce::TextEditor search;juce::ListBox list;juce::PropertyPanel properties;
     juce::TextButton newButton{"New"},edit{"Edit"},duplicate{"Duplicate"},remove{"Delete"},save{"Save"},cancel{"Cancel edit"},importButton{"Import into document"},assign{"Assign to selected part"},clearMaterial{"Clear material"},makeDefault{"Use as default stock"},clearDefault{"Clear default stock"},undo{"Undo"},redo{"Redo"},importFile{"Import catalog..."},exportFile{"Export catalog..."},refresh{"Reload"};
     juce::Array<juce::var> rows;juce::String selected,partsSelection,operation,draftId;juce::StringArray partIds;std::map<juce::String,juce::String> draft;
     std::unique_ptr<juce::FileChooser> chooser;bool editing=false,reloading=false;int draftRevision=0;std::uint64_t draftDocument=0,shownRevision=0,shownDocument=0;

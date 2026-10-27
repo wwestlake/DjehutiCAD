@@ -15,6 +15,7 @@
 // dimensionless ("1"), yield strength MPa. An absent property is "unspecified", which is different from zero.
 //
 // Constitutive models: "densityOnly" supports mass without elastic assumptions; "isotropic" requires E and nu.
+// "referenceOnly" retains incomplete published properties for selection/provenance but is not a constitutive model.
 // The model name and the keyed
 // property map leave room for direction-dependent models (e.g. orthotropic properties of 3-D printed plastics)
 // as new model names in a later schema, without changing how isotropic materials are stored.
@@ -51,7 +52,7 @@ struct CadMaterialAssignment
 
 struct CadMaterials
 {
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;
     int nextNumber = 1;
     std::vector<CadMaterial> materials;
     std::vector<CadMaterialAssignment> assignments;

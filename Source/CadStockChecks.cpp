@@ -21,6 +21,28 @@ bool runCadStockCheck(juce::var& report)
     CadCommandService svc;svc.setCatalogFile(folder.getChildFile("user.json"));juce::String error,box;
     svc.createBox(20,30,5,box,error);
     auto catalog=svc.catalogCommand(parse("{}"));record(ok(catalog)&&catalog["catalog"]["materials"].size()>=5&&catalog["catalog"]["stocks"].size()>0,"bundled catalogs load without a user file",text(catalog));
+    juce::var researched,aluminum;
+    for(const auto& item:*catalog["catalog"]["materials"].getArray())
+    {
+        if(item["id"].toString()=="mat-research-mat-010")researched=item;
+        if(item["id"].toString()=="mat-ref-6061-t6")aluminum=item;
+    }
+    record(researched.isObject()&&researched["model"]=="referenceOnly"&&researched["properties"]["density"].isVoid()&&(double)researched["properties"]["tensileStrength"]["value"]==50.0,
+           "PETG research values remain selectable without invented density or elastic constants");
+    record(aluminum.isObject()&&aluminum["model"]=="isotropic"&&aluminum["properties"]["youngsModulus"].isObject(),"engineering metal reference remains available");
+    auto reference=svc.catalogCommand(parse(R"({"action":"useMaterial","material":"mat-research-mat-010","feature":")"+box+R"("})"));
+    record(ok(reference)&&svc.document().materialsData().assignmentFor(box),"reference-only PETG imports and assigns through the shared catalog command",text(reference));
+    for(const auto* extension:{"djo","djc"})
+    {
+        const auto path=folder.getChildFile(juce::String("petg-reference.")+extension);
+        CadCommandService opened;juce::String reopenError;
+        const bool saved=svc.save(path,reopenError),reopened=saved&&opened.load(path,reopenError);
+        const auto* assignment=reopened?opened.document().materialsData().assignmentFor(box):nullptr;
+        const auto* local=assignment?opened.document().materialsData().find(assignment->materialId):nullptr;
+        record(reopened&&local&&local->model=="referenceOnly"&&local->tensileStrengthMPa==50.0,
+               "PETG assignment and unknown values survive "+juce::String(extension)+" reopen",reopenError);
+    }
+    record(svc.undo(error)&&svc.document().materialsData().empty(),"PETG import and assignment undo together",error);
     auto r=svc.catalogCommand(parse(R"({"action":"createMaterial","definition":{"name":"Check alloy","family":"Aluminum","specification":"TEST ONLY","condition":"Check condition","source":"diagnostic fixture","densityKgPerM3":2700,"youngsModulusMPa":69000,"poissonsRatio":0.33}})"));
     const auto material=r["id"].toString();record(ok(r)&&material.startsWith("mat-"),"create user engineering material",text(r));
     r=svc.catalogCommand(parse(R"({"action":"updateMaterial","material":")"+material+R"(","definition":{"name":"Check alloy revised"}})"));
