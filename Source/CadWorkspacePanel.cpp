@@ -215,11 +215,13 @@ public:
         juce::Array<juce::var> result;
         for (const auto& row : rows)
         {
-            if (row.key.isEmpty() || !row.visible || !row.control) continue;
+            if (row.key.isEmpty() || !row.visible || (!row.control && !row.caption)) continue;
             auto* item = new juce::DynamicObject(); item->setProperty("id", row.key);
             item->setProperty("label", row.caption ? row.caption->getText() : row.key);
-            item->setProperty("enabled", row.control->isEnabled());
-            if (auto* e = dynamic_cast<juce::TextEditor*>(row.control.get()))
+            item->setProperty("enabled", row.control != nullptr && row.control->isEnabled());
+            if (row.control == nullptr)
+            { item->setProperty("type", "note"); item->setProperty("value", row.caption->getText()); }
+            else if (auto* e = dynamic_cast<juce::TextEditor*>(row.control.get()))
             { item->setProperty("type", row.unit ? "number" : "text"); item->setProperty("value", e->getText()); if (row.unit) item->setProperty("unit", row.unit->getText()); }
             else if (auto* t = dynamic_cast<juce::ToggleButton*>(row.control.get()))
             { item->setProperty("type", "toggle"); item->setProperty("label", t->getButtonText()); item->setProperty("value", t->getToggleState()); }
@@ -2799,6 +2801,12 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             title = f->name; instruction = shell?"Inspect this shell or edit its source surfaces.":"Edit the selected body, then press Apply."; cancel = "Revert";
             form->addHeader(shell?"Shell":"Body");
             form->addText("name", "Name", f->name, "Friendly feature name shown in the model tree.");
+            juce::String materialName = "None";
+            if (const auto* assignment = document.materialsData().assignmentFor(selectedId))
+                if (const auto* material = document.materialsData().find(assignment->materialId)) materialName = material->name;
+            form->addHeader("Material");
+            form->addNote("assignedMaterial", "Material: " + materialName, 2);
+            form->addButton("materials", "Materials and Sheet Stock...", [this] { showMaterialsManager(); }, "Browse engineering materials and assign, change or clear this part's material.");
             if (f->type == "box")
             {
                 form->addHeader("Dimensions");
@@ -2902,11 +2910,6 @@ void CadWorkspacePanel::rebuildTaskPanel(bool keepValues)
             form->addNumber("ry", "Rotate Y", f->ry, "deg", "Rotation about world Y, applied second.");
             form->addNumber("rz", "Rotate Z", f->rz, "deg", "Rotation about world Z, applied last.");
             form->addNote({}, "Placement moves the whole body; its modeled geometry is unchanged. Press T (Move / Rotate) to drag it in the view.", 2);
-            juce::String materialText = "No engineering material assigned.";
-            if (const auto* a = document.materialsData().assignmentFor(selectedId))
-                if (const auto* m = document.materialsData().find(a->materialId)) materialText = "Material: " + m->name + " (revision " + juce::String(m->revision) + ")";
-            form->addNote({}, materialText, 2);
-            form->addButton("materials", "Materials and Sheet Stock...", [this] { showMaterialsManager(); }, "Manage libraries and assign a physical material to this part.");
             form->addHeader("Actions");
             const auto id = selectedId;
             form->addButton("visibility", f->visible ? "Hide" : "Show", [this, id] { postUiAction([safe = juce::Component::SafePointer<CadWorkspacePanel>(this), id] { if (safe != nullptr) safe->toggleVisibility(id); }); }, "Toggle visibility in the model view.");

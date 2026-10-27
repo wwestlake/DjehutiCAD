@@ -1,4 +1,5 @@
 #include "CadMaterialsManager.h"
+#include "CadWorkspacePanel.h"
 #include <cmath>
 #include <cstdlib>
 
@@ -62,6 +63,11 @@ public:
         status.setColour(juce::Label::textColourId,juce::Colour(0xffa9c9dd));
         importButton.setTooltip("Copy a self-contained snapshot into this document. Catalog changes never update it automatically.");
         makeDefault.setTooltip("Choose stock for future sheet features; this does not convert or modify any existing solid.");
+        if (const auto* assignment = service->document().materialsData().assignmentFor(partsSelection))
+        {
+            scope.setSelectedId(2, juce::dontSendNotification);
+            selected = assignment->materialId;
+        }
         reload(); message("Select a definition to inspect. Duplicate bundled references to customize; blank forming values are unspecified."); startTimerHz(3);
     }
     ~Manager() override { stopTimer(); list.setModel(nullptr); properties.clear(); }
@@ -145,6 +151,9 @@ public:
         kind.setSelectedId(1, juce::sendNotificationSync); assign.onClick();
         const auto* assignment = service->document().materialsData().assignmentFor(partsSelection);
         check(assignment && assignment->materialId == documentMaterialId && summary.getText().contains("UI smoke aluminum"), "Assignment control and current-assignment display share document definitions");
+        Manager reopened(service,partsSelection);
+        check(reopened.scope.getSelectedId()==2&&reopened.kind.getSelectedId()==1&&reopened.current()["id"].toString()==documentMaterialId,
+              "Opening the material browser for an assigned part preselects its document material");
         capture("03-assigned-material.png");
         kind.setSelectedId(2, juce::sendNotificationSync); edit.onClick(); field("Substrate thickness (mm)", "1.55"); save.onClick();
         check(service->document().stocksData().find(documentStockId)->revision == 2, "Document stock editor commits a shared revision");
@@ -384,12 +393,45 @@ juce::DialogWindow* showCadMaterialsManager(std::shared_ptr<djehuti::cad::CadCom
 
 bool runCadStockUiCheck(juce::var& report, const juce::File& folder)
 {
+    using namespace djehuti::cad;
+    const auto object=[]()->juce::var { return new juce::DynamicObject(); };
+    const auto put=[](juce::var& target,const char* key,const juce::var& value) { target.getDynamicObject()->setProperty(key,value); };
     folder.createDirectory();
     auto service = std::make_shared<djehuti::cad::CadCommandService>(); service->setCatalogFile(folder.getChildFile("catalog.json"));
     juce::String box, error; service->createBox(20, 30, 5, box, error);
     auto* dialog = showCadMaterialsManager(service, box);
     auto* manager = dynamic_cast<Manager*>(dialog->getContentComponent());
-    const bool passed = manager && manager->smokeCheck(folder, report);
+    if (manager == nullptr) { dialog->exitModalState(0); return false; }
+    bool passed = manager->smokeCheck(folder, report);
     dialog->exitModalState(0);
+    auto panelService = std::make_shared<djehuti::cad::CadCommandService>();
+    panelService->setCatalogFile(folder.getChildFile("panel-catalog.json"));
+    juce::String panelBox, panelError;
+    if (!panelService->createBox(20,30,5,panelBox,panelError)) return false;
+    CadWorkspacePanel panel(panelService); panel.setSize(1400,850);
+    auto selection = object();put(selection,"action","select");put(selection,"id",panelBox);
+    const auto materialField = [&](const juce::var& reply)
+    {
+        if (const auto* fields=reply["state"]["fields"].getArray())
+            for (const auto& field : *fields)
+                if (field["id"].toString()=="assignedMaterial") return field["value"].toString();
+        return juce::String();
+    };
+    const auto record = [&](bool ok,const juce::String& label)
+    {
+        auto row=object();put(row,"check",label);put(row,"passed",ok);report["checks"].getArray()->add(row);
+        passed &= ok;
+    };
+    record(materialField(panel.automation(selection))=="Material: None","Selected solid shows Material: None in Properties");
+    auto assign=object();put(assign,"action","useMaterial");put(assign,"feature",panelBox);put(assign,"material","mat-research-mat-010");
+    record((bool)panelService->catalogCommand(assign)["ok"]&&materialField(panel.automation(object())).containsIgnoreCase("PETG"),
+           "Assigning PETG updates the selected solid's Properties field");
+    put(assign,"material","mat-ref-6061-t6");
+    record((bool)panelService->catalogCommand(assign)["ok"]&&materialField(panel.automation(object())).contains("6061-T6"),
+           "Changing the material updates Properties without reselection");
+    auto clear=object();put(clear,"feature",panelBox);
+    record((bool)panelService->materialCommand("cad_material_clear",clear)["ok"]&&materialField(panel.automation(object()))=="Material: None",
+           "Clearing the material updates Properties without reselection");
+    report.getDynamicObject()->setProperty("passed",passed);
     return passed;
 }

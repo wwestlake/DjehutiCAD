@@ -1,6 +1,9 @@
 # Engineering materials and sheet stock — Phase 1
 
 Open **CAD Workspace → Edit → Materials and Sheet Stock...**, or the same button in a solid's property panel.
+When a solid is selected, its Properties panel shows **Material: None** or the assigned material name near the top.
+The existing button opens this manager for that part; if a material is already assigned, its document snapshot is
+preselected for inspection. Assignment, replacement, clearing, Undo and Redo refresh the Properties display.
 The manager has two scopes (Application catalog / Current document) and two browsers (Engineering materials / Sheet stock).
 Select an entry to inspect it; use New, Edit, Duplicate, Save and Cancel edit. Bundled entries are read-only and can be duplicated.
 The search field filters names, families, specifications, conditions and sources in either browser.
