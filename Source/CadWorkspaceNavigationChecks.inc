@@ -52,6 +52,11 @@ bool runWorkspaceNavigationCheck(juce::var& report)
     for(auto* toolbar:{panel.modifyPalette.get(),panel.snapPalette.get(),panel.modelSelectionPalette.get()}){
         const auto entries=toolbar->state()["controls"];for(const auto& entry:*entries.getArray())check(entry["tooltip"].toString().isNotEmpty(),"Hover description: "+entry["command"].toString());
     }
+    const auto tooltip=[](const juce::var& controls,const juce::String& command){if(const auto* rows=controls.getArray())for(const auto& row:*rows)if(row["command"].toString()==command)return row["tooltip"].toString();return juce::String();};
+    const auto modelingControls=panel.modifyPalette->state()["controls"];
+    check(tooltip(modelingControls,"fillet").containsIgnoreCase("edges")&&tooltip(modelingControls,"fillet").containsIgnoreCase("solid"),"Fillet tooltip explains the required solid and edges");
+    check(tooltip(modelingControls,"hole").containsIgnoreCase("planar face"),"Hole tooltip explains planar-face selection");
+    check(tooltip(panel.modelSelectionPalette->state()["controls"],"selectAll").containsIgnoreCase("eligible target edges"),"Selection tooltip explains operation-specific Select All Edges");
     const auto* display=juce::Desktop::getInstance().getDisplays().getDisplayForPoint(screen);panel.tooltipWindow.displayTip(display->userArea.getBottomRight()-juce::Point<int>{2,2},"Fillet selected edges with a radius");check(panel.tooltipWindow.isOnDesktop()&&display->userArea.contains(panel.tooltipWindow.getScreenBounds()),"Tooltip uses desktop peer and remains inside display at boundary");panel.tooltipWindow.hideTip();
     juce::String fillet;check(service->createFillet(body,{0},.5,fillet,error)&&!service->document().find(fillet)->shape.IsNull(),"Existing Fillet geometry command remains functional");check(service->undo(error)&&service->document().find(body)!=nullptr,"Undo restores the source after Fillet smoke check");panel.refreshFromDocument(true);
     juce::TextEditor editor;panel.addAndMakeVisible(editor);editor.setBounds(300,100,150,24);editor.grabKeyboardFocus();const auto before=selection->items().size();check(!panel.handleModelKey(juce::KeyPress('A',juce::ModifierKeys::ctrlModifier,0))&&selection->items().size()==before,"Text editing retains its own Select All shortcut");

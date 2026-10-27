@@ -16,7 +16,8 @@ Scoped desktop tooltip windows replace child tooltip popups. JUCE's parent-peer
 check previously excluded the nested native OpenGL peer, and child popups could be
 covered by that peer. Tooltip lookup stays scoped to its owning workspace, while
 popup placement uses the display's available bounds. Existing modeling toolbar
-layout and command bindings are unchanged.
+layout and command bindings are unchanged. Primary modeling tooltips now name the
+required sketch, body, face, edge, axis or path selections and describe the result.
 
 All 3D viewport context menus now use the event's screen position as a one-pixel
 anchor, rather than targeting the entire viewport. JUCE positions the menu within
